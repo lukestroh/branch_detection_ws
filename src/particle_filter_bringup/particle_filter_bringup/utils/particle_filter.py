@@ -12,6 +12,8 @@ import numpy as np
 import secrets
 from dataclasses import dataclass
 
+from particle_filter_bringup.utils.particle import Particle
+
 import rclpy
 from rclpy.impl import rcutils_logger
 
@@ -100,9 +102,9 @@ class ParticleFilter:
         particles[:, 2] = self.generator.uniform(
             low=z_range[0], high=z_range[1], size=N
         )
-        particles[:, 3] = self.generator.uniform(low=0, high=2 * np.pi, size=N)
-        particles[:, 4] = self.generator.uniform(low=0, high=2 * np.pi, size=N)
-        particles[:, 5] = self.generator.uniform(low=0, high=2 * np.pi, size=N)
+        particles[:, 3] = self.generator.uniform(low=-np.pi, high=np.pi, size=N)
+        particles[:, 4] = self.generator.uniform(low=-np.pi, high=np.pi, size=N)
+        particles[:, 5] = self.generator.uniform(low=-np.pi, high=np.pi, size=N)
         # self.particles[:, 3] = self.generator.uniform(low=hdg_range[0], high=hdg_range[1], size=N)
         return particles
 
@@ -181,8 +183,48 @@ class ParticleFilter:
         return
 
 
+def plot_particles(data: np.ndarray):
+    import plotly.graph_objects as go
+
+    fig = go.Figure()
+
+    for particle in data:
+        fig.add_cone(
+            x=[particle[0]],
+            y=[particle[1]],
+            z=[particle[2]],
+            u=[particle[3]],
+            v=[particle[4]],
+            w=[particle[5]],
+            sizemode="scaled",
+            sizeref=0.01,
+            anchor="center",
+
+        )
+
+    # fig.update_layout(scene_camera_eye=dict(x=-0.76, y=1.8, z=0.92))
+    
+    fig.show()
+
+    return
+
+
 def main():
+    pfilter_conf = ParticleFilterConfig(
+        num_particles=100,
+        x_range=np.array([-0.1, 0.1]),
+        y_range=np.array([-0.1, 0.1]),
+        z_range=np.array([-0.1, 0.1]),
+    )
     pfilter = ParticleFilter()
+    pfilter.reset_filter(setup_data=pfilter_conf)
+
+    # before the run
+    print(pfilter.particles)
+    print(pfilter.weights)
+    plot_particles(data=pfilter.particles)
+
+    # after the run
     return
 
 

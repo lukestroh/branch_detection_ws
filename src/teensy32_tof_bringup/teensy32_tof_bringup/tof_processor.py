@@ -31,16 +31,20 @@ class ToFNode(Node):
     def __init__(self) -> None:
         super().__init__(node_name="tof_node")
         # Loggers
+        self.info = lambda x: self.get_logger().info(f"{x}")
         self.warn = lambda x: self.get_logger().warn(f"{x}")
 
         self.use_mock_hardware = self.declare_parameter("use_mock_hardware", value=Parameter.Type.BOOL).get_parameter_value().bool_value
         self.demo_mode = self.declare_parameter("demo_mode", value=Parameter.Type.BOOL).get_parameter_value().bool_value
         self.num_sensors = self.declare_parameter("num_sensors", value=Parameter.Type.INTEGER).get_parameter_value().integer_value
 
-        self.sensor_type = self.declare_parameter("sensor_type", value=Parameter.Type.STRING).get_parameter_value().string_value
-        # self.sensor_types = [] # TODO: Ability to use multiple ToF types?
 
-        self.warn(self.num_sensors)
+        """TODO: Clean up parameters section"""
+        self.tof_model_type = self.declare_parameter("tof_model", value=Parameter.Type.STRING).get_parameter_value().string_value
+        # self.sensor_types = [] # TODO: Ability to use multiple ToF types?
+        self.info(f"\nTime-of-flight sensor configuration:\n\tSensor type: {self.tof_model_type}\n\tNumber of sensors: {self.num_sensors}")
+
+
 
         # Subscriptions
         self._sub_tof_raw = self.create_subscription(
@@ -63,7 +67,6 @@ class ToFNode(Node):
             topic="tof_filtered",
             qos_profile=1,
         )
-
         self._pub_tof_markers = self.create_publisher(
             msg_type=MarkerArray,
             topic="tof_markers",
@@ -78,12 +81,12 @@ class ToFNode(Node):
         
         """ Set up the ToF Kalman filters """
         # ToF model parameters
-        tof_model_param = self.declare_parameter(name="tof_model", value=Parameter.Type.STRING)
+        # tof_model_param = self.declare_parameter(name="tof_model", value=Parameter.Type.STRING)
         tof_fov_x_param = self.declare_parameter(name="tof_fov_x", value=Parameter.Type.DOUBLE)
         tof_fov_y_param = self.declare_parameter(name="tof_fov_y", value=Parameter.Type.DOUBLE)
         range_z_min_param = self.declare_parameter(name="tof_range_z_min", value=Parameter.Type.DOUBLE)
         range_z_max_param = self.declare_parameter(name="tof_range_z_max", value=Parameter.Type.DOUBLE)
-        self.tof_model = tof_model_param.get_parameter_value().string_value
+        # self.tof_model = tof_model_param.get_parameter_value().string_value
         self.sensor_fov = np.array([
             tof_fov_x_param.get_parameter_value().double_value,
             tof_fov_y_param.get_parameter_value().double_value
@@ -92,7 +95,7 @@ class ToFNode(Node):
             range_z_min_param.get_parameter_value().double_value,
             range_z_max_param.get_parameter_value().double_value,
         ])
-        self.warn(f"{self.sensor_z_range}")
+        # self.warn(f"{self.sensor_z_range}")
 
         # Values
         self.tof_vals = np.zeros(self.num_sensors)
@@ -113,20 +116,8 @@ class ToFNode(Node):
         return
     
     def _sub_cb_tof_raw(self, msg: ToFDataArray) -> None:
-        """Callback method for ToF raw data subscriber
-        TODO: Fix with message type so sensor data is iterable"""
-        # self.tof0 = msg.tof0
-        # self.tof1 = msg.tof1
+        """Callback method for ToF raw data subscriber"""
         self.tof_vals = msg.data
-        # if msg.tof0 != self.RANGING_ERR:    
-        #     self.tof_kalmans[0].predict()
-        #     self.tof_kalmans[0].update([self.tof_vals[0]])
-        #     self.tof_filtered_vals[0] = self.tof_kalmans[0].x[0,0] # get position from state matrix
-        # if msg.tof1 != self.RANGING_ERR:
-        #     self.tof_kalmans[1].predict()
-        #     self.tof_kalmans[1].update([self.tof_vals[1]])
-        #     self.tof_filtered_vals[1] = self.tof_kalmans[1].x[0,0]
-
         try:
             for i, dist in enumerate(self.tof_vals):
                 if dist != self.RANGING_ERR:
@@ -196,7 +187,6 @@ class ToFNode(Node):
             marker.colors = [ColorRGBA(a=1.0, r=1.0, g=0.8, b=0.25)]
             marker.points = [Point(x=0.0, y=0.0, z=(filtered_val / 100))]
             markers.markers.append(marker)
-
         return markers
 
 
