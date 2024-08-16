@@ -4,7 +4,7 @@ from geometry_msgs.msg import Pose
 
 
 class Particle:
-    def __init__(self, ee_pose: Pose, tof_pose: Pose, camera_extrinsic) -> None:
+    def __init__(self, ee_pose: Pose, tof_pose: Pose, camera_extrinsic: Pose) -> None:
         self.ee_pose: Pose = ee_pose
         # self.camera_extrinsic  -> tf frame?
 

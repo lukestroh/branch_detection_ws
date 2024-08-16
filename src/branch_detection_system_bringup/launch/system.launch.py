@@ -4,6 +4,7 @@ from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
     IncludeLaunchDescription,
+    SetEnvironmentVariable
 )
 from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import AnyLaunchDescriptionSource
@@ -17,6 +18,7 @@ import os
 
 def launch_setup(context, *args, **kwargs) -> list:
     """ToF launch setup"""
+
     nodes_to_run = []
 
     return nodes_to_run
@@ -24,12 +26,14 @@ def launch_setup(context, *args, **kwargs) -> list:
 
 
 def generate_launch_description():
+    ENV_ROS_DOMAIN_ID = SetEnvironmentVariable(name="ROS_DOMAIN_ID", value="0")
+
     declared_args = []
     # Generic
     declared_args.append(
         DeclareLaunchArgument(
             name="use_sim",
-            default_value="true",
+            default_value="false",
             description="True when testing the setup in simulation. When fixed to actual UR hardware, set to false."
         )
     ) 
@@ -50,7 +54,7 @@ def generate_launch_description():
     )
     declared_args.append(
         DeclareLaunchArgument(
-            name="tof_serial_port",
+            name="teensy_serial_port",
             default_value="/dev/ttyACM0",
             description="Port name for serial device."
         )
@@ -72,7 +76,7 @@ def generate_launch_description():
     ur_type = LaunchConfiguration("ur_type")
     ur_robot_ip = LaunchConfiguration("ur_robot_ip")
     # ToF
-    tof_serial_port = LaunchConfiguration("tof_serial_port")
+    teensy_serial_port = LaunchConfiguration("teensy_serial_port")
     tof_demo_mode = LaunchConfiguration("tof_demo_mode")
 
 
@@ -95,32 +99,36 @@ def generate_launch_description():
     launch_tof_processor = IncludeLaunchDescription(
         AnyLaunchDescriptionSource(
             os.path.join(
-                get_package_share_directory("teensy32_tof_bringup"),
+                get_package_share_directory("teensy32_tof_bringup"), # TODO: change to just "teensy", add board type to args
                 "launch",
                 "tof.launch.py"
             )
         ),
         launch_arguments=[
-            ("serial_port", tof_serial_port),
+            ("serial_port", teensy_serial_port),
             ("use_mock_hardware", use_sim),
             ("demo_mode", tof_demo_mode)
         ]
     )
 
-    node_particle_filter = Node(
-        package="particle_filter_bringup",
-        executable="particle_filter",
-        name="particle_fitler",
-        output="screen",
+    launch_particle_filter = IncludeLaunchDescription(
+        AnyLaunchDescriptionSource(
+            os.path.join(
+                get_package_share_directory("particle_filter_bringup"),
+                "launch",
+                "particle_filter.launch.py"
+            )
+        )
     )
 
 
     ld = LaunchDescription(
         declared_args
         + [
+            ENV_ROS_DOMAIN_ID,
             # launch_ur_basic,
             launch_tof_processor,
-            # node_particle_filter
+            launch_particle_filter
         ]
     )
 

@@ -6,6 +6,7 @@ from rclpy.node import Node
 from rclpy.parameter import Parameter
 
 from particle_filter_bringup.utils.particle import Particle
+from particle_filter_bringup.utils.particle_filter import ParticleFilter, ParticleFilterConfig
 from particle_filter_bringup.utils.tf_node import TFNode
 
 from geometry_msgs.msg import Point
@@ -38,19 +39,20 @@ class ParticleFilterNode(TFNode):
 
         # Particle filter
         # We have a 25 degree FoV, can range from 0.03m - 2.0m. y and z ranges set according to max error distribution
-        
-        self.tof_z_range = self.sensor_z_range # m
-        self.tof_y_fov = np.radians([-self.sensor_fov[0]/2, self.sensor_fov[0]/2])
-        self.tof_x_fov = np.radians([-self.sensor_fov[1]/2, self.sensor_fov[1]/2])
+        # self.tof_z_range = self.sensor_z_range # m
+        self.tof_z_range = np.array([0.03, 2.0])
+        self.tof_y_fov = np.radians([-25/2, 25/2])
+        self.tof_x_fov = np.radians([-25/2, 25/2])
         self.tof_y_range = np.array([np.sin(self.tof_y_fov[0]), np.sin(self.tof_y_fov[1])]) * self.tof_z_range[1]
         self.tof_x_range = np.array([np.sin(self.tof_x_fov[0]), np.sin(self.tof_x_fov[1])]) * self.tof_z_range[1]
-        # self.pf = ParticleFilter()
-        # self.pf_config = ParticleFilterConfig(
-        #     num_particles=100,
-        #     x_range=self.tof_x_range,
-        #     y_range=self.tof_y_range, # TODO: should this be the entire tof space, or just the overlapping tof space?
-        #     z_range=self.tof_z_range,
-        # )
+        
+        self.pf = ParticleFilter()
+        self.pf_config = ParticleFilterConfig(
+            num_particles=100,
+            x_range=self.tof_x_range,
+            y_range=self.tof_y_range, # TODO: should this be the entire tof space, or just the overlapping tof space?
+            z_range=self.tof_z_range,
+        )
         self.pf.reset_filter(setup_data=self.pf_config)        
 
         # Transforms
@@ -72,7 +74,6 @@ class ParticleFilterNode(TFNode):
         self._pub_particles.publish(msg=msg)
         return
     
-
     def _generate_particle_markers(self, particles) -> Marker:
         """Generate markers for the particles"""
         marker = Marker()
@@ -91,6 +92,8 @@ class ParticleFilterNode(TFNode):
         color0 = ColorRGBA(a=1.0, r=1.0, g=0.8, b=0.25)
         marker.colors = [color0] * len(marker.points)
         return marker
+    
+    
     
 
 def main():

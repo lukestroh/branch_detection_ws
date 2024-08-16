@@ -46,4 +46,3 @@ The agent is launched from the `teensy32_tof_bringup` package, but can be indivi
 ```
 ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/ttyACM0 ROS_DOMAIN_ID=0
 ```
-

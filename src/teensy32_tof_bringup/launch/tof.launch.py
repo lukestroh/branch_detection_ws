@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-from launch import LaunchDescription
+from launch import LaunchDescription, LaunchContext
 from launch.actions import (
     DeclareLaunchArgument,
     IncludeLaunchDescription,
-    LogInfo,
     SetEnvironmentVariable,
     OpaqueFunction
 )
@@ -26,7 +25,7 @@ import os
 import numpy as np
 
 
-def launch_setup(context, *args, **kwargs):
+def launch_setup(context: LaunchContext, *args, **kwargs):
     # Environmental variables
     ENV_ROS_DOMAIN_ID = SetEnvironmentVariable(name="ROS_DOMAIN_ID", value="0")
 
@@ -34,8 +33,7 @@ def launch_setup(context, *args, **kwargs):
     serial_port = LaunchConfiguration("serial_port")
     use_mock_hardware = LaunchConfiguration("use_mock_hardware")
     demo_mode = LaunchConfiguration("demo_mode")
-    sensor_type = LaunchConfiguration("sensor_type")
-    
+    sensor_type = LaunchConfiguration("sensor_type")    
 
     runtime_package_dir = get_package_share_directory("teensy32_tof_bringup")
     tof_node_config_file = os.path.join(runtime_package_dir, "config", "node_tof_config.yaml")
@@ -51,7 +49,7 @@ def launch_setup(context, *args, **kwargs):
         package="micro_ros_agent",
         executable="micro_ros_agent",
         name="micro_ros_agent",
-        output="both",
+        output="screen",
         arguments=[
             "serial",
             "--dev",
