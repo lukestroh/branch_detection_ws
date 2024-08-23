@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<robot name="tree" xmlns:xacro="http://ros.org/wiki/xacro">
+
+    <xacro:include filename="./macro/tree_base.urdf.xacro" />
+
+    <xacro:arg name="namespace" default="" />
+    <xacro:arg name="tree_id" default="0" />
+    <xacro:arg name="tree_type" default="envy" />
+    <xacro:arg name="parent" default="world" />
+    <!-- <xacro:arg name="xyz" default="0.0 0.0 0.0"/>
+    <xacro:arg name="rpy" default="0.0 0.0 0.0"/> -->
+
+    <xacro:tree
+        namespace="$(arg namespace)"
+        tree_id="$(arg tree_id)"
+        tree_type="$(arg tree_type)"
+        parent="$(arg parent)" >
+        <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.0"/>
+    </xacro:tree>
+
+</robot>
