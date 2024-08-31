@@ -46,3 +46,7 @@ The agent is launched from the `teensy32_tof_bringup` package, but can be indivi
 ```
 ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/ttyACM0 ROS_DOMAIN_ID=0
 ```
+
+## Installing `pybullet_ros2`
+
+Follow the directions [here](https://github.com/JafarAbdi/pybullet_ros2/blob/main/doc/installation.md).

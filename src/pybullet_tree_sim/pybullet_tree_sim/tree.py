@@ -84,7 +84,7 @@ class Tree:
 
         # Tree specific parameters
         self.scale = scale
-        self.id = id,
+        self.id = id
         self.type = type
         self.init_pos = position
         self.init_orientation = orientation
