@@ -4,16 +4,23 @@ from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
     IncludeLaunchDescription,
+    RegisterEventHandler,
     SetEnvironmentVariable
 )
 from launch.conditions import IfCondition, UnlessCondition
+from launch.substitutions.path_join_substitution import PathJoinSubstitution
+from launch_ros.event_handlers import OnStateTransition
 from launch.launch_description_sources import AnyLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import Node
+from launch_ros.actions import Node, LifecycleNode
 
 from ament_index_python.packages import get_package_share_directory
 
 import os
+
+import rclpy.logging
+
+logger = rclpy.logging.get_logger("branch_detection_system_bringup.launch")
 
 
 def launch_setup(context, *args, **kwargs) -> list:
@@ -36,7 +43,14 @@ def generate_launch_description():
             default_value="false",
             description="True when testing the setup in simulation. When fixed to actual UR hardware, set to false."
         )
-    ) 
+    )
+    declared_args.append(
+        DeclareLaunchArgument(
+            name="use_mock_hardware",
+            default_value="false",
+            description="True when running in neither a simulation environment nor on real hardware."
+        )
+    )
     # UR Robot
     declared_args.append(
         DeclareLaunchArgument(
@@ -72,12 +86,25 @@ def generate_launch_description():
     # ===============================
     # Generic
     use_sim = LaunchConfiguration("use_sim")
+    use_mock_hardware = LaunchConfiguration("use_mock_hardware")
     # UR robot
     ur_type = LaunchConfiguration("ur_type")
     ur_robot_ip = LaunchConfiguration("ur_robot_ip")
     # ToF
     teensy_serial_port = LaunchConfiguration("teensy_serial_port")
     tof_demo_mode = LaunchConfiguration("tof_demo_mode")
+
+    node_pybullet_ros2 = LifecycleNode(
+        name="pybullet_ros2_node",
+        namespace="",
+        package="pybullet_ros2",
+        executable="pybullet_ros2_node",
+        parameters=[
+            {"enable_gui": True},
+            {"robot_description": PathJoinSubstitution([get_package_share_directory("pybullet_ros2"), "tmp", "robot_description.urdf"])}
+        ],
+        condition=IfCondition(use_mock_hardware)
+    )
 
 
     launch_ur_basic = IncludeLaunchDescription(
@@ -91,7 +118,7 @@ def generate_launch_description():
         launch_arguments=[
             ("ur_type", ur_type),
             ("ur_robot_ip", ur_robot_ip),
-            ("use_mock_hardware", use_sim),
+            ("use_fake_hardware", use_mock_hardware),
         ],
         condition=UnlessCondition(tof_demo_mode)
     )
@@ -106,7 +133,7 @@ def generate_launch_description():
         ),
         launch_arguments=[
             ("serial_port", teensy_serial_port),
-            ("use_mock_hardware", use_sim),
+            ("use_mock_hardware", use_mock_hardware),
             ("demo_mode", tof_demo_mode)
         ]
     )
@@ -121,14 +148,22 @@ def generate_launch_description():
         )
     )
 
+    register_event_delay_launch_ur_basic_for_pybullet_ros2_active = RegisterEventHandler(
+        OnStateTransition(
+            target_lifecycle_node=node_pybullet_ros2,
+            goal_state="active",
+            entities=[launch_ur_basic]
+        )
+    )
 
     ld = LaunchDescription(
         declared_args
         + [
             ENV_ROS_DOMAIN_ID,
-            # launch_ur_basic,
-            launch_tof_processor,
-            launch_particle_filter
+            node_pybullet_ros2,
+            register_event_delay_launch_ur_basic_for_pybullet_ros2_active,
+            # launch_tof_processor,
+            # launch_particle_filter
         ]
     )
 

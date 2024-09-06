@@ -1,0 +1,5 @@
+vl53l8cx_filter_node:
+    ros__parameters:
+        dfov: 65.0
+        min_range: 0
+        max_range: 2000

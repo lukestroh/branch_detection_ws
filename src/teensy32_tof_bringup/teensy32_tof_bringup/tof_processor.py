@@ -49,7 +49,6 @@ class ToFNode(Node):
         # Subscriptions
         self._sub_tof_raw = self.create_subscription(
             msg_type=ToFDataArray,
-            # msg_type=ToFData,
             topic="/microROS/tof_data_array",
             callback=self._sub_cb_tof_raw,
             qos_profile=1,
@@ -78,7 +77,7 @@ class ToFNode(Node):
             timer_period_sec=1/30,
             callback=self._timer_cb_pub_tof_filtered
         )
-        
+
         """ Set up the ToF Kalman filters """
         # ToF model parameters
         # tof_model_param = self.declare_parameter(name="tof_model", value=Parameter.Type.STRING)
@@ -114,7 +113,7 @@ class ToFNode(Node):
             kalman.Q = Q_discrete_white_noise(dim=2, dt=0.1, var=self.tof_covs[i])
             self.tof_kalmans[i] = kalman
         return
-    
+
     def _sub_cb_tof_raw(self, msg: ToFDataArray) -> None:
         """Callback method for ToF raw data subscriber"""
         self.tof_vals = msg.data
@@ -127,22 +126,22 @@ class ToFNode(Node):
         except IndexError as e:
             self.get_logger().error(f"{e}: Please check ToF setup and confirm that the number of sensors connected to the microROS agent aligns with the specified configuration.")
         return
-    
+
     def _sub_cb_joint_states(self, msg: JointState) -> None:
         """Callback method for joint states"""
         self.joint_state = list(zip(msg.name, msg.position))
         return
-    
+
     def _timer_cb_pub_tof_filtered(self) -> None:
         """Callback timer for filtered ToF data publisher"""
         msg_tof_filtered = ToFDataArray()
-        msg_tof_filtered.data = list(self.tof_filtered_vals)
+        msg_tof_filtered.data = list(self.tof_filtered_vals / 1000) # convert from mm to m.
         self._pub_tof_filtered.publish(msg=msg_tof_filtered)
-    
+
         msg_tof_markers = self._generate_point_markers()
         self._pub_tof_markers.publish(msg=msg_tof_markers)
         return
-    
+
     def _generate_cylinder_msg(self) -> Marker:
         """Generate a cylinder marker message"""
         marker = Marker()
@@ -163,9 +162,9 @@ class ToFNode(Node):
         marker.color.r = 0.0
         marker.color.g = 0.5
         marker.color.b = 1.0
-        
+
         return marker
-    
+
     def _generate_point_markers(self) -> MarkerArray:
         """Generate the laser markers"""
         markers = MarkerArray()
@@ -181,7 +180,7 @@ class ToFNode(Node):
             marker.action = marker.ADD
 
             marker.scale.x = 0.01  # Size of the points in the x direction
-            marker.scale.y = 0.01 
+            marker.scale.y = 0.01
             marker.scale.z = 0.01
 
             marker.colors = [ColorRGBA(a=1.0, r=1.0, g=0.8, b=0.25)]

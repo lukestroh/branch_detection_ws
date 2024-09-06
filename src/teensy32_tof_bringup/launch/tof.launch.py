@@ -18,7 +18,7 @@ from ament_index_python.packages import get_package_share_directory
 
 
 import rclpy.logging
-logger = rclpy.logging.get_logger("tof_launch_logger")
+logger = rclpy.logging.get_logger("vl53l0x_launch_logger")
 
 
 import os
@@ -35,14 +35,14 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
     demo_mode = LaunchConfiguration("demo_mode")
     sensor_type = LaunchConfiguration("sensor_type")    
 
-    runtime_package_dir = get_package_share_directory("teensy32_tof_bringup")
-    tof_node_config_file = os.path.join(runtime_package_dir, "config", "node_tof_config.yaml")
+    dir_runtime_package = get_package_share_directory("teensy32_tof_bringup")
+    filepath_tof_node_config = os.path.join(dir_runtime_package, "config", "node_tof_config.yaml")
 
-    sensor_config_file = PathJoinSubstitution([
-        runtime_package_dir,
+    filepath_sensor_config = os.path.join(
+        dir_runtime_package,
         "config",
         sensor_type.perform(context) + ".yaml"
-    ])
+    )
 
     # Launch files and nodes
     node_micro_ros_agent = Node(
@@ -65,8 +65,8 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         name="tof_node",
         output="screen",
         parameters=[
-            tof_node_config_file,
-            sensor_config_file,
+            filepath_tof_node_config,
+            filepath_sensor_config,
             {"demo_mode": demo_mode},
             {"use_mock_hardware": use_mock_hardware},
         ]
@@ -77,7 +77,7 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         namespace='',
         executable='rviz2',
         name='rviz2',
-        arguments=['-d', os.path.join(runtime_package_dir, 'rviz', "config.rviz")],
+        arguments=['-d', os.path.join(dir_runtime_package, 'rviz', "config.rviz")],
         condition=IfCondition(demo_mode) # Use this rviz setting only if running in demo mode
     )
 
@@ -110,13 +110,28 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         condition=UnlessCondition(demo_mode)
     )
 
+    # node_tf_tool0_center = Node(
+    #     package="tf2_ros",
+    #     executable="static_transform_publisher",
+    #     arguments = [
+    #         "--x", "0.0",
+    #         "--y", "0.00",
+    #         "--z", "0.007",
+    #         "--frame-id", "tool0",
+    #         "--child-frame-id", "tof_center",
+    #     ],
+    #     output="screen",
+    #     condition=UnlessCondition(demo_mode)
+    # )
+
     nodes_to_start = [
         ENV_ROS_DOMAIN_ID,
         node_micro_ros_agent,
         node_tof_filtered,
         node_rviz,
         node_tf_tool0_tof0,
-        node_tf_tool0_tof1
+        node_tf_tool0_tof1,
+        # node_tf_tool0_center
     ]
 
     return nodes_to_start

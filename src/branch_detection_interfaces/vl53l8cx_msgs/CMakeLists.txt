@@ -16,11 +16,13 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/Column8x8.msg"
   "msg/Config8x8.msg"
   "msg/Vl53l8cx8x8.msg"
+  "msg/Vl53l8cx8x8Filtered.msg"
   "msg/Vl53l8cx8x8Stamped.msg"
   "msg/Row4x4.msg"
   "msg/Column4x4.msg"
   "msg/Config4x4.msg"
   "msg/Vl53l8cx4x4.msg"
+  "msg/Vl53l8cx4x4Filtered.msg"
   "msg/Vl53l8cx4x4Stamped.msg"
 
   DEPENDENCIES std_msgs # Add packages that above messages depend on, in this case geometry_msgs for Sphere.msg

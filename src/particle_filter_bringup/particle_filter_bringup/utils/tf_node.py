@@ -22,8 +22,8 @@ class TFNode(Node):
 
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
-        self.base_frame = self.declare_parameter("base_frame", value="base_link")
-        self.tool_frame = self.declare_parameter("tool_frame", value="tool0")
+        self.base_frame = self.declare_parameter("base_frame", value="base_link").get_parameter_value().string_value
+        self.tool_frame = self.declare_parameter("tool_frame", value="tool0").get_parameter_value().string_value
         return
 
     def declare_parameter_dict(self, **kwargs):
