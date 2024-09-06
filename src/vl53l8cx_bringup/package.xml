@@ -1,14 +1,13 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>teensy32_tof_bringup</name>
+  <name>vl53l8cx_bringup</name>
   <version>0.0.0</version>
-  <description>Teensy3.2 Time-of-Flight bringup package</description>
+  <description>Bringup package for the VL53L8CX sensor.</description>
   <maintainer email="luke.strohbehn@gmail.com">lukestroh</maintainer>
   <license>BSD-3-Clause</license>
 
-  <depend>rclpy</depend>
-  <depend>vl53l0x_msgs</depend>
+  <depend>vl53l8cx_msgs</depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
