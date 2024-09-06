@@ -1,2 +1,0 @@
-branch_detection_interfaces/Row4x4 row
-branch_detection_interfaces/Column4x4 col
