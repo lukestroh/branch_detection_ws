@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
+from functools import partial
 import plotly.graph_objects as go
 import matplotlib.pyplot as plt
+import matplotlib.animation as ani
 import pandas as pd
 import glob
 import numpy as np
@@ -18,14 +20,16 @@ topic_name = "/microROS/vl53l8cx/distance"
 def get_databases() -> List[str]:
     pkg_dir = os.path.dirname(os.path.dirname(__file__))
     bag_dir = os.path.join(pkg_dir, "bags")
-    dbs = glob.glob(bag_dir + "/vl53l8cx*/*.db3")
+    dbs = glob.glob(bag_dir + "/*black*/*.db3")
     return dbs
 
 
-def get_df_from_db(database: str):
+def get_df_from_db(database: str) -> pd.DataFrame | None:
     bag_reader = BagReader(bag_file=database)
 
-    # print(bag_reader.topics)
+    if not bag_reader.topics:
+        # print(bag_reader.topics)
+        return None
 
     vl53l8cx_distances = list(bag_reader.query(topic_name=topic_name))
 
@@ -46,20 +50,20 @@ def get_df_from_db(database: str):
 
 
 def plot_frame(data: pd.DataFrame):
-    fig = go.Figure()   
+    fig = go.Figure()
     fig.add_heatmap(
-        z=data["vl53l8cx_distances_raw"][79],
+        z=data["vl53l8cx_distances_raw"][0],
         coloraxis="coloraxis"
     )
 
     # Set color axis limits
     fig.update_layout(
         coloraxis=dict(
-            cmin=90,
-            cmax=115
+            cmin=250,
+            cmax=315
         )
     )
-    
+
     print(data["vl53l8cx_distances_raw"][0])
 
     fig.update_layout(coloraxis_showscale=False)
@@ -67,31 +71,80 @@ def plot_frame(data: pd.DataFrame):
     fig.show()
     return
 
+
 def plot_animation(data: pd.DataFrame) -> None:
     tof_array_size = (8,8)
     fig, ax, cax = pm.create_fig(tof_array_size)
 
     for i in range(data.shape[0]):
-        pm.update_fig(ax=ax, zone_data=data["vl53l8cx_distances_raw"][i])
+        pm.update_fig(fig=fig, ax=ax, zone_data=data["vl53l8cx_distances_raw"][i])
         fig.show()
 
     print(data.shape[0])
     return
 
+def create_animation(data: pd.DataFrame) -> ani.FuncAnimation:
+    tof_array_size = (8,8)
+    fig, ax, cax = pm.create_fig(tof_array_size)
 
-def main():
-    dbs = get_databases()
-    dfs = []
-    for db in dbs:
-        dfs.append(get_df_from_db(database=db))
-        # plot_frame(data=df)
+    an = ani.FuncAnimation(
+        fig=fig,
+        func=partial(pm.update_ani, data=data, cax=cax),
+        frames=len(data["time_raw"]),
+        interval=1/15
+    )
 
-    plot_animation(data=dfs[0])
+    return an
+
+def save_animation(anim, filepath, filename):
+    _filename = os.path.basename(filename).strip().split(".")[0] + ".gif"
+    # anim.save(filename=os.path.join(filepath, _filename), writer="imagemagick")
+    # plt.show()
+    return
 
 
-    
+def get_stats(data: pd.DataFrame):
+    arr3d = np.stack(data["vl53l8cx_distances_raw"].values, axis=0)
+    # print(data["vl53l8cx_distances_raw"].std(axis=0))
+    std = np.std(arr3d, axis=0)
+    cov = np.multiply(std, std)
+    mean = np.mean(arr3d, axis=0)
+
+    print(f"Mean: {mean}")
+    print(f"Std: {std}")
+    print(f"Cov: {cov}")
+
 
     return
+
+def main():
+    import pprint
+
+
+    __here__ = os.path.dirname(__file__)
+    gifs_dir = os.path.join(__here__, "gifs")
+
+
+    dbs = get_databases()
+    dfs = []
+    pprint.pprint(dbs)
+    for db in dbs:
+        df = get_df_from_db(database=db)
+        if df is not None:
+            dfs.append(df)
+
+    INPUT = 0
+
+    input(f"{dbs[INPUT]}")
+
+    ani = create_animation(data=dfs[INPUT])
+    save_animation(anim=ani, filepath=gifs_dir, filename=dbs[INPUT])
+
+    get_stats(data=dfs[INPUT])
+
+
+    return
+
 
 if __name__ == "__main__":
     main()

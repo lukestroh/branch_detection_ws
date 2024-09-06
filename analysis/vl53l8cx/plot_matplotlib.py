@@ -3,23 +3,22 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as ani
 import numpy as np
 
-VMAX=135
-VMIN=95
+VMIN=70
+VMAX=150
 
 def create_fig(array_size: tuple):
     fig, ax = plt.subplots()
 
-    cax = ax.imshow(np.zeros(array_size), cmap="viridis_r", vmin=VMIN, vmax=VMAX)
-    cbar = fig.colorbar(cax)
-    cbar.set_ticks(ticks=[0, VMIN, VMAX])
+    cax = ax.matshow(np.zeros(array_size), cmap="viridis_r", vmin=VMIN, vmax=VMAX)
+    fig.colorbar(cax, ax=ax)
     plt.draw()
     return fig, ax, cax
 
-def update_fig(ax, zone_data: np.ndarray):
-    cax = ax.imshow(zone_data, cmap="viridis_r", vmin=VMIN, vmax=VMAX)
-    # img.colorbar()
+def update_fig(fig, ax, zone_data: np.ndarray):
+    cax = ax.matshow(zone_data, cmap="viridis_r", vmin=VMIN, vmax=VMAX)
+        
     plt.draw()
-    # print(zone_data)
+
     plt.pause(1/15)
     return
 
@@ -29,10 +28,10 @@ def update_data_arr(data: np.ndarray, idx: int, value: int):
     data[row, col] = value
     return data
 
-def animate_fig(data: np.ndarray, animate:bool, repeat:bool, frames: int, interval: int):
 
-
-    return
+def update_ani(frame, data, cax):
+    cax.set_array(data.iloc[frame]["vl53l8cx_distances_raw"])
+    return cax
 
 
 def main():
