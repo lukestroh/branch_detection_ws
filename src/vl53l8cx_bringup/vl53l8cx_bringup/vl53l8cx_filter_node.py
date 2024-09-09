@@ -26,7 +26,7 @@ from numpy.typing import NDArray
 
 class VL53L8CXFilterNode(Node):
     RANGING_ERR = -1
-    RANGING_MAX = 3000
+    RANGING_MAX = 2000
     tof_model_type = "VL53L8CX"
     def __init__(self, node_name = "vl53l8cx_filter_node") -> None:
         super().__init__(node_name=node_name)
@@ -70,10 +70,10 @@ class VL53L8CXFilterNode(Node):
         self.vl53l8cx_msg_raw = Vl53l8cx8x8()
         self.vl53l8cx_msg_filtered = Vl53l8cx8x8Filtered()
         self.frame_size = (self.vl53l8cx_msg_raw.config.col.size, self.vl53l8cx_msg_raw.config.row.size)
-        self.ranging_mode = 8 # 8x8 ranging mode.
+        self.ranging_resolution = 8 # 8x8 ranging mode.
         self.kalmans = np.empty(self.frame_size[0] * self.frame_size[1], dtype=KalmanFilter)
         self.covariances = np.array(json_covariances["black_covariances"], dtype=float).flatten()
-        self.measurement_noise = 15.0
+        self.measurement_noise = 5.0 # TODO: Delete?
         self.initial_err = 1000.0
 
         # self.vl53l8cx_msg_filtered.data
@@ -85,12 +85,13 @@ class VL53L8CXFilterNode(Node):
 
         for i, val in enumerate(self.vl53l8cx_msg_raw.data):
             kalman = KalmanFilter(dim_x=2, dim_z=1)
-            kalman.x = np.array([[val, 0]]).transpose()
-            kalman.F = np.array([[1,1],[0,1]])
-            kalman.H = np.array([[1, 0]])
-            kalman.P = np.identity(kalman.dim_x) * self.initial_err
-            kalman.R = self.measurement_noise
-            kalman.Q = Q_discrete_white_noise(dim=2, dt=0.1, var=self.covariances[i])
+            kalman.x = np.array([[val, 0]]).transpose() # initial state
+            kalman.F = np.array([[1,1],[0,1]]) # state transition matrix
+            kalman.H = np.array([[1, 0]]) # measurement function
+            kalman.P = np.identity(kalman.dim_x) * self.initial_err # covariance matrix
+            # kalman.R = self.measurement_noise # measurement noise
+            kalman.R = self.covariances[i] # measurement noise
+            kalman.Q = Q_discrete_white_noise(dim=2, dt=1/15, var=2.0) # Variance of the process noise estimated from sensor data
             self.kalmans[i] = kalman
 
         # self.info(self.kalmans)
