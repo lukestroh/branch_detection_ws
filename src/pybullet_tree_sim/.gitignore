@@ -164,4 +164,4 @@ cython_debug/
 #
 
 # don't upload tree generations
-**/trees/*/generated/
+**/trees/*/generated/*

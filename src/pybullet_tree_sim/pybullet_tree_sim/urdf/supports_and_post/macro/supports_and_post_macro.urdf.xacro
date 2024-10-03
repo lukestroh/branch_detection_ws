@@ -1,0 +1,43 @@
+<?xml version="1.0"?>
+<robot name="supports_and_post" xmlns:xacro="http://ros.org/wiki/xacro">
+
+    <xacro:macro name="supports_and_post_macro" params="
+        namespace
+        parent:=^|world
+        *origin
+        ">
+
+        <xacro:property name="mass" value="8.0" />
+        <xacro:property name="scale" value="1 1 1"/>
+
+        <link name="world"/>
+
+        <link name="${namespace}supports_and_post">
+            <visual>
+                <geometry>
+                    <mesh filename="./meshes/supports_and_post/supports_and_post.obj" scale="${scale}"/>
+                </geometry>
+                <material name="LightGrey">
+                    <color rgba="0.7 0.7 0.7 1.0"/>
+                </material>
+            </visual>
+            <collision concave="true">
+                <geometry>
+                    <mesh filename="./meshes/supports_and_post/supports_and_post.obj" scale="${scale}"/>
+                </geometry>
+            </collision>
+                <inertial>
+                <mass value="${mass}"/>
+                <xacro:insert_block name="origin"/>
+                <inertia ixx="0.00443333156" ixy="0.0" ixz="0.0" iyy="0.00443333156" iyz="0.0" izz="0.0072"/>
+            </inertial>
+        </link>
+
+        <joint name="${namespace}supports_and_post_joint" type="fixed">
+            <parent link="${parent}"/>
+            <child link="${namespace}supports_and_post"/>
+            <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.0"/>
+        </joint>
+
+    </xacro:macro>
+</robot>

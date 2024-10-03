@@ -16,8 +16,9 @@ from collections import namedtuple
 # ENV is a collection of objects like tree supports and ur5 robot. They interact with each other
 # through the env. UR5 class only needs access to pybullet.
 class UR5:
-    def __init__(self, con, robot_urdf_path: str, pos=[0, 0, 0], orientation=[0, 0, 0, 1],
-                 randomize_pose=False, verbose = 1) -> None:
+    def __init__(
+        self, con, robot_urdf_path: str, pos=[0, 0, 0], orientation=[0, 0, 0, 1], randomize_pose=False, verbose=1
+    ) -> None:
         assert isinstance(robot_urdf_path, str)
 
         self.con = con
@@ -45,8 +46,7 @@ class UR5:
         self.init_pos_base = None
         self.init_pos_eebase = None
         self.robot_urdf_path = robot_urdf_path
-        self.camera_base_offset = np.array(
-            [0.063179, 0.077119, 0.0420027])
+        self.camera_base_offset = np.array([0.063179, 0.077119, 0.0420027])
         self.verbose = verbose
 
         self.setup_ur5_arm()  # Changes pos and orientation if randomize is True
@@ -63,20 +63,28 @@ class UR5:
             delta_pos = np.random.rand(3) * 0.0
             delta_orientation = pybullet.getQuaternionFromEuler(np.random.rand(3) * np.pi / 180 * 5)
         else:
-            delta_pos = np.array([0., 0., 0.])
+            delta_pos = np.array([0.0, 0.0, 0.0])
             delta_orientation = pybullet.getQuaternionFromEuler([0, 0, 0])
 
-        self.pos, self.orientation = self.con.multiplyTransforms(self.init_pos, self.init_orientation, delta_pos,
-                                                                 delta_orientation)
+        self.pos, self.orientation = self.con.multiplyTransforms(
+            self.init_pos, self.init_orientation, delta_pos, delta_orientation
+        )
         self.ur5_robot = self.con.loadURDF(self.robot_urdf_path, self.pos, self.orientation, flags=flags)
 
         self.num_joints = self.con.getNumJoints(self.ur5_robot)
-        self.control_joints = ["shoulder_pan_joint", "shoulder_lift_joint", "elbow_joint", "wrist_1_joint",
-                               "wrist_2_joint", "wrist_3_joint"]
+        self.control_joints = [
+            "shoulder_pan_joint",
+            "shoulder_lift_joint",
+            "elbow_joint",
+            "wrist_1_joint",
+            "wrist_2_joint",
+            "wrist_3_joint",
+        ]
         self.joint_type_list = ["REVOLUTE", "PRISMATIC", "SPHERICAL", "PLANAR", "FIXED"]
-        self.joint_info = namedtuple("jointInfo",  # type: ignore
-                                     ["id", "name", "type", "lowerLimit", "upperLimit", "maxForce", "maxVelocity",
-                                      "controllable"])
+        self.joint_info = namedtuple(
+            "jointInfo",  # type: ignore
+            ["id", "name", "type", "lowerLimit", "upperLimit", "maxForce", "maxVelocity", "controllable"],
+        )
 
         self.joints = dict()
         for i in range(self.num_joints):
@@ -92,16 +100,31 @@ class UR5:
                 print("Joint Name: ", jointName, "Joint ID: ", jointID)
 
             controllable = True if jointName in self.control_joints else False
-            info = self.joint_info(jointID, jointName, jointType, jointLowerLimit, jointUpperLimit, jointMaxForce,
-                                   jointMaxVelocity, controllable)  # type: ignore
+            info = self.joint_info(
+                jointID,
+                jointName,
+                jointType,
+                jointLowerLimit,
+                jointUpperLimit,
+                jointMaxForce,
+                jointMaxVelocity,
+                controllable,
+            )  # type: ignore
             # print(jointID, jointName)
             if info.type == "REVOLUTE":
-                self.con.setJointMotorControl2(self.ur5_robot, info.id, self.con.VELOCITY_CONTROL, targetVelocity=0,
-                                               force=0)
+                self.con.setJointMotorControl2(
+                    self.ur5_robot, info.id, self.con.VELOCITY_CONTROL, targetVelocity=0, force=0
+                )
             self.joints[info.name] = info
         # self.set_collision_filter()
-        self.init_joint_angles = (-np.pi / 2, -np.pi * 2 / 3, np.pi * 2 / 3, -np.pi, -np.pi / 2,
-                                  np.pi)  # (-np.pi/2, -np.pi/6, np.pi*2/3, -np.pi*3/2, -np.pi/2, np.pi)#
+        self.init_joint_angles = (
+            -np.pi / 2,
+            -np.pi * 2 / 3,
+            np.pi * 2 / 3,
+            -np.pi,
+            -np.pi / 2,
+            np.pi,
+        )  # (-np.pi/2, -np.pi/6, np.pi*2/3, -np.pi*3/2, -np.pi/2, np.pi)#
         self.set_joint_angles(self.init_joint_angles)
         for _ in range(100):
             self.con.stepSimulation()
@@ -139,7 +162,7 @@ class UR5:
         self.con.setCollisionFilterPair(self.ur5_robot, self.ur5_robot, 11, 14, 0)
         self.con.setCollisionFilterPair(self.ur5_robot, self.ur5_robot, 11, 8, 0)
         self.con.setCollisionFilterPair(self.ur5_robot, self.ur5_robot, 11, 9, 0)
-        #TODO: Add collision filter for tree and UR5. But not tree collision objects.
+        # TODO: Add collision filter for tree and UR5. But not tree collision objects.
         return
 
     def unset_collision_filter(self):
@@ -162,7 +185,6 @@ class UR5:
             for j in range(self.num_joints):
                 self.con.setCollisionFilterPair(self.ur5_robot, i, j, 0, 1)
         return
-
 
     def disable_self_collision(self):
         for i in range(self.num_joints):
@@ -191,17 +213,18 @@ class UR5:
             forces.append(joint.maxForce)
 
         self.con.setJointMotorControlArray(
-            self.ur5_robot, indexes,
+            self.ur5_robot,
+            indexes,
             self.con.POSITION_CONTROL,
             targetPositions=joint_angles,
             targetVelocities=[0] * len(poses),
             positionGains=[0.05] * len(poses),
-            forces=forces
+            forces=forces,
         )
         return
 
     # TODO: Decide typing or nptyping or what
-    def set_joint_velocities(self, joint_velocities: NDArray[Shape['6, 1'], Float]) -> bool:
+    def set_joint_velocities(self, joint_velocities: NDArray[Shape["6, 1"], Float]) -> bool:
         """Set joint velocities using pybullet motor control"""
         velocities = []
         indexes = []
@@ -221,11 +244,12 @@ class UR5:
             forces.append(joint.maxForce)
 
         maxForce = 500
-        self.con.setJointMotorControlArray(self.ur5_robot,
-                                           indexes,
-                                           controlMode=self.con.VELOCITY_CONTROL,
-                                           targetVelocities=joint_velocities,
-                                           )
+        self.con.setJointMotorControlArray(
+            self.ur5_robot,
+            indexes,
+            controlMode=self.con.VELOCITY_CONTROL,
+            targetVelocities=joint_velocities,
+        )
 
         return singularity
 
@@ -235,15 +259,20 @@ class UR5:
         return joints  # type: ignore
 
     def calculate_jacobian(self):
-        jacobian = self.con.calculateJacobian(self.ur5_robot, self.tool0_link_index, [0, 0, 0],
-                                              self.get_joint_angles(),
-                                              [0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0])
+        jacobian = self.con.calculateJacobian(
+            self.ur5_robot,
+            self.tool0_link_index,
+            [0, 0, 0],
+            self.get_joint_angles(),
+            [0, 0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0, 0],
+        )
         jacobian = np.vstack(jacobian)
         return jacobian
 
-    def calculate_joint_velocities_from_ee_velocity(self,
-                                                    end_effector_velocity: NDArray[Shape['6, 1'], Float]) -> \
-            Tuple[ndarray, ndarray]:
+    def calculate_joint_velocities_from_ee_velocity(
+        self, end_effector_velocity: NDArray[Shape["6, 1"], Float]
+    ) -> Tuple[ndarray, ndarray]:
         """Calculate joint velocities from end effector velocity using jacobian"""
         jacobian = self.calculate_jacobian()
         inv_jacobian = np.linalg.pinv(jacobian)
@@ -262,8 +291,8 @@ class UR5:
         """
         collision_info = {"collisions_acceptable": False, "collisions_unacceptable": False}
 
-        collision_acceptable_list = ['SPUR', 'WATER_BRANCH']
-        collision_unacceptable_list = ['TRUNK', 'BRANCH', 'SUPPORT']
+        collision_acceptable_list = ["SPUR", "WATER_BRANCH"]
+        collision_unacceptable_list = ["TRUNK", "BRANCH", "SUPPORT"]
         for type in collision_acceptable_list:
             collisions_acceptable = self.con.getContactPoints(bodyA=self.ur5_robot, bodyB=collision_objects[type])
             if collisions_acceptable:
@@ -302,29 +331,34 @@ class UR5:
         """Check if there are any collisions between the robot and the environment
         Returns: Boolw
         """
-        collisions_success = self.con.getContactPoints(bodyA=self.ur5_robot, bodyB=body_b,
-                                                       linkIndexA=self.success_link_index)
+        collisions_success = self.con.getContactPoints(
+            bodyA=self.ur5_robot, bodyB=body_b, linkIndexA=self.success_link_index
+        )
         for i in range(len(collisions_success)):
             if collisions_success[i][-6] < 0:
                 if self.verbose > 1:
                     print("DEBUG: Success Collision")
                 return True
 
-
         return False
 
-    def calculate_ik(self, position: Tuple[float, float, float],
-                     orientation: Optional[Tuple[float, float, float, float]]) -> \
-            Tuple[float, float, float, float, float, float]:
+    def calculate_ik(
+        self, position: Tuple[float, float, float], orientation: Optional[Tuple[float, float, float, float]]
+    ) -> Tuple[float, float, float, float, float, float]:
         """Calculates joint angles from end effector position and orientation using inverse kinematics"""
         lower_limits = [-np.pi] * 6
         upper_limits = [np.pi] * 6
         joint_ranges = [2 * np.pi] * 6
 
         joint_angles = self.con.calculateInverseKinematics(
-            self.ur5_robot, self.end_effector_index, position, orientation,
-            jointDamping=[0.01] * 6, upperLimits=upper_limits,
-            lowerLimits=lower_limits, jointRanges=joint_ranges  # , restPoses=self.init_joint_angles
+            self.ur5_robot,
+            self.end_effector_index,
+            position,
+            orientation,
+            jointDamping=[0.01] * 6,
+            upperLimits=upper_limits,
+            lowerLimits=lower_limits,
+            jointRanges=joint_ranges,  # , restPoses=self.init_joint_angles
         )
         return joint_angles
 
@@ -336,8 +370,9 @@ class UR5:
 
     def get_current_vel(self, index: int) -> Tuple[Tuple[float, float, float], Tuple[float, float, float, float]]:
         """Returns current pose of the end effector. Pos wrt end effector, orientation wrt world"""
-        link_state: Tuple = self.con.getLinkState(self.ur5_robot, index, computeLinkVelocity=True,
-                                                  computeForwardKinematics=True)
+        link_state: Tuple = self.con.getLinkState(
+            self.ur5_robot, index, computeLinkVelocity=True, computeForwardKinematics=True
+        )
         trans, ang = link_state[6], link_state[7]
         return trans, ang
 
@@ -386,9 +421,14 @@ class UR5:
 
     def get_condition_number(self) -> float:
         # get jacobian
-        jacobian = self.con.calculateJacobian(self.ur5_robot, self.tool0_link_index, [0, 0, 0],
-                                              self.get_joint_angles(),
-                                              [0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0])
+        jacobian = self.con.calculateJacobian(
+            self.ur5_robot,
+            self.tool0_link_index,
+            [0, 0, 0],
+            self.get_joint_angles(),
+            [0, 0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0, 0],
+        )
         jacobian = np.vstack(jacobian)
         condition_number = np.linalg.cond(jacobian)
         return condition_number

@@ -1,15 +1,15 @@
 import os
 
 # Global URDF path pointing to robot and supports URDF
-
-MESHES_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), 'meshes'))
+PKL_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "pkl"))
+MESHES_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "meshes"))
 URDF_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "urdf"))
 TEXTURES_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "textures"))
-ROBOT_URDF_PATH = os.path.join(MESHES_PATH, 'urdf', 'ur5e', 'ur5e_cutter_new_calibrated_precise_level.urdf')
-SUPPORT_AND_POST_PATH = os.path.join(MESHES_PATH, 'urdf', 'supports_and_post.urdf')
+ROBOT_URDF_PATH = os.path.join(URDF_PATH, "ur5e", "ur5e_cutter_new_calibrated_precise_level.urdf")
+# SUPPORT_AND_POST_PATH = os.path.join(MESHES_PATH, 'urdf', 'supports_and_post.urdf')
 
 
-RGB_LABEL = { # RGB colors
+RGB_LABEL = {  # RGB colors
     (0.117647, 0.235294, 0.039216): "SPUR",
     (0.313725, 0.313725, 0.313725): "TRUNK",
     (0.254902, 0.176471, 0.058824): "BRANCH",

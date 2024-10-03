@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<robot name="supports_and_post" xmlns:xacro="http://ros.org/wiki/xacro">
+
+    <xacro:macro name="supports_and_post" params="namespace parent *origin">
+        <xacro:include filename="./macro/supports_and_post_macro.urdf.xacro"/> <!-- TODO: get absolute file paths? -->
+
+        <xacro:supports_and_post_macro
+            namespace="${namespace}"
+            parent="${parent}" >
+            <xacro:insert_block name="origin"/>
+        </xacro:supports_and_post_macro>
+
+    </xacro:macro>
+
+</robot>

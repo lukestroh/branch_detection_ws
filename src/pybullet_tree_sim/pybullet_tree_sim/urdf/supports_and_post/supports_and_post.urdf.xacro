@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<robot name="tree" xmlns:xacro="http://ros.org/wiki/xacro">
+
+    <xacro:include filename="./macro/supports_and_post_base.urdf.xacro" />
+
+    <xacro:arg name="namespace" default="" />
+    <xacro:arg name="parent" default="world" />
+    <!-- <xacro:arg name="xyz" default="0.0 0.0 0.0"/>
+    <xacro:arg name="rpy" default="0.0 0.0 0.0"/> -->
+
+    <xacro:supports_and_post
+        namespace="$(arg namespace)"
+        parent="$(arg parent)" >
+        <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.0"/>
+    </xacro:supports_and_post>
+
+</robot>

@@ -15,7 +15,7 @@
         <link name="${namespace}${tree_type}_tree${tree_id}">
             <visual>
                 <geometry>
-                    <mesh filename="./meshes/trees/envy/test/tree_${tree_id}.obj" scale="${scale}"/>
+                    <mesh filename="./meshes/trees/envy/unlabeled/obj/${namespace}${tree_type}_tree${tree_id}.obj" scale="${scale}"/>
                 </geometry>
                 <material name="LightGrey">
                     <color rgba="0.7 0.7 0.7 1.0"/>
@@ -23,7 +23,7 @@
             </visual>
             <collision concave="true">
                 <geometry>
-                    <mesh filename="./meshes/trees/envy/test/tree_${tree_id}.obj" scale="${scale}"/>
+                    <mesh filename="./meshes/trees/envy/unlabeled/obj/${namespace}${tree_type}_tree${tree_id}.obj" scale="${scale}"/>
                 </geometry>
             </collision>
                 <inertial>
