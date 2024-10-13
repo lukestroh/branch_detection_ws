@@ -1,0 +1,10 @@
+tof_node:
+  ros__parameters:
+    tof_model: vl53l0x
+    field_of_view_x: 25.0 # deg
+    field_of_view_y: 25.0 # deg
+    range_z_min: 0.03 # m
+    range_z_max: 2.0 # m
+    histogram: false
+
+
