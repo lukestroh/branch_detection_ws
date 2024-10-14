@@ -34,6 +34,7 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
 
     dir_tof_bringup = get_package_share_directory("tof_bringup")
     dir_vl53l8cx_bringup = get_package_share_directory("vl53l8cx_bringup")
+    dir_vl6180_bringup = get_package_share_directory("vl6180_bringup")
     # dir_vl53l0x_bringup = get_package_share_directory("vl53l0x_bringup")
     filepath_node_tof_config = os.path.join(dir_tof_bringup, "config", "node_tof_config.yaml")
 
@@ -64,9 +65,18 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         ),
         launch_arguments=[
             ("sensor_quantity", sensor_quantity),
-            ("use_mock_hardware", use_mock_hardware),
         ],
         condition=IfCondition([str(sensor_type.perform(context) == "vl53l8cx")])
+    )
+    
+    launch_vl6180_bringup = IncludeLaunchDescription(
+        AnyLaunchDescriptionSource(
+            os.path.join(dir_vl6180_bringup, "launch", "vl6180.launch.py"),
+        ),
+        launch_arguments=[
+            ("sensor_quantity", sensor_quantity),
+        ],
+        condition=IfCondition([str(sensor_type.perform(context) == "vl6180")])
     )
 
 
@@ -74,6 +84,7 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
     nodes_to_return = [
         node_micro_ros_agent,
         launch_vl53l8cx_bringup,
+        launch_vl6180_bringup
     ]
 
     return nodes_to_return
@@ -86,7 +97,7 @@ def generate_launch_description():
         DeclareLaunchArgument("serial_port", default_value="/dev/ttyACM0")
     )
     declared_args.append(
-        DeclareLaunchArgument("sensor_type", default_value="vl53l8cx", choices=["vl53l0x", "vl53l8cx"])
+        DeclareLaunchArgument("sensor_type", default_value="vl53l8cx", choices=["vl53l0x", "vl53l8cx", "vl6180"])
     )
     declared_args.append(
         DeclareLaunchArgument("sensor_quantity", default_value="1")
