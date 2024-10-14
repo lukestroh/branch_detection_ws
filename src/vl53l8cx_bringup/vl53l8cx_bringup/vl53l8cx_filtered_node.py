@@ -28,7 +28,7 @@ class VL53L8CXFilterNode(Node):
     RANGING_ERR = -1
     RANGING_MAX = 3000
     tof_model_type = "VL53L8CX"
-    def __init__(self, node_name = "vl53l8cx_filter_node") -> None:
+    def __init__(self, node_name = "vl53l8cx_filtered_node") -> None:
         super().__init__(node_name=node_name)
 
         # Loggers

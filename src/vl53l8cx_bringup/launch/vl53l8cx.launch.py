@@ -8,7 +8,7 @@ from launch.actions import (
     SetEnvironmentVariable,
     OpaqueFunction
 )
-from launch.conditions import IfCondition
+from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_context import LaunchContext
 from launch.substitutions import (
     LaunchConfiguration,
@@ -30,11 +30,10 @@ def setup_launch(context: LaunchContext, *args, **kwargs):
 
     param_sensor_quantity = LaunchConfiguration("sensor_quantity")
 
-
     node_vl53l8cx_filtered = Node(
         package="vl53l8cx_bringup",
-        executable="vl53l8cx_filter_node",
-        name="vl53l8cx_filter_node",
+        executable="vl53l8cx_filtered_node",
+        name="vl53l8cx_filtered_node",
         output="screen",
         parameters=[
             {"filepath_covariances": filepath_covariances},
