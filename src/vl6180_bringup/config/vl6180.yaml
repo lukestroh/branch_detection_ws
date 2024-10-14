@@ -1,4 +1,4 @@
-vl53l8cx_filter_node:
+vl6180_filtered_node:
     ros__parameters:
         dfov: 25.0
         min_range: 15 # millimeters

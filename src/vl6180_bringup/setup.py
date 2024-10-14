@@ -27,6 +27,8 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
+            "vl6180_filtered_node = vl6180_bringup.vl6180_filtered_node:main",
+
         ],
     },
 )

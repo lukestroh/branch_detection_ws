@@ -7,7 +7,7 @@ from launch.actions import (
     SetEnvironmentVariable,
     OpaqueFunction
 )
-from launch.conditions import IfCondition
+from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_context import LaunchContext
 from launch.substitutions import (
     LaunchConfiguration,
@@ -30,7 +30,7 @@ def setup_launch(context: LaunchContext, *args, **kwargs):
 
     node_vl6180_filtered = Node(
         package="vl6180_bringup",
-        executable="vl6180_filter_node",
+        executable="vl6180_filtered_node",
         name="vl6180_filter_node",
         output="screen",
         parameters=[
