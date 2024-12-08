@@ -1,0 +1,75 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="https://ros.org/wiki/xacro" name="cart">
+
+<xacro:macro name="cart_macro" params="cart_prefix:='cart__' cart_parent:='world' mesh_base_path">
+    <!-- ================== -->
+    <!--     Cart Maacro    -->
+    <!-- ================== -->
+    <material name="LightGrey">
+        <color rgba="0.7 0.7 0.7 1.0"/>
+    </material>
+    <xacro:property name="cart_mass" value="20.0"/>
+    <xacro:property name="cart_collision_box_x" value='0.5'/>
+    <xacro:property name="cart_collision_box_y" value='1.0'/>
+    <xacro:property name="cart_collision_box_z" value='0.75711'/>
+    
+    <!-- ================== -->
+    <!--       Links        -->
+    <!-- ================== -->
+    <link name="${cart_prefix}base"/>
+    
+    <link name="${cart_prefix}cart">
+        <visual>
+            <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 ${cart_collision_box_z}"/>
+            <geometry>
+                <mesh filename="${mesh_base_path}/base_mounts/cart/cart.obj"/>
+            </geometry>
+            <material name="LightGrey"/>
+        </visual>
+        <collision>
+            <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 ${cart_collision_box_z / 2}"/>
+            <geometry>
+                <box size="${cart_collision_box_x} ${cart_collision_box_y} ${cart_collision_box_z}"/>
+            </geometry>
+        </collision>
+        <inertial>
+            <origin rpy="0 0 0" xyz="0.0 0.0 0.0"/>
+            <mass value="${cart_mass}"/>
+            <inertia ixx="${1/12 * cart_mass * (cart_collision_box_y**2 + cart_collision_box_z**2)}"
+                     ixz="0.0" 
+                     ixy="0.0"
+                     iyy="${1/12 * cart_mass * (cart_collision_box_x**2 + cart_collision_box_z**2)}"
+                     iyz="0.0"
+                     izz="${1/12 * cart_mass * (cart_collision_box_y**2 + cart_collision_box_x**2)}"
+            />
+        </inertial>
+    </link>
+    
+    <link name="${cart_prefix}tool0"/>
+    
+    <!-- ================== -->
+    <!--     Joints        -->
+    <!-- ================== -->
+    <joint name="${cart_parent}--${cart_prefix}base" type="fixed">
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <parent link="${cart_parent}"/>
+        <child link="${cart_prefix}base"/>
+    </joint>
+    <joint name="${cart_prefix}base--${cart_prefix}cart" type="fixed">
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <parent link="${cart_prefix}base"/>
+        <child link="${cart_prefix}cart"/>
+    </joint>
+    <joint name="${cart_prefix}cart--${cart_prefix}tool0" type="fixed">
+        <origin rpy="0 0 0" xyz="0 0 ${cart_collision_box_z}"/>
+        <parent link="${cart_prefix}cart"/>
+        <child link="${cart_prefix}tool0"/>
+    </joint>
+    
+    
+
+</xacro:macro>
+
+
+
+</robot>

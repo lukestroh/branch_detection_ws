@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="https://ros.org/wiki/xacro" name="mock_pruner">
+
+    <!-- World link -->
+    <link name="world" />
+
+    <!-- parent_link dovetail_male_mount_prefix mesh_base_path -->
+    <xacro:arg name="dovetail_mount_parent_link" default="world" />
+    <xacro:arg name="dovetail_male_mount_prefix" default="dovetail_male_mount__" />
+    <xacro:arg name="dovetail_female_mount_prefix" default="dovetail_female_mount__" />
+    <xacro:arg name="mesh_base_path" default="" />
+    
+    <!-- dovetail_mount macro -->
+    <xacro:include filename="./macro/dovetail_mount_macro.urdf.xacro" />
+    
+    <xacro:dovetail_mount_macro
+        parent_link="$(arg dovetail_mount_parent_link)"
+        dovetail_male_mount_prefix="$(arg dovetail_male_mount_prefix)"
+        dovetail_female_mount_prefix="$(arg dovetail_female_mount_prefix)"
+        mesh_base_path="$(arg mesh_base_path)"
+    />
+    
+</robot>

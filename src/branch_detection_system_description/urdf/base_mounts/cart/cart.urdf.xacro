@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="https://ros.org/wiki/xacro" name="cart">
+
+    <!-- World link -->
+    <link name="world" />
+    
+    <!-- Args -->
+    <xacro:arg name="cart_prefix" default="cart__"/>
+    <xacro:arg name="cart_parent" default="world" />
+    <xacro:arg name="mesh_base_path" default=""/>
+
+    <!-- cart macro -->
+    <xacro:include filename="./macro/cart_macro.urdf.xacro" />
+    
+    <xacro:cart_macro
+        cart_prefix="$(arg cart_prefix)"
+        cart_parent="$(arg cart_parent)"
+        mesh_base_path="$(arg mesh_base_path)"
+    />
+    
+    <joint name="world__$(arg cart_prefix)base" type="fixed">
+        <origin xyz="0.0 0.0 0.0" rpy="0 0 0"/>
+        <parent link="world" />
+        <child link="$(arg cart_prefix)base" />
+    </joint>
+
+</robot>

@@ -1,0 +1,171 @@
+<?xml version ="1.0"?>
+<robot xmlns:xacro="http://wiki.ros.org/xacro" name="pruning_robot">
+    <!-- WORLD LINK -->
+    <link name="world"/>
+    
+    <!-- robot name parameter -->
+    <xacro:arg name="name" default="pruning_robot"/>
+    <xacro:arg name="robot_stack_qty" default='0'/>
+    <xacro:arg name="mesh_base_path" default=''/>
+    <xacro:arg name="urdf_base_path" default=''/>
+
+    
+    <!-- generate generic robot with stack_qty number of links, link parents -->
+    <xacro:macro name='arg_assignment_loop' params='stack_qty'>
+        <xacro:if value="${stack_qty}">
+            <xacro:arg name="parent${stack_qty - 1}" default="world"/>
+            <xacro:arg name="robot_part${stack_qty - 1}" default="world"/>
+            <xacro:arg_assignment_loop stack_qty="${stack_qty - 1}"/>
+        </xacro:if>
+    </xacro:macro>
+    <xacro:arg_assignment_loop stack_qty="$(arg robot_stack_qty)"/>
+    
+    <xacro:macro name="main_loop" params="stack_qty">
+        <xacro:if value="${stack_qty}">
+            <!-- Generic robot properties -->
+            <xacro:property name='resolved_part' value="$(arg robot_part${stack_qty - 1})"/>
+            <xacro:property name='resolved_part_base' value="${resolved_part}__base}"/>
+            <xacro:property name='resolved_parent_part' value="$(arg parent${stack_qty - 1})"/>
+            <xacro:if value="${ str(resolved_parent_part) == 'world'}">
+                <xacro:property name='resolved_parent_link' value='world'/>
+            </xacro:if>
+            <xacro:unless value="${ str(resolved_parent_part) == 'world' }">
+                <xacro:property name='resolved_parent_link' value="${resolved_parent_part}__tool0"/>
+            </xacro:unless>            
+       
+            <!-- UR5e -->
+            <xacro:if value="${ str(resolved_part) == 'ur5e' }">
+                <xacro:include filename="$(find ur_description)/urdf/ur_macro.xacro"/>
+                <xacro:arg name="ur_type" default='ur5e'/>
+                <xacro:arg name="ur_prefix" default='$(arg ur_type)__'/>
+                
+                <xacro:arg name="joint_limit_params" default="$(find ur_description)/config/$(arg ur_type)/joint_limits.yaml"/>
+                <xacro:arg name="kinematics_params" default="$(find ur_description)/config/$(arg ur_type)/default_kinematics.yaml"/>
+                <xacro:arg name="physical_params" default="$(find ur_description)/config/$(arg ur_type)/physical_parameters.yaml"/>
+                <xacro:arg name="visual_params" default="$(find ur_description)/config/$(arg ur_type)/visual_parameters.yaml"/>
+                <xacro:arg name="transmission_hw_interface" default=""/>
+                <xacro:arg name="safety_limits" default="false"/>
+                <xacro:arg name="safety_pos_margin" default="0.15"/>
+                <xacro:arg name="safety_k_position" default="20"/>
+                <!-- ros2_control related parameters -->
+                <xacro:arg name="headless_mode" default="false" />
+                <xacro:arg name="robot_ip" default="0.0.0.0" />
+                <xacro:arg name="script_filename" default=""/>
+                <xacro:arg name="output_recipe_filename" default=""/>
+                <xacro:arg name="input_recipe_filename" default=""/>
+                <xacro:arg name="reverse_ip" default="0.0.0.0"/>
+                <xacro:arg name="script_command_port" default="50004"/>
+                <xacro:arg name="reverse_port" default="50001"/>
+                <xacro:arg name="script_sender_port" default="50002"/>
+                <xacro:arg name="trajectory_port" default="50003"/>
+                <!--   tool communication related parameters-->
+                <xacro:arg name="use_tool_communication" default="false" />
+                <xacro:arg name="tool_voltage" default="0" />
+                <xacro:arg name="tool_parity" default="0" />
+                <xacro:arg name="tool_baud_rate" default="115200" />
+                <xacro:arg name="tool_stop_bits" default="1" />
+                <xacro:arg name="tool_rx_idle_chars" default="1.5" />
+                <xacro:arg name="tool_tx_idle_chars" default="3.5" />
+                <xacro:arg name="tool_device_name" default="/tmp/ttyUR" />
+                <xacro:arg name="tool_tcp_port" default="54321" />
+        
+                    <!-- Simulation parameters -->
+                <xacro:arg name="use_fake_hardware" default="false" />
+                <xacro:arg name="fake_sensor_commands" default="false" />
+                <xacro:arg name="sim_gazebo" default="false" />
+                <xacro:arg name="sim_ignition" default="false" />
+                <xacro:arg name="simulation_controllers" default="" />
+        
+                <!-- initial position for simulations (Fake Hardware, Gazebo, Ignition) -->
+                <xacro:arg name="initial_positions_file" default="$(find ur_description)/config/initial_positions.yaml"/>
+        
+                <!-- convert to property to use substitution in function -->
+                <xacro:property name="initial_positions_file" default="$(arg initial_positions_file)"/>
+        
+                <!-- arm -->
+                <xacro:ur_robot
+                    name="$(arg name)"
+                    tf_prefix="$(arg ur_prefix)"
+                    parent="${resolved_parent_link}"
+                    joint_limits_parameters_file="$(arg joint_limit_params)"
+                    kinematics_parameters_file="$(arg kinematics_params)"
+                    physical_parameters_file="$(arg physical_params)"
+                    visual_parameters_file="$(arg visual_params)"
+                    transmission_hw_interface="$(arg transmission_hw_interface)"
+                    safety_limits="$(arg safety_limits)"
+                    safety_pos_margin="$(arg safety_pos_margin)"
+                    safety_k_position="$(arg safety_k_position)"
+                    use_fake_hardware="$(arg use_fake_hardware)"
+                    fake_sensor_commands="$(arg fake_sensor_commands)"
+                    sim_gazebo="$(arg sim_gazebo)"
+                    sim_ignition="$(arg sim_ignition)"
+                    headless_mode="$(arg headless_mode)"
+                    initial_positions="${xacro.load_yaml(initial_positions_file)}"
+                    use_tool_communication="$(arg use_tool_communication)"
+                    tool_voltage="$(arg tool_voltage)"
+                    tool_parity="$(arg tool_parity)"
+                    tool_baud_rate="$(arg tool_baud_rate)"
+                    tool_stop_bits="$(arg tool_stop_bits)"
+                    tool_rx_idle_chars="$(arg tool_rx_idle_chars)"
+                    tool_tx_idle_chars="$(arg tool_tx_idle_chars)"
+                    tool_device_name="$(arg tool_device_name)"
+                    tool_tcp_port="$(arg tool_tcp_port)"
+                    robot_ip="$(arg robot_ip)"
+                    script_filename="$(arg script_filename)"
+                    output_recipe_filename="$(arg output_recipe_filename)"
+                    input_recipe_filename="$(arg input_recipe_filename)"
+                    reverse_ip="$(arg reverse_ip)"
+                    script_command_port="$(arg script_command_port)"
+                    reverse_port="$(arg reverse_port)"
+                    script_sender_port="$(arg script_sender_port)"
+                    trajectory_port="$(arg trajectory_port)"
+                    >
+                    <origin xyz="0 0 0" rpy="0 0 0" />          <!-- position robot in the world -->
+                </xacro:ur_robot>
+            </xacro:if>
+            
+            <!-- Robot cart -->
+            <xacro:if value="${ str(resolved_part) == 'cart' }">
+                <xacro:include filename="$(arg urdf_base_path)/base_mounts/cart/macro/cart_macro.urdf.xacro"/>
+                <xacro:cart_macro
+                    cart_prefix="cart__"
+                    cart_parent="${resolved_parent_part}"
+                    mesh_base_path="$(arg mesh_base_path)"
+                />
+            </xacro:if>
+            
+            <xacro:if value="${ str(resolved_part) == 'mock_pruner' }">
+                <xacro:include filename="$(arg urdf_base_path)/end_effectors/mock_pruner/macro/mock_pruner_macro.urdf.xacro"/>
+                <!-- Args -->
+                <xacro:arg name="mock_pruner_prefix" default="mock_pruner__" />
+                <xacro:arg name="mesh_base_path" default="" />    
+                <xacro:arg name="tof0_offset_x" default="0.02" />
+                <xacro:arg name="tof1_offset_x" default="-0.02" />
+            
+                <!-- mock_pruner  -->            
+                <xacro:mock_pruner_macro
+                    eef_prefix="$(arg mock_pruner_prefix)"
+                    parent_link="${resolved_parent_link}"
+                    mesh_base_path="$(arg mesh_base_path)"
+                    urdf_base_path="$(arg urdf_base_path)"
+                    tof0_offset='$(arg tof0_offset_x)'
+                    tof1_offset='$(arg tof1_offset_x)'
+                    camera_offset=''
+                />
+            </xacro:if>
+            <!-- <link name="$(arg robot_part${stack_qty - 1})" /> -->
+                
+                
+            <!-- </xacro:unless> -->
+            
+            <!-- call macro recursively -->
+            <xacro:main_loop stack_qty="${stack_qty - 1}"/>
+        </xacro:if> 
+    </xacro:macro>
+    
+    <!-- call main loop -->
+    <xacro:main_loop stack_qty="$(arg robot_stack_qty)"/>
+
+
+
+</robot>
