@@ -47,7 +47,7 @@ def setup_launch(context: LaunchContext, *args, **kwargs):
 
 def generate_launch_description():
     declared_args = []
-    declared_args.append(DeclareLaunchArgument("sensor_quantity", default_value="1"))
+    declared_args.append(DeclareLaunchArgument("sensor_quantity", default_value="2"))
 
     ld = LaunchDescription(declared_args + [OpaqueFunction(function=setup_launch)])
 

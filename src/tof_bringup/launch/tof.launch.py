@@ -36,15 +36,16 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
     dir_vl53l8cx_bringup = get_package_share_directory("vl53l8cx_bringup")
     dir_vl6180_bringup = get_package_share_directory("vl6180_bringup")
     # dir_vl53l0x_bringup = get_package_share_directory("vl53l0x_bringup")
-    filepath_node_tof_config = os.path.join(dir_tof_bringup, "config", "node_tof_config.yaml")
 
-    sensor_config_file = PathJoinSubstitution([
+    filepath_sensor_config = PathJoinSubstitution([
         dir_tof_bringup,
         "config",
         sensor_type.perform(context) + ".yaml"
     ])
 
-    # Launch files and nodes
+    # =========================
+    #     microROS agent
+    # =========================
     node_micro_ros_agent = Node(
         package="micro_ros_agent",
         executable="micro_ros_agent",
@@ -59,6 +60,9 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         condition=UnlessCondition(use_mock_hardware)
     )
 
+    # =========================
+    #     Sensor launches
+    # =========================
     launch_vl53l8cx_bringup = IncludeLaunchDescription(
         AnyLaunchDescriptionSource(
             os.path.join(dir_vl53l8cx_bringup, "launch", "vl53l8cx.launch.py"),
@@ -91,20 +95,20 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
 
 
 def generate_launch_description():
-    declared_args = []
-    # Launch configuration settings
-    declared_args.append(
-        DeclareLaunchArgument("serial_port", default_value="/dev/ttyACM0")
-    )
-    declared_args.append(
-        DeclareLaunchArgument("sensor_type", default_value="vl53l8cx", choices=["vl53l0x", "vl53l8cx", "vl6180"])
-    )
-    declared_args.append(
-        DeclareLaunchArgument("sensor_quantity", default_value="1")
-    )
-    declared_args.append(
-        DeclareLaunchArgument("use_mock_hardware", default_value="false")
-    )
+    declared_configs = [
+        dict(name='serial_port', default_value='/dev/ttyACM0'),
+        dict(name='sensor_type', default_value='vl53l8cx', choices=['vl53l8cx', 'vl6180']),
+        dict(name='sensor_quantity', default_value='1'),
+        dict(name='use_mock_hardware', default_value='false'),
+    ]
 
+    declared_args = [
+        DeclareLaunchArgument(
+            name=config.get('name'),
+            default_value=config.get('default_value'),
+            choices=config.get('choices'),
+            description=config.get('description')
+        ) for config in declared_configs
+    ]
 
     return LaunchDescription(declared_args + [OpaqueFunction(function=launch_setup)])

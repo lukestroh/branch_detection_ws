@@ -32,7 +32,7 @@ class VL6180FilterNode(Node):
         super().__init__(node_name=node_name)
 
         # Loggers
-        self.info = lambda x: self.get_logger().info(f"{x}")
+        self.info = lambda x: self.get_logger().info(f"{x}")  
         self.warn = lambda x: self.get_logger().warn(f"{x}")
         self.err = lambda x: self.get_logger().error(f"{x}")
 
