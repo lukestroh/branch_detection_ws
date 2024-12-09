@@ -1,5 +1,10 @@
 vl53l8cx_filtered_node:
-    ros__parameters:
-        dfov: 65.0
-        min_range: 0
-        max_range: 2000
+    ros__parameters:        
+        name: "VL53L8CX"
+	data_type: "d"
+	depth:
+	    dfov: 65.0
+	    near_plane: 0.03
+	    far_plane: 3.4
+	    width: 8
+	    height: 8
