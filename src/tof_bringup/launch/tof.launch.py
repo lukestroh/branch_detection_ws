@@ -2,12 +2,7 @@
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription, LaunchContext
-from launch.actions import (
-    DeclareLaunchArgument,
-    IncludeLaunchDescription,
-    SetEnvironmentVariable,
-    OpaqueFunction
-)
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, SetEnvironmentVariable, OpaqueFunction
 from launch.conditions import UnlessCondition, IfCondition
 from launch.launch_description_sources import AnyLaunchDescriptionSource
 from launch.substitutions import (
@@ -19,12 +14,15 @@ from launch_ros.actions import Node
 import os
 
 import rclpy.logging
+
 logger = rclpy.logging.get_logger("tof.launch")
 
 
 def launch_setup(context: LaunchContext, *args, **kwargs):
     # Environmental variables
-    ENV_ROS_DOMAIN_ID = SetEnvironmentVariable(name="ROS_DOMAIN_ID", value="0") # TODO: set this in branch_detection_system_bringup
+    ENV_ROS_DOMAIN_ID = SetEnvironmentVariable(
+        name="ROS_DOMAIN_ID", value="0"
+    )  # TODO: set this in branch_detection_system_bringup
 
     # Launch configuration settings
     serial_port = LaunchConfiguration("serial_port")
@@ -37,11 +35,7 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
     dir_vl6180_bringup = get_package_share_directory("vl6180_bringup")
     # dir_vl53l0x_bringup = get_package_share_directory("vl53l0x_bringup")
 
-    filepath_sensor_config = PathJoinSubstitution([
-        dir_tof_bringup,
-        "config",
-        sensor_type.perform(context) + ".yaml"
-    ])
+    filepath_sensor_config = PathJoinSubstitution([dir_tof_bringup, "config", sensor_type.perform(context) + ".yaml"])
 
     # =========================
     #     microROS agent
@@ -51,13 +45,8 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         executable="micro_ros_agent",
         name="micro_ros_agent",
         output="screen",
-        arguments=[
-            "serial",
-            "--dev",
-            serial_port,
-            f"ROS_DOMAIN_ID={ENV_ROS_DOMAIN_ID}"
-        ],
-        condition=UnlessCondition(use_mock_hardware)
+        arguments=["serial", "--dev", serial_port, f"ROS_DOMAIN_ID={ENV_ROS_DOMAIN_ID}"],
+        condition=UnlessCondition(use_mock_hardware),
     )
 
     # =========================
@@ -70,9 +59,9 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         launch_arguments=[
             ("sensor_quantity", sensor_quantity),
         ],
-        condition=IfCondition([str(sensor_type.perform(context) == "vl53l8cx")])
+        condition=IfCondition([str(sensor_type.perform(context) == "vl53l8cx")]),
     )
-    
+
     launch_vl6180_bringup = IncludeLaunchDescription(
         AnyLaunchDescriptionSource(
             os.path.join(dir_vl6180_bringup, "launch", "vl6180.launch.py"),
@@ -80,35 +69,30 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         launch_arguments=[
             ("sensor_quantity", sensor_quantity),
         ],
-        condition=IfCondition([str(sensor_type.perform(context) == "vl6180")])
+        condition=IfCondition([str(sensor_type.perform(context) == "vl6180")]),
     )
 
-
-
-    nodes_to_return = [
-        node_micro_ros_agent,
-        launch_vl53l8cx_bringup,
-        launch_vl6180_bringup
-    ]
+    nodes_to_return = [node_micro_ros_agent, launch_vl53l8cx_bringup, launch_vl6180_bringup]
 
     return nodes_to_return
 
 
 def generate_launch_description():
     declared_configs = [
-        dict(name='serial_port', default_value='/dev/ttyACM0'),
-        dict(name='sensor_type', default_value='vl53l8cx', choices=['vl53l8cx', 'vl6180']),
-        dict(name='sensor_quantity', default_value='1'),
-        dict(name='use_mock_hardware', default_value='false'),
+        dict(name="serial_port", default_value="/dev/ttyACM0"),
+        dict(name="sensor_type", default_value="vl53l8cx", choices=["vl53l8cx", "vl6180"]),
+        dict(name="sensor_quantity", default_value="1"),
+        dict(name="use_mock_hardware", default_value="false"),
     ]
 
     declared_args = [
         DeclareLaunchArgument(
-            name=config.get('name'),
-            default_value=config.get('default_value'),
-            choices=config.get('choices'),
-            description=config.get('description')
-        ) for config in declared_configs
+            name=config.get("name"),
+            default_value=config.get("default_value"),
+            choices=config.get("choices"),
+            description=config.get("description"),
+        )
+        for config in declared_configs
     ]
 
     return LaunchDescription(declared_args + [OpaqueFunction(function=launch_setup)])

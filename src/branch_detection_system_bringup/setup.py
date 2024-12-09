@@ -15,13 +15,12 @@ setup(
         # Launch files
         (os.path.join("share", package_name, "launch"), glob.glob("launch/*launch.py")),
         # Rviz files
-        (os.path.join('share', package_name, 'rviz'), glob.glob('rviz/*.rviz')),
+        (os.path.join("share", package_name, "rviz"), glob.glob("rviz/*.rviz")),
         # # Config files
         # (os.path.join("share", package_name, "config"), glob.glob("config/*.yaml")),
         # # (os.path.join("share", package_name, "urdf"), glob.glob("urdf/*.urdf", recursive=True)),
         # (os.path.join("share", package_name, "srdf"), glob.glob("srdf/*.srdf")),
         # (os.path.join("share", package_name, "srdf"), glob.glob("srdf/*.xacro")),
-
     ],
     install_requires=["setuptools"],
     zip_safe=True,

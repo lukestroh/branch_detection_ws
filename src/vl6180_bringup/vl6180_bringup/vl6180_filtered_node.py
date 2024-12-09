@@ -5,7 +5,7 @@ from rclpy.node import Node
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.parameter import Parameter
 
-from vl6180_msgs.msg import Vl6180, Vl6180Stamped # Vl6180Filtered
+from vl6180_msgs.msg import Vl6180, Vl6180Stamped  # Vl6180Filtered
 from visualization_msgs.msg import Marker, MarkerArray
 from geometry_msgs.msg import Point, Quaternion
 from sensor_msgs.msg import JointState
@@ -28,23 +28,30 @@ class VL6180FilterNode(Node):
     RANGING_ERR = -1
     RANGING_MAX = 3000
     tof_model_type = "VL6180"
-    def __init__(self, node_name = "vl6180_filtered_node") -> None:
+
+    def __init__(self, node_name="vl6180_filtered_node") -> None:
         super().__init__(node_name=node_name)
 
         # Loggers
-        self.info = lambda x: self.get_logger().info(f"{x}")  
+        self.info = lambda x: self.get_logger().info(f"{x}")
         self.warn = lambda x: self.get_logger().warn(f"{x}")
         self.err = lambda x: self.get_logger().error(f"{x}")
 
         # Launch parameters
-        self.use_mock_hardware = self.declare_parameter("use_mock_hardware", value=Parameter.Type.BOOL).get_parameter_value().bool_value
+        self.use_mock_hardware = (
+            self.declare_parameter("use_mock_hardware", value=Parameter.Type.BOOL).get_parameter_value().bool_value
+        )
         # TODO: keep sensor quanitity in launch file, just launch two of these nodes
-        self.num_sensors = self.declare_parameter("sensor_quantity", value=Parameter.Type.INTEGER).get_parameter_value().integer_value
+        self.num_sensors = (
+            self.declare_parameter("sensor_quantity", value=Parameter.Type.INTEGER).get_parameter_value().integer_value
+        )
 
         # Yaml parameters
         self.dfov = self.declare_parameter(name="dfov", value=Parameter.Type.DOUBLE).get_parameter_value().double_value
 
-        self.info(f"\nTime-of-flight sensor configuration:\n\tSensor type: {self.tof_model_type}\n\tNumber of sensors: {self.num_sensors}")
+        self.info(
+            f"\nTime-of-flight sensor configuration:\n\tSensor type: {self.tof_model_type}\n\tNumber of sensors: {self.num_sensors}"
+        )
 
         # Subscriptions
         self._sub_vl6180_distance_raw = self.create_subscription(

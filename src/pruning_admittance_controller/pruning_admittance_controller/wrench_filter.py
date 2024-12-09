@@ -23,17 +23,12 @@ class WrenchFilterNode(Node):
 
         # Subscribers
         self._sub_wrench_raw = self.create_subscription(
-            msg_type=WrenchStamped,
-            topic='/wrench',
-            callback=self._sub_cb_wrench_raw,
-            qos_profile=1
+            msg_type=WrenchStamped, topic="/wrench", callback=self._sub_cb_wrench_raw, qos_profile=1
         )
 
         # Publishers
         self._pub_wrench_filtered = self.create_publisher(
-            msg_type=WrenchStamped,
-            topic='/wrench_filtered',
-            qos_profile=1
+            msg_type=WrenchStamped, topic="/wrench_filtered", qos_profile=1
         )
 
         # Internal messages
@@ -46,7 +41,7 @@ class WrenchFilterNode(Node):
         self.f_y_deque = deque(np.zeros(deque_size))
         self.f_z_deque = deque(np.zeros(deque_size))
         return
-    
+
     def _sub_cb_wrench_raw(self, msg: WrenchStamped) -> None:
         """Callback to handle raw wrench data"""
         self.t_x_deque.popleft()
@@ -58,28 +53,21 @@ class WrenchFilterNode(Node):
         self.f_z_deque.append(msg.wrench.force.z)
         self.t_x_deque.append(msg.wrench.torque.x)
 
-
-
-
         # Don't publish anything until the buffers have filled
         if self._sub_counter > self.deque_size:
             self.msg_wrench_stamped_filtered.wrench.force.y = np.mean(self.f_y_deque)
             self.msg_wrench_stamped_filtered.wrench.force.z = np.mean(self.f_z_deque)
             self.msg_wrench_stamped_filtered.wrench.torque.x = np.mean(self.t_x_deque)
 
-            self.msg_wrench_stamped_filtered.header.frame_id = f"ur5e__tool0" # TODO: check where sensor is located?
+            self.msg_wrench_stamped_filtered.header.frame_id = f"ur5e__tool0"  # TODO: check where sensor is located?
             self.msg_wrench_stamped_filtered.header.stamp = self.get_clock().now().to_msg()
 
             # Publish filtered values
             self._pub_wrench_filtered.publish(msg=self.msg_wrench_stamped_filtered)
 
-        
-
         self._sub_counter += 1
 
         return
-    
-
 
 
 def main():

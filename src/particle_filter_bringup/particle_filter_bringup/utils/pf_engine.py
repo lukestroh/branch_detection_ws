@@ -21,9 +21,7 @@ class PFEngine:
     def reset_pf(self, setup_data) -> None:
         """Reset the particle filter with the given setup data."""
 
-        self.start_pose_center = np.array(
-            [setup_data.start_pose_center_x, setup_data.start_pose_center_y]
-        )
+        self.start_pose_center = np.array([setup_data.start_pose_center_x, setup_data.start_pose_center_y])
         self.start_pose_width = setup_data.start_width
         self.start_pose_height = setup_data.start_height
         self.rotation = np.deg2rad(setup_data.start_rotation)
@@ -88,24 +86,18 @@ class PFEngine:
         if self.spawn_in_both_directions:
             half_particle_num = int(num_particles / 2)
             particles[:half_particle_num, 2] = (
-                np.random.uniform(orientation_min, orientation_max, half_particle_num)
-                + self.orientation_center
+                np.random.uniform(orientation_min, orientation_max, half_particle_num) + self.orientation_center
             )
             particles[half_particle_num:, 2] = (
-                np.random.uniform(orientation_min, orientation_max, half_particle_num)
-                + self.orientation_center
-                - np.pi
+                np.random.uniform(orientation_min, orientation_max, half_particle_num) + self.orientation_center - np.pi
             )
         else:
             particles[:, 2] = (
-                np.random.uniform(orientation_min, orientation_max, num_particles)
-                + self.orientation_center
+                np.random.uniform(orientation_min, orientation_max, num_particles) + self.orientation_center
             )
 
         # Rotate the particles around the start pose center by the given rotation
-        particles = self.rotate_around_point(
-            particles, self.rotation, self.start_pose_center
-        )
+        particles = self.rotate_around_point(particles, self.rotation, self.start_pose_center)
 
         # Find the closest map tree to each particle
         distances, idx = self.kd_tree.query(particles[:, 0:2])
@@ -153,9 +145,7 @@ class PFEngine:
             widths_sense = np.array(tree_msg["widths"])
 
             # Calculate the position of the tree on the map
-            tree_global_coords = self.get_object_global_locations(
-                self.particles, postions_sense
-            )
+            tree_global_coords = self.get_object_global_locations(self.particles, postions_sense)
 
             # Calculate the weights of the particles
             self.particle_weights = self.get_particle_weight_localize(
@@ -219,9 +209,7 @@ class PFEngine:
         self.particles = new_particles
         self.particle_weights = np.ones(num_particles) / num_particles
 
-    def get_object_global_locations(
-        self, particle_states: np.ndarray, object_locations: np.ndarray
-    ) -> np.ndarray:
+    def get_object_global_locations(self, particle_states: np.ndarray, object_locations: np.ndarray) -> np.ndarray:
         """
         Calculates the location of the given objects in the global frame for each particle by transforming the object
         locations in the particle frames to the global frame.
@@ -244,28 +232,20 @@ class PFEngine:
         s = np.sin(particle_states[:, 2])
         c = np.cos(particle_states[:, 2])
 
-        object_global_location = np.zeros(
-            (object_locations.shape[0], particle_states.shape[0], 2)
-        )
+        object_global_location = np.zeros((object_locations.shape[0], particle_states.shape[0], 2))
 
         for i in range(len(object_locations)):
             # Calculate x and y coordinates of trees in global frame
             object_global_location[i, :, 0] = (
-                particle_states[:, 0]
-                + object_locations[i, 0] * c
-                + object_locations[i, 1] * -s
+                particle_states[:, 0] + object_locations[i, 0] * c + object_locations[i, 1] * -s
             )
             object_global_location[i, :, 1] = (
-                particle_states[:, 1]
-                + object_locations[i, 0] * s
-                + object_locations[i, 1] * c
+                particle_states[:, 1] + object_locations[i, 0] * s + object_locations[i, 1] * c
             )
 
         return object_global_location
 
-    def object_local_polar_transform(
-        self, particle_states: np.ndarray, object_locs: np.ndarray
-    ) -> np.ndarray:
+    def object_local_polar_transform(self, particle_states: np.ndarray, object_locs: np.ndarray) -> np.ndarray:
         """
         Calculates an array of object locations the object's location in the local frame.
 
@@ -286,7 +266,7 @@ class PFEngine:
         dy = object_locs[:, 1] - particle_states[:, 1]
 
         # Calculate range (Euclidean distance)
-        ranges = np.sqrt(dx ** 2 + dy ** 2)
+        ranges = np.sqrt(dx**2 + dy**2)
 
         # Calculate bearing, adjusting for particle orientation
         bearings = np.arctan2(dy, dx) - particle_states[:, 2]
@@ -329,15 +309,11 @@ class PFEngine:
             # find the range and bearing of the sensed tree relative to the particle
             object_coords = self.map_positions[idx]
 
-            object_relative_particles_rb = self.object_local_polar_transform(
-                particle_states, object_coords
-            )
+            object_relative_particles_rb = self.object_local_polar_transform(particle_states, object_coords)
 
             seen_object_rb = self.xy_to_polar(positions_sensed[i, :].reshape(1, 2))
 
-            range_diff = np.abs(
-                object_relative_particles_rb[:, 0] - seen_object_rb[:, 0]
-            )
+            range_diff = np.abs(object_relative_particles_rb[:, 0] - seen_object_rb[:, 0])
             bearing_diff = np.abs(
                 np.arctan2(
                     np.sin(object_relative_particles_rb[:, 1] - seen_object_rb[:, 1]),
@@ -368,9 +344,7 @@ class PFEngine:
     def probability_of_values(self, arr, mean, std_dev):
         """Find the probability of a value in an array given a mean and standard deviation."""
 
-        norm_pdf = (1 / (std_dev * np.sqrt(2 * np.pi))) * np.exp(
-            -((arr - mean) ** 2) / (2 * std_dev ** 2)
-        )
+        norm_pdf = (1 / (std_dev * np.sqrt(2 * np.pi))) * np.exp(-((arr - mean) ** 2) / (2 * std_dev**2))
         return norm_pdf
 
     def rotate_around_point(self, particles, angle_rad, center_point):
@@ -447,12 +421,8 @@ class PFEngine:
         """
 
         # Create multi-dimensional grid
-        x_bins = np.arange(
-            particles[:, 0].min(), particles[:, 0].max() + self.bin_size, self.bin_size
-        )
-        y_bins = np.arange(
-            particles[:, 1].min(), particles[:, 1].max() + self.bin_size, self.bin_size
-        )
+        x_bins = np.arange(particles[:, 0].min(), particles[:, 0].max() + self.bin_size, self.bin_size)
+        y_bins = np.arange(particles[:, 1].min(), particles[:, 1].max() + self.bin_size, self.bin_size)
         theta_bins = np.arange(
             particles[:, 2].min(),
             particles[:, 2].max() + self.bin_angle,
@@ -471,9 +441,7 @@ class PFEngine:
 
         # Calculate n using the derived formula
         first_term = (k - 1) / (2 * self.epsilon)
-        second_term = (
-            1 - (2 / (9 * (k - 1))) + np.sqrt(2 * z_1_delta / (9 * (k - 1)))
-        ) ** 3
+        second_term = (1 - (2 / (9 * (k - 1))) + np.sqrt(2 * z_1_delta / (9 * (k - 1)))) ** 3
         n = first_term * second_term
 
         if n < self.min_num_particles:
@@ -513,9 +481,7 @@ class PFEngine:
             feature_sizes = np.bincount(labeled_array.ravel())[1:]
             # Calculate the maximum feature size that is allowed, this is somewhat arbitrary but is based on the
             # bin linear and angular sizes, it has worked well in testing.
-            feature_size_max = int(
-                ((1 / self.bin_size) ** 2) * ((0.25 * np.pi) / self.bin_angle)
-            )
+            feature_size_max = int(((1 / self.bin_size) ** 2) * ((0.25 * np.pi) / self.bin_angle))
             if feature_sizes[0] < feature_size_max:
                 return True
             else:

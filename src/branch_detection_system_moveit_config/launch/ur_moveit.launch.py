@@ -11,6 +11,7 @@ from launch_ros.substitutions import FindPackageShare
 from ur_moveit_config.launch_common import load_yaml
 
 import rclpy.logging
+
 logger = rclpy.logging.get_logger("branch.ur_moveit.launch")
 
 
@@ -115,27 +116,27 @@ def launch_setup(context, *args, **kwargs):
     # )
     # robot_description_semantic = {"robot_description_semantic": robot_description_semantic_content}
 
-    robot_description_content = Command([
-        PathJoinSubstitution([FindExecutable(name='xacro')]),
-        " ",
-        PathJoinSubstitution([
-            FindPackageShare(description_package), 'urdf', 'robot.urdf.xacro'
-        ]),
-        " ", 
-        "use_fake_hardware:=",
-        use_fake_hardware,
-        " ", 
-        "name:=pruning_robot"
-    ])
+    robot_description_content = Command(
+        [
+            PathJoinSubstitution([FindExecutable(name="xacro")]),
+            " ",
+            PathJoinSubstitution([FindPackageShare(description_package), "urdf", "robot.urdf.xacro"]),
+            " ",
+            "use_fake_hardware:=",
+            use_fake_hardware,
+            " ",
+            "name:=pruning_robot",
+        ]
+    )
     robot_description = {"robot_description": robot_description_content.perform(context)}
 
-    robot_description_semantic_content = Command([
-        PathJoinSubstitution([FindExecutable(name='xacro')]),
-        " ",
-        PathJoinSubstitution([
-            FindPackageShare(moveit_config_package), 'srdf', 'robot.srdf'
-        ])
-    ])
+    robot_description_semantic_content = Command(
+        [
+            PathJoinSubstitution([FindExecutable(name="xacro")]),
+            " ",
+            PathJoinSubstitution([FindPackageShare(moveit_config_package), "srdf", "robot.srdf"]),
+        ]
+    )
     robot_description_semantic = {"robot_description_semantic": robot_description_semantic_content.perform(context)}
 
     robot_description_kinematics = PathJoinSubstitution(
@@ -195,7 +196,7 @@ def launch_setup(context, *args, **kwargs):
         output="screen",
         parameters=[
             warehouse_ros_config,
-        ]
+        ],
     )
 
     # Start the actual move_group node/action server
@@ -218,9 +219,7 @@ def launch_setup(context, *args, **kwargs):
     )
 
     # rviz with moveit configuration
-    rviz_config_file = PathJoinSubstitution(
-        [FindPackageShare(moveit_config_package), "rviz", "view_robot.rviz"]
-    )
+    rviz_config_file = PathJoinSubstitution([FindPackageShare(moveit_config_package), "rviz", "view_robot.rviz"])
     rviz_node = Node(
         package="rviz2",
         condition=IfCondition(launch_rviz),
@@ -245,12 +244,7 @@ def launch_setup(context, *args, **kwargs):
         package="moveit_servo",
         condition=IfCondition(launch_servo),
         executable="servo_node_main",
-        parameters=[
-            servo_params,
-            robot_description,
-            robot_description_semantic,
-            robot_description_kinematics
-        ],
+        parameters=[servo_params, robot_description, robot_description_semantic, robot_description_kinematics],
         output="screen",
     )
 
@@ -352,11 +346,7 @@ def generate_launch_description():
         have to be updated.",
         )
     )
-    declared_arguments.append(
-        DeclareLaunchArgument("launch_rviz", default_value="true", description="Launch RViz?")
-    )
-    declared_arguments.append(
-        DeclareLaunchArgument("launch_servo", default_value="true", description="Launch Servo?")
-    )
+    declared_arguments.append(DeclareLaunchArgument("launch_rviz", default_value="true", description="Launch RViz?"))
+    declared_arguments.append(DeclareLaunchArgument("launch_servo", default_value="true", description="Launch Servo?"))
 
     return LaunchDescription(declared_arguments + [OpaqueFunction(function=launch_setup)])

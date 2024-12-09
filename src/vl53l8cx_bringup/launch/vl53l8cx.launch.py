@@ -2,12 +2,7 @@
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription, LaunchContext
-from launch.actions import (
-    DeclareLaunchArgument,
-    IncludeLaunchDescription,
-    SetEnvironmentVariable,
-    OpaqueFunction
-)
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, SetEnvironmentVariable, OpaqueFunction
 from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_context import LaunchContext
 from launch.substitutions import (
@@ -20,7 +15,9 @@ import os
 import json
 
 import rclpy.logging
+
 logger = rclpy.logging.get_logger("vl53l8cx.launch")
+
 
 def setup_launch(context: LaunchContext, *args, **kwargs):
 
@@ -47,6 +44,7 @@ def setup_launch(context: LaunchContext, *args, **kwargs):
     ]
 
     return nodes_to_launch
+
 
 def generate_launch_description():
     declared_args = []

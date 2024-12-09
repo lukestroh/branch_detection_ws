@@ -38,7 +38,7 @@ def launch_setup(context, *args, **kwargs) -> list:
     use_admittance_controller = LaunchConfiguration("use_admittance_controller")
     use_mock_hardware = LaunchConfiguration("use_mock_hardware")
 
-    # 
+    #
     system_bringup_pkg = LaunchConfiguration("system_bringup_pkg")
     system_description_pkg = LaunchConfiguration("system_description_pkg")
     system_moveit_config_pkg = LaunchConfiguration("system_moveit_config_pkg")
@@ -48,7 +48,7 @@ def launch_setup(context, *args, **kwargs) -> list:
     ur_robot_ip = LaunchConfiguration("ur_robot_ip")
     headless_mode = LaunchConfiguration("headless_mode")
     mock_sensor_commands = LaunchConfiguration("mock_sensor_commands")
-    
+
     # =======================
     #     Launch files
     # =======================
@@ -66,7 +66,7 @@ def launch_setup(context, *args, **kwargs) -> list:
             ("ur_robot_ip", ur_robot_ip),
             ("use_mock_hardware", use_mock_hardware),
             ("headless_mode", headless_mode),
-            ('mock_sensor_commands', mock_sensor_commands),
+            ("mock_sensor_commands", mock_sensor_commands),
         ],
     )
 
@@ -94,9 +94,6 @@ def launch_setup(context, *args, **kwargs) -> list:
         ],
     )
 
-
-    
-
     # launch_particle_filter = IncludeLaunchDescription(
     #     AnyLaunchDescriptionSource(
     #         os.path.join(get_package_share_directory("particle_filter_bringup"), "launch", "particle_filter.launch.py")
@@ -105,7 +102,7 @@ def launch_setup(context, *args, **kwargs) -> list:
 
     _to_run = [
         ENV_ROS_DOMAIN_ID,
-        # launch_admittance_controller, 
+        # launch_admittance_controller,
         launch_ur_basic,
     ]
 
@@ -120,7 +117,7 @@ def generate_launch_description():
         dict(name="mock_sensor_commands", default_value="false"),
         dict(name="system_description_file", default_value="robot.urdf.xacro", description="urdf/xacro file"),
         dict(name="system_semantic_description_file", default_value="robot.srdf", description="srdf/xacro file"),
-        dict(name="tof_sensor_type", default_value="vl6180", description="tof type", choices=['vl53l8cx', 'vl6180']),
+        dict(name="tof_sensor_type", default_value="vl6180", description="tof type", choices=["vl53l8cx", "vl6180"]),
         dict(
             name="use_admittance_controller",
             default_value="true",

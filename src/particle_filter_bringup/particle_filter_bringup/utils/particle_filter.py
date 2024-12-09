@@ -95,22 +95,15 @@ class ParticleFilter:
             np.ndarray(dtype=Particle)
         """
         particles = np.empty((N, 6))
-        particles[:, 0] = self.generator.uniform(
-            low=x_range[0], high=x_range[1], size=N
-        )
-        particles[:, 1] = self.generator.uniform(
-            low=y_range[0], high=y_range[1], size=N
-        )
-        particles[:, 2] = self.generator.uniform(
-            low=z_range[0], high=z_range[1], size=N
-        )
+        particles[:, 0] = self.generator.uniform(low=x_range[0], high=x_range[1], size=N)
+        particles[:, 1] = self.generator.uniform(low=y_range[0], high=y_range[1], size=N)
+        particles[:, 2] = self.generator.uniform(low=z_range[0], high=z_range[1], size=N)
         particles[:, 3] = self.generator.uniform(low=-1, high=1, size=N)
         particles[:, 4] = self.generator.uniform(low=-1, high=1, size=N)
         particles[:, 5] = self.generator.uniform(low=-1, high=1, size=N)
 
         # normalize orientation vector
         particles[:, 3:] = np.divide(particles[:, 3:], np.array([np.linalg.norm(particles[:, 3:], axis=1)]).T)
-
 
         _particles = np.empty(N, dtype=Particle)
         for i in range(N):
@@ -164,7 +157,7 @@ class ParticleFilter:
 
         # self.logger.info(f"{self.particles}")
         return
-    
+
     def get_particle_scores(self, particles: np.ndarray, tof_data: np.ndarray):
 
         # Initialize scores
@@ -172,9 +165,9 @@ class ParticleFilter:
 
         # Calculate distance between sensed branch and the model tree for each Particle
         for i in range(particles.shape[0]):
-            
+
             # Find the nearest neighbor of each branch in the tree
-            distances, idx = ... # self.kd_tree.query(particle_coords)
+            distances, idx = ...  # self.kd_tree.query(particle_coords)
 
             # find the range and bearing of sensed branch relative to the Particle
             range_diff = ...
@@ -187,15 +180,11 @@ class ParticleFilter:
             # Update the scores
             scores *= prob_range * prob_bearing
 
-
-
         return
-    
+
     def probability_of_values(self, arr, mean, std_dev):
         """Find the probability of a value in an array given a mean and standard deviation."""
-        norm_pdf = (1 / (std_dev * np.sqrt(2 * np.pi))) * np.exp(
-            -((arr - mean) ** 2) / (2 * std_dev ** 2)
-        )
+        norm_pdf = (1 / (std_dev * np.sqrt(2 * np.pi))) * np.exp(-((arr - mean) ** 2) / (2 * std_dev**2))
         return norm_pdf
 
     def tof_update(self, tof_tfs: np.ndarray, tof_data: np.ndarray) -> None:
@@ -215,21 +204,19 @@ class ParticleFilter:
             scores = self.get_particle_scores()
             self.weights = scores / np.linalg.norm(scores)
 
-
         return
-    
+
     def motion_update(self):
-        # See predict() ? 
+        # See predict() ?
         """Propogate the particles forward in time using TODO: servoing?"""
         return
-    
+
     def update(self):
         # predict()
         # motion_update()
         # tof_update()
         return
 
-        
     def estimate_distribution(self):
         """Update the mean and variance of the weighted particles"""
         # states = self.particles[:, 0:3]
@@ -260,11 +247,11 @@ def plot_particles(data: np.ndarray):
             sizemode="raw",
             sizeref=0.1,
             anchor="center",
-    #         showlegend=False
+            #         showlegend=False
         )
 
     fig.update_layout(scene_camera_eye=dict(x=-0.76, y=1.8, z=0.92))
-    fig.update_traces(showscale=False) # gets rid of the default color bar on the side
+    fig.update_traces(showscale=False)  # gets rid of the default color bar on the side
     fig.show()
 
     return
@@ -283,8 +270,6 @@ def main():
     plot_particles(data=pfilter.particles)
 
     pfilter.predict()
-
-    
 
     tof_reading = np.array([0.256, 0.265])
     pfilter.update()

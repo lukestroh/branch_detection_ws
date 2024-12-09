@@ -31,7 +31,7 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
     system_semantic_description_file = LaunchConfiguration("system_semantic_description_file")
 
     # tf_prefix = LaunchConfiguration("tf_prefix")
-    launch_servo = LaunchConfiguration('launch_servo')
+    launch_servo = LaunchConfiguration("launch_servo")
     ur_type = LaunchConfiguration("ur_type")
     ur_robot_ip = LaunchConfiguration("ur_robot_ip")
     use_mock_hardware = LaunchConfiguration("use_mock_hardware")
@@ -62,26 +62,29 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
 
     #################################################################################################################
 
-    
     # ======================
     #     Robot config
     # ======================
-    robot_conf = load_yaml(package_name='branch_detection_system_description', file_path=os.path.join("config", "robot_conf.yaml"))
+    robot_conf = load_yaml(
+        package_name="branch_detection_system_description", file_path=os.path.join("config", "robot_conf.yaml")
+    )
 
     parent_child_mappings = {}
-    
+
     # Add the required urdf args from each element of the robot_stack config
-    for i, robot_part in enumerate(robot_conf['robot_stack']):
+    for i, robot_part in enumerate(robot_conf["robot_stack"]):
         robot_part = robot_part.strip().lower()
         # Assign parent frames
         if i == 0:
             parent_child_mappings.update({f"parent{i}": "world"})
         else:
-            parent_child_mappings.update({f"parent{i}": robot_conf['robot_stack'][i - 1]})
+            parent_child_mappings.update({f"parent{i}": robot_conf["robot_stack"][i - 1]})
         # Assign part frame ids
-        parent_child_mappings.update({f"robot_part{i}": robot_conf['robot_stack'][i]})
+        parent_child_mappings.update({f"robot_part{i}": robot_conf["robot_stack"][i]})
         # Add each robot part's config to the robot_conf
-        part_conf = load_yaml(package_name='branch_detection_system_description', file_path=os.path.join("config", f"{robot_part}.yaml"))
+        part_conf = load_yaml(
+            package_name="branch_detection_system_description", file_path=os.path.join("config", f"{robot_part}.yaml")
+        )
         if part_conf is not None:
             parent_child_mappings.update(part_conf)
         else:
@@ -89,39 +92,40 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
 
     _mappings = {
         "name": "pruning_robot",
-        "tf_prefix": parent_child_mappings['ur_prefix'],
-        "robot_stack_qty": str(len(robot_conf['robot_stack'])),
+        "tf_prefix": parent_child_mappings["ur_prefix"],
+        "robot_stack_qty": str(len(robot_conf["robot_stack"])),
         "headless_mode": headless_mode,
         "mock_sensor_commands": mock_sensor_commands,
         "use_mock_hardware": use_mock_hardware,
         "use_fake_hardware": use_mock_hardware,  # UR5 humble hasn't updated
-        "urdf_base_path": os.path.join(get_package_share_directory('branch_detection_system_description'), "urdf"),
-        "mesh_base_path": os.path.join(get_package_share_directory('branch_detection_system_description'), 'meshes'),
-        "initial_positions_file": os.path.join(get_package_share_directory('branch_detection_system_description'), "config/initial_positions.yaml")
+        "urdf_base_path": os.path.join(get_package_share_directory("branch_detection_system_description"), "urdf"),
+        "mesh_base_path": os.path.join(get_package_share_directory("branch_detection_system_description"), "meshes"),
+        "initial_positions_file": os.path.join(
+            get_package_share_directory("branch_detection_system_description"), "config/initial_positions.yaml"
+        ),
     }
-    _mappings.update(
-        parent_child_mappings
-    )
+    _mappings.update(parent_child_mappings)
 
     mcb = MoveItConfigsBuilder(
-        robot_name='branch_detection_system',
-        package_name='branch_detection_system_moveit_config'
+        robot_name="branch_detection_system", package_name="branch_detection_system_moveit_config"
     )
     mcb.robot_description(
         file_path=os.path.join(
-            get_package_share_directory('branch_detection_system_description'),
-            "urdf/robot/robot.urdf.xacro"
+            get_package_share_directory("branch_detection_system_description"), "urdf/robot/robot.urdf.xacro"
         ),
-        mappings=_mappings
+        mappings=_mappings,
     )
     mcb.robot_description_semantic(
         file_path=os.path.join(
-            get_package_share_directory('branch_detection_system_moveit_config'),
-            "srdf/robot.srdf.xacro"
+            get_package_share_directory("branch_detection_system_moveit_config"), "srdf/robot.srdf.xacro"
         ),
-        mappings=_mappings
+        mappings=_mappings,
     )
-    mcb.joint_limits(file_path=os.path.join(get_package_share_directory('branch_detection_system_moveit_config'), "config/joint_limits.yaml"))
+    mcb.joint_limits(
+        file_path=os.path.join(
+            get_package_share_directory("branch_detection_system_moveit_config"), "config/joint_limits.yaml"
+        )
+    )
     mcb.planning_pipelines(
         default_planning_pipeline="ompl",
         pipelines=["ompl", "pilz_industrial_motion_planner", "chomp"],
@@ -134,18 +138,18 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         )
     )
     moveit_configs = mcb.to_moveit_configs()
-####################################################################################################################################
+    ####################################################################################################################################
 
     # define update rate
     update_rate_config_file = PathJoinSubstitution(
         [
-            get_package_share_directory('ur_robot_driver'),
+            get_package_share_directory("ur_robot_driver"),
             "config",
             ur_type.perform(context) + "_update_rate.yaml",
         ]
     )
     initial_joint_controllers = PathJoinSubstitution(
-        [get_package_share_directory('ur_robot_driver'), "config", "ur_controllers.yaml"]
+        [get_package_share_directory("ur_robot_driver"), "config", "ur_controllers.yaml"]
     )
 
     node_ros2_control = Node(
@@ -174,9 +178,7 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
 
     node_dashboard_client = Node(
         package="ur_robot_driver",
-        condition=IfCondition(
-            AndSubstitution(launch_dashboard_client, NotSubstitution(use_mock_hardware))
-        ),
+        condition=IfCondition(AndSubstitution(launch_dashboard_client, NotSubstitution(use_mock_hardware))),
         executable="dashboard_client",
         name="dashboard_client",
         output="screen",
@@ -191,12 +193,9 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         parameters=[moveit_configs.robot_description],
     )
 
-    rviz_config_file = PathJoinSubstitution([
-        get_package_share_directory('branch_detection_system_description'),
-        "rviz",
-        "view_robot.rviz"
-    ])
-    
+    rviz_config_file = PathJoinSubstitution(
+        [get_package_share_directory("branch_detection_system_description"), "rviz", "view_robot.rviz"]
+    )
 
     # Spawn controllers
     # filepath_moveit_controllers = PathJoinSubstitution([
@@ -307,7 +306,7 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         output="screen",
         parameters=[
             warehouse_ros_config,
-        ]
+        ],
     )
 
     node_move_group = Node(
@@ -331,25 +330,21 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
     # MoveIt Servo
     filepath_servo_config = PathJoinSubstitution(
         [
-            get_package_share_directory('branch_detection_system_moveit_config'),
+            get_package_share_directory("branch_detection_system_moveit_config"),
             "config",
             "ur_servo.yaml",
         ]
     )
-    parameterfile_servo_config = ParameterFile(
-        filepath_servo_config, allow_substs=True
-    )
+    parameterfile_servo_config = ParameterFile(filepath_servo_config, allow_substs=True)
     parameterfile_servo_config.evaluate(context=context)
     yamlcontent_servo_config = load_yaml(
-        package_name='branch_detection_system_moveit_config',
-        file_path=os.path.join(
-            "config", str(parameterfile_servo_config.param_file)
-        ),
+        package_name="branch_detection_system_moveit_config",
+        file_path=os.path.join("config", str(parameterfile_servo_config.param_file)),
     )
     # logger.warn(f"{servo_yaml_content}")
     servo_params = dict(moveit_servo=yamlcontent_servo_config)
     node_servo = Node(
-        package='moveit_servo',
+        package="moveit_servo",
         executable="servo_node_main",
         output="screen",
         parameters=[
@@ -357,7 +352,7 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
             moveit_configs.robot_description,
             moveit_configs.robot_description_semantic,
             moveit_configs.robot_description_kinematics,
-            moveit_configs.joint_limits
+            moveit_configs.joint_limits,
         ],
         condition=IfCondition(launch_servo),
     )
@@ -375,8 +370,8 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
             moveit_configs.robot_description_kinematics,
             moveit_configs.joint_limits,
             ompl_planning_pipeline_config,
-            warehouse_ros_config
-        ]
+            warehouse_ros_config,
+        ],
     )
 
     # Delay rviz start after joint_state_broadcaster to avoid unnecessary warning output
@@ -384,14 +379,12 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         event_handler=OnProcessStart(target_action=node_joint_state_broadcaster_spawner, on_start=[node_rviz])
     )
 
-    robot_controllers = ['joint_trajectory_controller']
+    robot_controllers = ["joint_trajectory_controller"]
     robot_controller_spawners = []
     for controller in robot_controllers:
         robot_controller_spawners.append(
             Node(
-                package="controller_manager",
-                executable="spawner",
-                arguments=[controller, "-c", "/controller_manager"]
+                package="controller_manager", executable="spawner", arguments=[controller, "-c", "/controller_manager"]
             )
         )
 
@@ -403,7 +396,6 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
                 event_handler=OnProcessExit(target_action=node_joint_state_broadcaster_spawner, on_exit=[controller])
             )
         )
-
 
     ####################################################################################################################
     ####################################################################################################################
@@ -420,18 +412,15 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         node_move_group,
         node_servo,
         # controller_spawners,
-
         # warehouse_server_node,
-
     ] + register_events_delay_robot_controller_spawners_after_JSB_spawner
-    
 
     return _to_start
 
 
 def generate_launch_description():
     declared_configs = [
-        dict(name='activate_joint_controller', default_value='true'),
+        dict(name="activate_joint_controller", default_value="true"),
         dict(name="headless_mode", default_value="true", description="Run the UR robot in headless mode."),
         dict(
             name="initial_ur_controller",
@@ -445,10 +434,10 @@ def generate_launch_description():
                 "passthrough_trajectory_controller",
             ],
         ),
-        dict(name='launch_dashboard_client', default_value="true"),
-        dict(name='launch_rviz', default_value="true"),
-        dict(name='launch_servo', default_value="true"),
-        dict(name='mock_sensor_commands', default_value="false"),
+        dict(name="launch_dashboard_client", default_value="true"),
+        dict(name="launch_rviz", default_value="true"),
+        dict(name="launch_servo", default_value="true"),
+        dict(name="mock_sensor_commands", default_value="false"),
         dict(
             name="system_description_package",
             default_value="branch_detection_system_description",
@@ -464,7 +453,7 @@ def generate_launch_description():
             default_value="true",
             description="If true, passes `use_mock_hardware:=true` to all hardware interfaces.",
         ),
-        dict(name='warehouse_sqlite_path', default_value=os.path.expanduser("~/.ros/warehouse_ros.sqlite"))
+        dict(name="warehouse_sqlite_path", default_value=os.path.expanduser("~/.ros/warehouse_ros.sqlite")),
     ]
 
     declared_args = [
