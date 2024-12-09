@@ -9,8 +9,8 @@
     <xacro:arg name="mock_pruner_parent_link" default="world" />
     <xacro:arg name="mock_pruner_prefix" default="mock_pruner__" />
     <xacro:arg name="mesh_base_path" default="" />    
-    <xacro:arg name="tof0_offset_x" default="0.02" />
-    <xacro:arg name="tof1_offset_x" default="-0.02" />
+    <xacro:arg name="tof0_offset" default="0.1 0.0 0.142" />
+    <xacro:arg name="tof1_offset" default="-0.1 0.0 0.142" />
 
     <!-- mock_pruner macro -->
     <xacro:include filename="./macro/mock_pruner_macro.urdf.xacro" />
@@ -18,8 +18,8 @@
     <xacro:mock_pruner_macro
         parent_link="$(arg mock_pruner_parent_link)"
         eef_prefix="$(arg mock_pruner_prefix)"
-        tof0_offset='$(arg tof0_offset_x)'
-        tof1_offset='$(arg tof1_offset_x)'
+        tof0_offset='$(arg tof0_offset)'
+        tof1_offset='$(arg tof1_offset)'
         mesh_base_path="$(arg mesh_base_path)"
         camera_offset=''
     />

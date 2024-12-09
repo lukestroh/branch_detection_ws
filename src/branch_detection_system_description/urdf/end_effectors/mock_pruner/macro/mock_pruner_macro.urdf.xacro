@@ -14,8 +14,8 @@
         <xacro:property name="mock_pruner_mass" value="2.0" />
         <xacro:property name="base__tool0_offset" value="0.0 0.0 0.27208"/>
         <!-- <xacro:property name="base__tool0_offset" value="0.0 0.0 0.20"/> -->
-        <xacro:property name="base__tof0_offset" value="${tof0_offset} 0 0.142"/>
-        <xacro:property name="base__tof1_offset" value="${tof1_offset} 0 0.142"/>
+        <xacro:property name="base__tof0_offset" value="${tof0_offset}"/>
+        <xacro:property name="base__tof1_offset" value="${tof1_offset}"/>
         
         <!-- <xacro:property name="base__tof0_offset" value="${tof0_offset} 0 0.15"/> -->
         <!-- <xacro:property name="base__tof1_offset" value="${tof1_offset} 0 0.15"/> -->
@@ -50,13 +50,13 @@
                 </material>
                 <origin xyz="0 0 0" rpy="0 0 0"/>
                 <geometry>
-                    <mesh filename="${mesh_base_path}/end_effectors/mock_pruner/MockPruner.STL" />
+                    <mesh filename="file://$(find branch_detection_system_description)/meshes/end_effectors/mock_pruner/MockPruner.STL" />
                 </geometry>
             </visual>
             <collision>
                 <origin xyz="0 0 0" rpy="0 0 0"/>
                 <geometry>
-                    <mesh filename="${mesh_base_path}/end_effectors/mock_pruner/MockPruner.STL" />
+                    <mesh filename="file://$(find branch_detection_system_description)/meshes/end_effectors/mock_pruner/MockPruner.STL" />
                 </geometry>
             </collision>
             <inertial>

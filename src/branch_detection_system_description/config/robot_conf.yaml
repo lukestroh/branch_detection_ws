@@ -1,0 +1,4 @@
+robot_stack:
+  - cart
+  - ur5e
+  - mock_pruner

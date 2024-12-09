@@ -22,7 +22,7 @@
         <visual>
             <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 ${cart_collision_box_z}"/>
             <geometry>
-                <mesh filename="${mesh_base_path}/base_mounts/cart/cart.obj"/>
+                <mesh filename="file://$(find branch_detection_system_description)/meshes/base_mounts/cart/cart.obj"/>
             </geometry>
             <material name="LightGrey"/>
         </visual>

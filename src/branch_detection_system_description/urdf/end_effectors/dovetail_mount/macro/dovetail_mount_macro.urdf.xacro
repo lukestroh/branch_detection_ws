@@ -3,7 +3,7 @@
 
     <xacro:property name="dovetail_male_tool0_height" value="0.008"/>
     <xacro:property name="dovetail_female_tool0_height" value="0.023"/>
-    <xacro:property name="dovetail_male_rot_offset" value="0.0 0.0 ${pi}"/>
+    <xacro:property name="dovetail_male_rot_offset" value="0.0 0.0 0.0"/>
 
 
     <xacro:macro name="dovetail_male_mount_macro" params="parent_link dovetail_male_mount_prefix mesh_base_path">
@@ -22,13 +22,13 @@
                 <material name="lavender"/>
                 <origin xyz="0 0 0" rpy="0 0 0"/>
                 <geometry>
-                    <mesh filename="${mesh_base_path}/end_effectors/dovetail/DovetailMale.STL"/>
+                    <mesh filename="file://$(find branch_detection_system_description)/meshes/end_effectors/dovetail/DovetailMale.STL"/>
                 </geometry>
             </visual>
             <collision>
                 <origin xyz="0 0 0" rpy="0 0 0"/>
                 <geometry>
-                    <mesh filename="${mesh_base_path}/end_effectors/dovetail/DovetailMale.STL"/>
+                    <mesh filename="file://$(find branch_detection_system_description)/meshes/end_effectors/dovetail/DovetailMale.STL"/>
                 </geometry>
             </collision>
             <inertial>
@@ -71,13 +71,13 @@
                 <material name="ochre"/>
                 <origin xyz="0 0 0" rpy="0 0 0"/>
                 <geometry>
-                    <mesh filename="${mesh_base_path}/end_effectors/dovetail/DovetailFemale.STL"/>
+                    <mesh filename="file://$(find branch_detection_system_description)/meshes/end_effectors/dovetail/DovetailFemale.STL"/>
                 </geometry>
             </visual>
             <collision>
                 <origin xyz="0 0 0" rpy="0 0 0"/>
                 <geometry>
-                    <mesh filename="${mesh_base_path}/end_effectors/dovetail/DovetailFemale.STL"/>
+                    <mesh filename="file://$(find branch_detection_system_description)/meshes/end_effectors/dovetail/DovetailFemale.STL"/>
                 </geometry>
             </collision>
             <inertial>
