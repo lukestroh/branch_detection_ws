@@ -58,14 +58,14 @@ def launch_setup(context, *args, **kwargs) -> list:
             os.path.join(get_package_share_directory("branch_detection_system_bringup"), "launch", "ur_basic.launch.py")
         ),
         launch_arguments=[
-            ("system_moveit_config_pkg", system_moveit_config_pkg),
-            ("system_description_package", system_description_pkg),
-            ("system_description_file", system_description_file),
-            ("system_semantic_description_file", system_semantic_description_file),
+            # ("system_moveit_config_pkg", system_moveit_config_pkg),
+            # ("system_description_package", system_description_pkg),
+            # ("system_description_file", system_description_file),
+            # ("system_semantic_description_file", system_semantic_description_file),
             ("ur_type", ur_type),
             ("ur_robot_ip", ur_robot_ip),
-            ("use_fake_hardware", use_mock_hardware),
-            ('headless_mode': headless_mode),
+            ("use_mock_hardware", use_mock_hardware),
+            ("headless_mode", headless_mode),
             ('mock_sensor_commands', mock_sensor_commands),
         ],
     )
@@ -107,8 +107,6 @@ def launch_setup(context, *args, **kwargs) -> list:
         ENV_ROS_DOMAIN_ID,
         # launch_admittance_controller, 
         launch_ur_basic,
-        node_ros2_control,
-        node_ur_control,
     ]
 
     return _to_run

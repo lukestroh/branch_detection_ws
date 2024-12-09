@@ -31,6 +31,7 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
     system_semantic_description_file = LaunchConfiguration("system_semantic_description_file")
 
     # tf_prefix = LaunchConfiguration("tf_prefix")
+    launch_servo = LaunchConfiguration('launch_servo')
     ur_type = LaunchConfiguration("ur_type")
     ur_robot_ip = LaunchConfiguration("ur_robot_ip")
     use_mock_hardware = LaunchConfiguration("use_mock_hardware")
@@ -327,6 +328,40 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         ],
     )
 
+    # MoveIt Servo
+    filepath_servo_config = PathJoinSubstitution(
+        [
+            get_package_share_directory('branch_detection_system_moveit_config'),
+            "config",
+            "ur_servo.yaml",
+        ]
+    )
+    parameterfile_servo_config = ParameterFile(
+        filepath_servo_config, allow_substs=True
+    )
+    parameterfile_servo_config.evaluate(context=context)
+    yamlcontent_servo_config = load_yaml(
+        package_name='branch_detection_system_moveit_config',
+        file_path=os.path.join(
+            "config", str(parameterfile_servo_config.param_file)
+        ),
+    )
+    # logger.warn(f"{servo_yaml_content}")
+    servo_params = dict(moveit_servo=yamlcontent_servo_config)
+    node_servo = Node(
+        package='moveit_servo',
+        executable="servo_node_main",
+        output="screen",
+        parameters=[
+            servo_params,
+            moveit_configs.robot_description,
+            moveit_configs.robot_description_semantic,
+            moveit_configs.robot_description_kinematics,
+            moveit_configs.joint_limits
+        ],
+        condition=IfCondition(launch_servo),
+    )
+
     node_rviz = Node(
         package="rviz2",
         condition=IfCondition(launch_rviz),
@@ -383,65 +418,12 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         # launch_ur_moveit,
         register_event_delay_rviz_after_JSB_spawner,
         node_move_group,
+        node_servo,
         # controller_spawners,
 
         # warehouse_server_node,
 
     ] + register_events_delay_robot_controller_spawners_after_JSB_spawner
-
-    # Leaving out tool nodes for nw
-
-    # launch_ur_base = IncludeLaunchDescription(
-    #     AnyLaunchDescriptionSource(
-    #         os.path.join(get_package_share_directory("ur_robot_driver"), "launch", "ur_control.launch.py"),
-    #     ),
-    #     launch_arguments=[
-    #         ("robot_ip", ur_robot_ip),
-    #         ("ur_type", ur_type),
-    #         # ("name", "pruning_robot"),
-    #         ("prefix", "ur5e__"),
-    #         ("use_fake_hardware", use_mock_hardware),
-    #         ("headless_mode", headless_mode),
-    #         ("initial_joint_controller", initial_ur_controller),
-    #         ("launch_rviz", "true"),
-    #         ("description_package", system_description_package),
-    #         ("description_file", system_description_file),
-    #     ],
-    # )
-
-    # # launch_ur_moveit = IncludeLaunchDescription(
-    # #     AnyLaunchDescriptionSource(
-    # #         os.path.join(get_package_share_directory("ur_moveit_config"), "launch", "ur_moveit.launch.py")
-    # #     ),
-    # #     launch_arguments=[
-    # #         ("ur_type", ur_type),
-    # #         ("prefix", "ur5e__"),
-    # #         # ("name", "pruning_robot"),
-    # #         ("use_fake_hardware", use_mock_hardware),
-    # #         ("description_package", ur_description_file),
-    # #         ("moveit_config_package", ur_description_package),
-    # #         ("moveit_config_file", ur_semantic_description_file),
-    # #         ("launch_rviz", "true"),
-    # #     ],
-    # # )
-    # launch_ur_moveit = IncludeLaunchDescription(
-    #     AnyLaunchDescriptionSource(
-    #         os.path.join(get_package_share_directory('branch_detection_system_moveit_config'), 'launch', 'ur_moveit.launch.py')
-    #     ),
-    #     launch_arguments=[
-    #         ("ur_type", ur_type),
-    #         ("prefix", "ur5e__"),
-    #         # ("name", "pruning_robot"),
-    #         ("use_fake_hardware", use_mock_hardware),
-    #         # ("description_package", ur_description_package),
-    #         # ("description_file", ur_description_file),
-    #         # ("moveit_config_package", ur_description_package),
-    #         # ("moveit_config_file", ur_semantic_description_file),
-    #         ("launch_rviz", "true"),
-    #     ],
-    # )
-
-
     
 
     return _to_start
@@ -465,6 +447,7 @@ def generate_launch_description():
         ),
         dict(name='launch_dashboard_client', default_value="true"),
         dict(name='launch_rviz', default_value="true"),
+        dict(name='launch_servo', default_value="true"),
         dict(name='mock_sensor_commands', default_value="false"),
         dict(
             name="system_description_package",
