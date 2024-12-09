@@ -1,0 +1,114 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="https://ros.org/wiki/xacro" name="mock_pruner">
+    <!-- Mock Pruner -->
+    <!-- <xacro:arg name="name" default="mock_pruner"/> -->
+    <!-- <xacro:arg name="mesh_base_path" default="./"/> -->
+    <!-- <xacro:property name="end_effector_parent" value="" /> -->
+    <xacro:property name="mock_pruner_rot_offset" value="0.0 0.0 0.0"/>
+    
+    <!-- Materials -->
+    
+    
+    <xacro:macro name="mock_pruner_macro" params="parent_link eef_prefix tof0_offset tof1_offset camera_offset mesh_base_path urdf_base_path">
+        <!-- static properties -->
+        <xacro:property name="mock_pruner_mass" value="2.0" />
+        <xacro:property name="base__tool0_offset" value="0.0 0.0 0.27208"/>
+        <!-- <xacro:property name="base__tool0_offset" value="0.0 0.0 0.20"/> -->
+        <xacro:property name="base__tof0_offset" value="${tof0_offset}"/>
+        <xacro:property name="base__tof1_offset" value="${tof1_offset}"/>
+        
+        <!-- <xacro:property name="base__tof0_offset" value="${tof0_offset} 0 0.15"/> -->
+        <!-- <xacro:property name="base__tof1_offset" value="${tof1_offset} 0 0.15"/> -->
+        <xacro:property name="base__camera0_offset" value="0.0 0.0600 0.19094"/>
+        
+        
+        <!-- additional args -->
+        <xacro:arg name="dovetail_male_mount_prefix" default="dovetail_male_mount__" />
+        <xacro:arg name="dovetail_female_mount_prefix" default="dovetail_female_mount__" />
+        <xacro:arg name="mesh_base_path" default=""/>
+        <xacro:arg name="urdf_base_path" default=""/>
+        
+        <!-- dovetail_mount macro -->
+        <xacro:include filename="${urdf_base_path}/end_effectors/dovetail_mount/macro/dovetail_mount_macro.urdf.xacro" />
+        <xacro:dovetail_mount_macro
+            parent_link="${parent_link}"
+            dovetail_male_mount_prefix="$(arg dovetail_male_mount_prefix)"
+            dovetail_female_mount_prefix="$(arg dovetail_female_mount_prefix)"
+            mesh_base_path="${mesh_base_path}"
+        />
+        
+        <!-- ==================== -->
+        <!--  Mock Pruner Macro   -->
+        <!-- ==================== -->
+        <!-- ================== -->
+        <!--       Links        -->
+        <!-- ================== -->
+        <link name="${eef_prefix}base" >
+            <visual>
+                <material name="orange">
+                    <color rgba="${255/255} ${108/255} ${10/255} 1.0"/>
+                </material>
+                <origin xyz="0 0 0" rpy="0 0 0"/>
+                <geometry>
+                    <mesh filename="file://$(find branch_detection_system_description)/meshes/end_effectors/mock_pruner/MockPruner.STL" />
+                </geometry>
+            </visual>
+            <collision>
+                <origin xyz="0 0 0" rpy="0 0 0"/>
+                <geometry>
+                    <mesh filename="file://$(find branch_detection_system_description)/meshes/end_effectors/mock_pruner/MockPruner.STL" />
+                </geometry>
+            </collision>
+            <inertial>
+                <mass value="${mock_pruner_mass}"/>
+                <origin xyz="0.0 0.0 0.0"/>
+                <inertia ixx="0.1" ixy="0.0" ixz="0.0" iyy="0.1" iyz="0.0" izz="0.1"/>
+            </inertial>
+        </link>
+        
+        <!-- camera link -->
+        <link name="${eef_prefix}camera0" />
+        
+        <!-- tof links -->
+        <link name="${eef_prefix}tof0" />
+        <link name="${eef_prefix}tof1" />
+        
+        <!-- tool/cut_point link -->
+        <link name="${eef_prefix}tool0" />
+        
+        
+        <!-- ================== -->
+        <!--     Joints        -->
+        <!-- ================== -->
+        <joint name="$(arg dovetail_female_mount_prefix)tool0--${eef_prefix}base" type="fixed">
+            <origin xyz="0 0 0" rpy="0 0 0"/>
+            <parent link="$(arg dovetail_female_mount_prefix)tool0"/>
+            <child link="${eef_prefix}base"/>
+        </joint>
+        
+        <joint name="${eef_prefix}base--camera0" type="fixed">
+            <origin xyz="${base__camera0_offset}" rpy="0 0 0"/>
+            <parent link="${eef_prefix}base" />
+            <child link="${eef_prefix}camera0" />
+        </joint>
+        
+        <joint name="${eef_prefix}base--tof0" type="fixed">
+            <!-- <xacro:insert_block name="origin"/> -->
+            <origin xyz="${base__tof0_offset}" rpy="0 0 0"/>
+            <parent link="${eef_prefix}base" />
+            <child link="${eef_prefix}tof0" />
+        </joint>
+        <joint name="${eef_prefix}base--tof1" type="fixed">
+            <origin xyz="${base__tof1_offset}" rpy="0 0 0"/>
+            <parent link="${eef_prefix}base" />
+            <child link="${eef_prefix}tof1" />
+        </joint>
+        
+        <joint name="${eef_prefix}base--tool0" type="fixed">
+            <origin xyz="${base__tool0_offset}" rpy="0 0 0"/>
+            <parent link="${eef_prefix}base" />
+            <child link="${eef_prefix}tool0" />
+        </joint>
+        
+    </xacro:macro>
+</robot>

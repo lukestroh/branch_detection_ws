@@ -2,13 +2,8 @@
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription, LaunchContext
-from launch.actions import (
-    DeclareLaunchArgument,
-    IncludeLaunchDescription,
-    SetEnvironmentVariable,
-    OpaqueFunction
-)
-from launch.conditions import IfCondition
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, SetEnvironmentVariable, OpaqueFunction
+from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_context import LaunchContext
 from launch.substitutions import (
     LaunchConfiguration,
@@ -20,7 +15,9 @@ import os
 import json
 
 import rclpy.logging
+
 logger = rclpy.logging.get_logger("vl53l8cx.launch")
+
 
 def setup_launch(context: LaunchContext, *args, **kwargs):
 
@@ -30,11 +27,10 @@ def setup_launch(context: LaunchContext, *args, **kwargs):
 
     param_sensor_quantity = LaunchConfiguration("sensor_quantity")
 
-
     node_vl53l8cx_filtered = Node(
         package="vl53l8cx_bringup",
-        executable="vl53l8cx_filter_node",
-        name="vl53l8cx_filter_node",
+        executable="vl53l8cx_filtered_node",
+        name="vl53l8cx_filtered_node",
         output="screen",
         parameters=[
             {"filepath_covariances": filepath_covariances},
@@ -48,6 +44,7 @@ def setup_launch(context: LaunchContext, *args, **kwargs):
     ]
 
     return nodes_to_launch
+
 
 def generate_launch_description():
     declared_args = []

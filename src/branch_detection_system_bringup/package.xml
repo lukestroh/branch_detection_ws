@@ -9,6 +9,15 @@
 
   <depend>rclpy</depend>
 
+  <depend>vl53l8cx_msgs</depend>
+  <depend>vl6180_msgs</depend>
+  <depend>branch_detection_system_description</depend>
+  <depend>branch_detection_system_moveit_config</depend>
+  <depend>pruning_admittance_controller</depend>
+  <depend>tof_bringup</depend>
+  <depend>vl53l8cx_bringup</depend>
+  <depend>vl6180_bringup</depend>
+
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
   <test_depend>ament_pep257</test_depend>

@@ -28,6 +28,7 @@ class Parameters:
                 setattr(self, field.name, data[field.name])
 
         self.log_settings()
+        return
 
     def save_to_yaml(self, file_path):
 
@@ -35,8 +36,10 @@ class Parameters:
 
         with open(file_path, "w") as file:
             yaml.dump(asdict(self), file)
+        return
 
     def log_settings(self):
         logging.info("Current settings:")
         for field in fields(self):
             logging.debug(f"{field.name}: {getattr(self, field.name)}")
+        return

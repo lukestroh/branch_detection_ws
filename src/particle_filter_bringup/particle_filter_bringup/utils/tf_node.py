@@ -34,15 +34,11 @@ class TFNode(Node):
     def get_param_val(self, key):
         return self._params[key].value
 
-    def lookup_transform(
-        self, target_frame, source_frame, time=None, sync=True, as_matrix=False
-    ):
+    def lookup_transform(self, target_frame, source_frame, time=None, sync=True, as_matrix=False):
         if time is None:
             time = rclpy.time.Time()
         if sync:
-            future = self.tf_buffer.wait_for_transform_async(
-                target_frame, source_frame, time
-            )
+            future = self.tf_buffer.wait_for_transform_async(target_frame, source_frame, time)
 
             def wait_for_future_synced(future):
                 event = Event()

@@ -6,7 +6,7 @@ import numpy as np
 from typing import List, Union, Dict, Any
 
 
-class Branch():
+class Branch:
     def __init__(self, name: str = "") -> None:
         # Parent/child branches
         self._name: str = name
@@ -15,12 +15,11 @@ class Branch():
 
         # Branch geometry
         self._t_value: float = None  # where along 0-1 index of the parent branch is this branch
-        self._phi: float = None # rotation from the z-axis with respect to the parent branch
-        self._theta: float = None # rotation around the z-axis with respect to the parent branch
-        
-        
+        self._phi: float = None  # rotation from the z-axis with respect to the parent branch
+        self._theta: float = None  # rotation around the z-axis with respect to the parent branch
+
         return
-    
+
     def info(self) -> Dict[str, Any]:
         """Generate a dict that contains the information of a branch"""
         if self._parent is None:
@@ -35,18 +34,18 @@ class Branch():
             theta=self._theta,
         )
         return info_dict
-    
+
     @property
     def name(self) -> str:
         """Return branch name"""
         return self._name
-    
+
     @name.setter
     def name(self, name: str) -> None:
         """Set branch name"""
         self._name = name
         return
-    
+
     @property
     def children(self) -> List[Branch]:
         """Return a list of branch children"""
@@ -54,12 +53,7 @@ class Branch():
 
     def add_child(self, child: Branch, t_value: float, phi: float, theta: float) -> None:
         """Add a child branch object"""
-        parent = dict(
-            branch=self,
-            t_value=t_value,
-            phi=phi,
-            theta=theta
-        )
+        parent = dict(branch=self, t_value=t_value, phi=phi, theta=theta)
         child.parent = parent
         self._children.append(child)
         return
@@ -92,12 +86,12 @@ class Branch():
         except KeyError as e:
             print(e)
         return
-    
+
     @property
     def t_value(self):
         """Get t-value with respect to the parent"""
         return self._t_value
-    
+
     @t_value.setter
     def t_value(self, t_value: float):
         """Set t-value with respect to the parent"""
@@ -110,7 +104,7 @@ class Branch():
     def phi(self):
         """Get angle phi with respect to the parent"""
         return self._phi
-    
+
     @phi.setter
     def phi(self, phi: float):
         """Set angle phi with respect to the parent"""
@@ -118,7 +112,7 @@ class Branch():
             raise ValueError("Angle phi cannot be greater than π or less than -π.")
         self._phi = phi
         return
-    
+
     @property
     def theta(self):
         """Get angle theta with respect to the parent"""
@@ -145,6 +139,7 @@ class Branch():
 
 def main():
     from objprint import op
+
     trunk = Branch(name="trunk")
     branch0 = Branch(name="branch0")
     branch00 = Branch(name="branch0.0")

@@ -1,0 +1,125 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="https://ros.org/wiki/xacro" name="dovetail_mount">
+
+    <xacro:property name="dovetail_male_tool0_height" value="0.008"/>
+    <xacro:property name="dovetail_female_tool0_height" value="0.023"/>
+    <xacro:property name="dovetail_male_rot_offset" value="0.0 0.0 0.0"/>
+
+
+    <xacro:macro name="dovetail_male_mount_macro" params="parent_link dovetail_male_mount_prefix mesh_base_path">
+        <!-- ==================== -->
+        <!-- Dovetail Male Mount  -->
+        <!-- ==================== -->
+        <material name="lavender">
+            <color rgba="0.749 0.580 0.894 1"/>
+        </material>
+        <xacro:property name="dovetail_male_mass" value="0.025"/>
+        
+        <!-- links -->
+        <link name="${dovetail_male_mount_prefix}base"/>
+        <link name='${dovetail_male_mount_prefix}body'>
+            <visual>
+                <material name="lavender"/>
+                <origin xyz="0 0 0" rpy="0 0 0"/>
+                <geometry>
+                    <mesh filename="file://$(find branch_detection_system_description)/meshes/end_effectors/dovetail/DovetailMale.STL"/>
+                </geometry>
+            </visual>
+            <collision>
+                <origin xyz="0 0 0" rpy="0 0 0"/>
+                <geometry>
+                    <mesh filename="file://$(find branch_detection_system_description)/meshes/end_effectors/dovetail/DovetailMale.STL"/>
+                </geometry>
+            </collision>
+            <inertial>
+                <mass value="${dovetail_male_mass}"/>
+                <origin xyz="0.0 0.0 0.0"/>
+                <inertia ixx="0.0001" ixy="0.0" ixz="0.0" iyy="0.0001" iyz="0.0" izz="0.0001"/>
+            </inertial>
+        </link>
+        <link name="${dovetail_male_mount_prefix}tool0"/>
+        <!-- joints -->
+        <joint name="${parent_link}--${dovetail_male_mount_prefix}base" type="fixed">
+            <origin xyz="0 0 0" rpy="${dovetail_male_rot_offset}"/>
+            <parent link="${parent_link}"/>
+            <child link="${dovetail_male_mount_prefix}base"/>
+        </joint>
+        <joint name="${dovetail_male_mount_prefix}base--body" type="fixed">
+            <origin xyz="0 0 0" rpy="0 0 0"/>
+            <parent link="${dovetail_male_mount_prefix}base"/>
+            <child link="${dovetail_male_mount_prefix}body"/>
+        </joint>
+        <joint name="${dovetail_male_mount_prefix}body--tool0" type="fixed">
+            <origin xyz="0 0 ${dovetail_male_tool0_height}" rpy="0 0 0"/>
+            <parent link="${dovetail_male_mount_prefix}body"/>
+            <child link="${dovetail_male_mount_prefix}tool0"/>
+        </joint>
+    </xacro:macro>
+    
+    <xacro:macro name="dovetail_female_mount_macro" params="parent_link dovetail_female_mount_prefix mesh_base_path">
+        <!-- ====================== -->
+        <!-- Dovetail Female Mount  -->
+        <!-- ====================== -->
+        <material name="ochre">
+            <color rgba="0.929 0.710 0.145 1"/>
+        </material>
+        <xacro:property name="dovetail_female_mass" value="0.025"/>
+        <!-- links -->
+        <link name="${dovetail_female_mount_prefix}base"/>
+        <link name='${dovetail_female_mount_prefix}body'>
+            <visual>
+                <material name="ochre"/>
+                <origin xyz="0 0 0" rpy="0 0 0"/>
+                <geometry>
+                    <mesh filename="file://$(find branch_detection_system_description)/meshes/end_effectors/dovetail/DovetailFemale.STL"/>
+                </geometry>
+            </visual>
+            <collision>
+                <origin xyz="0 0 0" rpy="0 0 0"/>
+                <geometry>
+                    <mesh filename="file://$(find branch_detection_system_description)/meshes/end_effectors/dovetail/DovetailFemale.STL"/>
+                </geometry>
+            </collision>
+            <inertial>
+                <mass value="${dovetail_female_mass}"/>
+                <origin xyz="0.0 0.0 0.0"/>
+                <inertia ixx="0.0001" ixy="0.0" ixz="0.0" iyy="0.0001" iyz="0.0" izz="0.0001"/>
+            </inertial>
+        </link>
+        <link name="${dovetail_female_mount_prefix}tool0"/>
+        <!-- joints -->
+        <joint name="${parent_link}--${dovetail_female_mount_prefix}base" type="fixed">
+            <origin xyz="0 0 ${dovetail_female_tool0_height}" rpy="0 0 0"/>
+            <parent link="${parent_link}"/>
+            <child link="${dovetail_female_mount_prefix}base"/>
+        </joint>
+        <joint name="${dovetail_female_mount_prefix}base--body" type="fixed">
+            <origin xyz="0 0 0" rpy="0 0 0"/>
+            <parent link="${dovetail_female_mount_prefix}base"/>
+            <child link="${dovetail_female_mount_prefix}body"/>
+        </joint>
+        <joint name="${dovetail_female_mount_prefix}body--tool0" type="fixed">
+            <origin xyz="0 0 0" rpy="0 0 0"/>
+            <parent link="${dovetail_female_mount_prefix}body"/>
+            <child link="${dovetail_female_mount_prefix}tool0"/>
+        </joint>
+    </xacro:macro>
+    
+    
+    <xacro:macro name="dovetail_mount_macro" params="parent_link dovetail_male_mount_prefix dovetail_female_mount_prefix mesh_base_path">
+        <!-- =================== -->
+        <!--   Dovetail Mount    -->
+        <!-- =================== -->
+        <xacro:dovetail_male_mount_macro 
+            parent_link="${parent_link}" 
+            dovetail_male_mount_prefix="${dovetail_male_mount_prefix}"
+            mesh_base_path="${mesh_base_path}"
+        />
+        <xacro:dovetail_female_mount_macro
+            parent_link="${dovetail_male_mount_prefix}tool0"
+            dovetail_female_mount_prefix="${dovetail_female_mount_prefix}"
+            mesh_base_path="${mesh_base_path}"
+        />
+    </xacro:macro>
+    
+</robot>

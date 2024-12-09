@@ -13,6 +13,8 @@ find_package(rosidl_default_generators REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/Vl6180.msg"
   "msg/Vl6180Stamped.msg"
+  "msg/Vl6180Filtered.msg"
+  "msg/Vl6180FilteredStamped.msg"
   DEPENDENCIES std_msgs # Add packages that above messages depend on, in this case geometry_msgs for Sphere.msg
 )
 if(BUILD_TESTING)
