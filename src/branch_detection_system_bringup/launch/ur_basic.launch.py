@@ -190,7 +190,10 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         package="robot_state_publisher",
         executable="robot_state_publisher",
         output="both",
-        parameters=[moveit_configs.robot_description],
+        parameters=[
+            moveit_configs.robot_description,
+            # {"publish_frequency": 100.0},
+        ],
     )
 
     rviz_config_file = PathJoinSubstitution(
@@ -222,7 +225,7 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         )
 
     controllers_active = [
-        "joint_state_broadcaster",
+        # "joint_state_broadcaster",
         "io_and_status_controller",
         "speed_scaling_state_broadcaster",
         "force_torque_sensor_broadcaster",
@@ -411,9 +414,8 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         register_event_delay_rviz_after_JSB_spawner,
         node_move_group,
         node_servo,
-        # controller_spawners,
         # warehouse_server_node,
-    ] + register_events_delay_robot_controller_spawners_after_JSB_spawner
+    ] + register_events_delay_robot_controller_spawners_after_JSB_spawner + controller_spawners
 
     return _to_start
 
