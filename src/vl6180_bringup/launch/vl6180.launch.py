@@ -10,6 +10,8 @@ from launch.substitutions import (
 )
 from launch_ros.actions import Node
 
+from ur_moveit_config.launch_common import load_yaml
+
 import os
 import json
 
@@ -22,22 +24,37 @@ def setup_launch(context: LaunchContext, *args, **kwargs):
 
     dir_vl6180_bringup = get_package_share_directory("vl6180_bringup")
     filepath_vl6180_config = os.path.join(dir_vl6180_bringup, "config", "vl6180.yaml")
+    # params_vl6180 = load_yaml(package_name='vl6180_bringup', file_path="config/vl6180.yaml")
 
-    param_sensor_quantity = LaunchConfiguration("sensor_quantity")
+    # logger.warn(f"{os.path.exists(filepath_vl6180_config)}")
+    # logger.warn(f"{params_vl6180}")
+
+    use_plot_juggler = LaunchConfiguration("use_plot_juggler")
 
     node_vl6180_filtered = Node(
         package="vl6180_bringup",
         executable="vl6180_filtered_node",
-        name="vl6180_filter_node",
+        name="vl6180_filtered_node",
         output="screen",
         parameters=[
-            {"sensor_quantity": param_sensor_quantity},
             filepath_vl6180_config,
         ],
     )
 
+    node_plot_juggler = Node(
+        package='plotjuggler',
+        executable='plotjuggler',
+        name='plotjuggler_vl6180',
+        arguments=[
+            '-l',
+            os.path.join(get_package_share_directory('vl6180_bringup'), 'plotjuggler/plotjuggler_config.xml')
+        ],
+        condition=IfCondition(use_plot_juggler)
+    )
+
     nodes_to_launch = [
         node_vl6180_filtered,
+        node_plot_juggler
     ]
 
     return nodes_to_launch
@@ -45,7 +62,7 @@ def setup_launch(context: LaunchContext, *args, **kwargs):
 
 def generate_launch_description():
     declared_args = []
-    declared_args.append(DeclareLaunchArgument("sensor_quantity", default_value="2"))
+    declared_args.append(DeclareLaunchArgument("use_plot_juggler", default_value="false"))
 
     ld = LaunchDescription(declared_args + [OpaqueFunction(function=setup_launch)])
 

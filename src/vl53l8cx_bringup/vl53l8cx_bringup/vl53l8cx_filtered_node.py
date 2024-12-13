@@ -54,7 +54,11 @@ class VL53L8CXFilterNode(Node):
         json_covariances = json.load(open(filepath_covariances, "r"))
 
         # Yaml parameters
-        self.dfov = self.declare_parameter(name="dfov", value=Parameter.Type.DOUBLE).get_parameter_value().double_value
+        self.depth_dfov = self.declare_parameter(name="depth.dfov", value=Parameter.Type.DOUBLE).get_parameter_value().double_value
+        self.depth_near_plane = self.declare_parameter(name='depth.near_plane', value=Parameter.Type.DOUBLE).get_parameter_value().double_value
+        self.depth_far_plane = self.declare_parameter(name='depth.far_plane', value=Parameter.Type.DOUBLE).get_parameter_value().double_value
+        self.depth_width = self.declare_parameter(name='depth.width', value=Parameter.Type.INTEGER).get_parameter_value().integer_value
+        self.depth_height = self.declare_parameter(name='depth.height', value=Parameter.Type.INTEGER).get_parameter_value().integer_value
 
         self.info(
             f"\nTime-of-flight sensor configuration:\n\tSensor type: {self.tof_model_type}\n\tNumber of sensors: {self.num_sensors}"
