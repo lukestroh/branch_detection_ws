@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import rclpy
+from rclpy.action import ActionServer
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.duration import Duration
@@ -9,15 +10,17 @@ from rclpy.time import Time
 
 from final_approach_controller.tf_node import TFNode
 
+from final_approach_controller_msgs.action import RunFinalApproach
+from final_approach_controller_msgs.srv import StartFinalApproach
 from geometry_msgs.msg import TwistStamped
 from vl6180_msgs.msg import Vl6180FilteredStamped
-from final_approach_controller_msgs.srv import StartFinalApproach
+
 
 import modern_robotics as mr
 import numpy as np
 from scipy.spatial.transform import Rotation
 import pprint as pp
-
+import time
 
 class FinalApproachControllerNode(TFNode):
     def __init__(self):
@@ -29,13 +32,22 @@ class FinalApproachControllerNode(TFNode):
         self.create_timer(timer_period_sec=0.1, callback=self.print_stuff)
 
         # Callback group
-        self.callback_group = ReentrantCallbackGroup()  # allows for subscriber to persist in service
+        self.callback_group = ReentrantCallbackGroup()  # allows for subscriber to persist in service, action
+
+        # Actions
+        self._action_svr_run_final_appoach = ActionServer(
+            node=self,
+            action_type=RunFinalApproach,
+            action_name='run_final_approach',
+            execute_callback=self._action_cb_run_final_approach,
+            callback_group=self.callback_group
+        )
 
         # Services
-        self._srv_run_final_approach = self.create_service(
+        self._srv_start_final_approach = self.create_service(
             srv_name="final_approach_controller/start_final_approach",
             srv_type=StartFinalApproach,
-            callback=self._srv_cb_run_final_approach,
+            callback=self._srv_cb_start_final_approach,
             callback_group=self.callback_group,
         )
 
@@ -59,7 +71,6 @@ class FinalApproachControllerNode(TFNode):
         # Timers
         self._timer_setup_tf_frames = self.create_timer(timer_period_sec=1.0, callback=self._timer_cb_setup_tf_frames)
         self._timer_run_controller = None
-        # self._timer_run_controller.cancel()
 
         # Messages
         self.msg_vl53l8cx_filtered = Vl6180FilteredStamped()
@@ -70,12 +81,44 @@ class FinalApproachControllerNode(TFNode):
         self.d_tof1 = 0.0
         self.max_linear_speed = 0.05
         # TODO::::: need to read raw data to make sure that the reading is valid??
-        self.tf_mp_base_to_tof0 = self.tf_mp_base_to_tof1 = self.tf_mp_cut_point_to_base = self.tf_tof0_to_cut_point = (
-            self.tf_tof0_to_tof1
-        ) = np.identity(4)
-        self._dist_cut_point_to_branch_threshold = 7e-3
+        self.tf_mp_base_to_tof0 = np.identity(4)
+        self.tf_mp_base_to_tof1 = np.identity(4)
+        self.tf_mp_cut_point_to_base = np.identity(4)
+        self.tf_tof0_to_cut_point = np.identity(4)
+        self.tf_tof0_to_tof1 = np.identity(4)
+        self._dist_cut_point_to_branch_threshold = 0.04 # This is bad, get better sensors? How to calibrate?
         self.controller_running = False
         return
+    
+    def _action_cb_run_final_approach(self, goal_handle):
+        try:
+            self.controller_running = True
+            if self._timer_run_controller is None:
+                self._timer_run_controller = self.create_timer(
+                    timer_period_sec=1 / 30, callback=self._timer_cb_run_controller, callback_group=self.callback_group
+                )
+            else:
+                self._timer_run_controller.reset()
+
+            feedback_msg = RunFinalApproach.Feedback()
+
+            while self.controller_running:
+                feedback_msg.tof0 = self.d_tof0
+                feedback_msg.tof1 = self.d_tof1
+                feedback_msg.dist = (self.d_tof0 + self.d_tof1) / 2
+                d_diff = self.d_tof0 - self.d_tof1
+                feedback_msg.theta = np.arctan(d_diff / self._tof_linear_distance)
+                goal_handle.publish_feedback(feedback_msg)
+                time.sleep(1)
+                
+            
+
+            goal_handle.succeed()
+            result = RunFinalApproach.Result()
+            result.success = True
+            return result
+        except Exception as e:
+            self.get_logger().fatal(f'{e}')
 
     def _timer_cb_setup_tf_frames(self):
         frame_sets = [
@@ -107,26 +150,29 @@ class FinalApproachControllerNode(TFNode):
         self.tf_mp_tof0_to_base, self.tf_mp_tof1_to_base, self.tf_mp_cut_point_to_base = transforms
         self.tf_cut_point_to_tof0 = mr.TransInv(self.tf_mp_cut_point_to_base) @ self.tf_mp_tof0_to_base
         self.tf_tof0_to_tof1 = mr.TransInv(self.tf_mp_tof1_to_base) @ self.tf_mp_tof0_to_base
+        tof0_to_tof1_pos_vec = self.tf_tof0_to_tof1[:3, 3]
+        self._tof_linear_distance = np.linalg.norm(tof0_to_tof1_pos_vec)
         if not np.all(np.isclose(self.tf_tof0_to_tof1[:3, :3], np.identity(3), atol=1e-3)):
             raise ValueError("The two ToF frames are not aligned with each other.")
         return
 
     def _timer_cb_run_controller(self):
-
+        if not self.controller_running:
+            return
         dist, theta = self.get_cut_point_info()
         dist_cut_point_to_branch = dist - self.tf_cut_point_to_tof0[2, 3]
         # self.warn(dist)
-        self.warn(dist_cut_point_to_branch)
+        # self.warn(dist_cut_point_to_branch)
+        self.warn(dist)
+        self.error(theta)
 
         if (
             np.isclose(dist_cut_point_to_branch, 0, atol=self._dist_cut_point_to_branch_threshold)
             or (dist_cut_point_to_branch) < 0
         ):
             self.info(f"Reached terminating point at dist:{dist}, theta: {theta}")
-            self.controller_running = False
             self._timer_run_controller.cancel()
-            self._timer_run_controller.destroy()
-            self._timer_run_controller = None
+            self.controller_running = False
             return
 
         tf_cut_point_to_world = self.lookup_transform(
@@ -161,7 +207,7 @@ class FinalApproachControllerNode(TFNode):
         # self.get_cut_point_info()
         return
 
-    def _srv_cb_run_final_approach(self, request, response):
+    def _srv_cb_start_final_approach(self, request, response):
         self.controller_running = True
         self._timer_run_controller = self.create_timer(
             timer_period_sec=1 / 30, callback=self._timer_cb_run_controller, callback_group=self.callback_group
@@ -171,11 +217,9 @@ class FinalApproachControllerNode(TFNode):
         return response
 
     def get_cut_point_info(self) -> tuple:
-        tof0_to_tof1_pos_vec = self.tf_tof0_to_tof1[:3, 3]
-        tof_linear_distance = np.linalg.norm(tof0_to_tof1_pos_vec)
         dist = (self.d_tof0 + self.d_tof1) / 2
         d_diff = self.d_tof0 - self.d_tof1
-        theta = np.arctan(d_diff / tof_linear_distance)  # should return angle (-pi/2, pi/2)
+        theta = np.arctan(d_diff / self._tof_linear_distance)  # should return angle (-pi/2, pi/2)
 
         return dist, theta
 
