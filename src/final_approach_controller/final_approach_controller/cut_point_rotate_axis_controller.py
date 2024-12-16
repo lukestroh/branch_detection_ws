@@ -118,6 +118,12 @@ class CutPointRotateAxisController(TFNode):
                 feedback_msg.theta = np.arctan(d_diff / self._tof_linear_distance)
                 goal_handle.publish_feedback(feedback_msg)
                 time.sleep(1)
+
+
+            result.success = True
+    
+            goal_handle.succeed()
+            return result
                 
         except Exception as e:
             self.get_logger().fatal(f'{e}')
@@ -173,9 +179,9 @@ class CutPointRotateAxisController(TFNode):
         dist, theta = self.get_cut_point_info()
         dist_cut_point_to_branch = dist - self.tf_cut_point_to_tof0[2, 3]
         
-        if False: # np.isclose(theta, 0.0, atol=np.radians(1)):
+        if np.isclose(theta, 0.0, atol=np.radians(1)):
 
-            self.info(f"Reached terminating point at dist:{dist}, theta: {theta}")
+            self.info(f"Reached terminating point at:\ndist:{dist_cut_point_to_branch}, theta: {theta}")
             self._timer_run_controller.cancel()
             self.controller_running = False
             self.msg_twist.twist.linear.x = 0.0
@@ -192,11 +198,8 @@ class CutPointRotateAxisController(TFNode):
         else:
             rot_ax = self.get_rotation_axis()
             tf_rot_axis_to_cut_point = self.get_cut_point_to_rot_axis_transform(rot_ax=rot_ax)
-            # rot_ax_orientation = rot_ax[3:6, :].flatten()
 
             twist_mp_tool0_frame = self.get_twist(tf_rot_axis_to_cut_point=tf_rot_axis_to_cut_point, angle_from_perpendicular=theta)
-
-            
 
             tf_cut_point_to_world = self.lookup_transform( # TODO: change to EEF frame, can use static transform!!!
                 target_frame="mock_pruner__tool0",
