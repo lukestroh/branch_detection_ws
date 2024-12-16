@@ -7,15 +7,11 @@ from rclpy.executors import MultiThreadedExecutor
 from rclpy.duration import Duration
 from rclpy.time import Time
 
-# from rclpy.node import Node
-
 from final_approach_controller.tf_node import TFNode
 
-from final_approach_controller_msgs.action import RunFinalApproach
-from final_approach_controller_msgs.srv import StartFinalApproach
+from final_approach_controller_msgs.action import RunCutPointRotateAxis
 from geometry_msgs.msg import TwistStamped
 from vl6180_msgs.msg import Vl6180FilteredStamped
-
 
 import modern_robotics as mr
 import numpy as np
@@ -23,14 +19,13 @@ from scipy.spatial.transform import Rotation
 import pprint as pp
 import time
 
-class FinalApproachControllerNode(TFNode):
-    def __init__(self):
-        super().__init__(node_name="final_approach_controller_node")
+
+class CutPointRotateAxisController(TFNode):
+    def __init__(self) -> None:
+        super().__init__(node_name="cut_point_rotate_axis_controller_node")
         self.info = lambda x: self.get_logger().info(f"{pp.pformat(x)}")
         self.warn = lambda x: self.get_logger().warn(f"{pp.pformat(x)}")
         self.error = lambda x: self.get_logger().error(f"{pp.pformat(x)}")
-
-        self.create_timer(timer_period_sec=0.1, callback=self.print_stuff)
 
         # Callback group
         self.callback_group = ReentrantCallbackGroup()  # allows for subscriber to persist in service, action
@@ -38,21 +33,13 @@ class FinalApproachControllerNode(TFNode):
         # Actions
         self._action_svr_run_final_appoach = ActionServer(
             node=self,
-            action_type=RunFinalApproach,
-            action_name='run_final_approach',
+            action_type=RunCutPointRotateAxis,
+            action_name='run_cut_point_rotate_axis',
             goal_callback=self._action_goal_cb_run_final_approach,
-            cancel_callback=self._action_cancel_cb_run_final_approach,
-            execute_callback=self._action_exe_cb_run_final_approach,
+            cancel_callback=self._action_cancel_cb_run_cut_point_rotate_axis,
+            execute_callback=self._action_exe_cb_run_cut_point_rotate_axis,
             # handle_accepted_callback=self._action_handle_accepted_cb_run_final_approach,
             callback_group=self.callback_group
-        )
-
-        # Services
-        self._srv_start_final_approach = self.create_service(
-            srv_name="final_approach_controller/start_final_approach",
-            srv_type=StartFinalApproach,
-            callback=self._srv_cb_start_final_approach,
-            callback_group=self.callback_group,
         )
 
         # Subscribers
@@ -84,26 +71,28 @@ class FinalApproachControllerNode(TFNode):
         self.d_tof0 = 0.0
         self.d_tof1 = 0.0
         self.max_linear_speed = 0.05
-        # TODO::::: need to read raw data to make sure that the reading is valid??
+        self.max_angular_speed = np.pi / 2
+        self.K_p = 1 / self.max_angular_speed 
 
-        self.tf_mp_tof0_to_base = np.identity(4)
-        self.tf_mp_tof1_to_base = np.identity(4)
+        self.tf_mp_base_to_tof0 = np.identity(4)
+        self.tf_mp_base_to_tof1 = np.identity(4)
         self.tf_mp_cut_point_to_base = np.identity(4)
-        self.tf_cut_point_to_tof0 = np.identity(4)
+        self.tf_tof0_to_cut_point = np.identity(4)
         self.tf_tof0_to_tof1 = np.identity(4)
-        self._dist_cut_point_to_branch_threshold = 0.04 # This is bad, get better sensors? How to calibrate? save yaml from test, load here   
+        self._dist_cut_point_to_branch_threshold = 0.04 # This is bad, get better sensors? How to calibrate?
         self.controller_running = False
+        
         return
     
     # ===============================
     #        Action callbacks
     # ===============================
-    
-    def _action_cancel_cb_run_final_approach(self, goal_handle: ServerGoalHandle):
+    def _action_cancel_cb_run_cut_point_rotate_axis(self, goal_handle: ServerGoalHandle):
         self.info("Received cancel request")
         return CancelResponse.ACCEPT
     
-    def _action_exe_cb_run_final_approach(self, goal_handle: ServerGoalHandle):
+    def _action_exe_cb_run_cut_point_rotate_axis(self, goal_handle: ServerGoalHandle):
+        """TODO: This is the same as final_approach_controller, let the high level controller do this in the future"""
         self.controller_running = True
         if self._timer_run_controller is None:
             self._timer_run_controller = self.create_timer(
@@ -113,15 +102,13 @@ class FinalApproachControllerNode(TFNode):
             self._timer_run_controller.reset()
 
         try:
-
-
-            feedback_msg = RunFinalApproach.Feedback()
-            result = RunFinalApproach.Result()
+            feedback_msg = RunCutPointRotateAxis.Feedback()
+            result = RunCutPointRotateAxis.Result()
 
             while self.controller_running:
                 if goal_handle.is_cancel_requested:
                     goal_handle.canceled()
-                    self.info('FinalApproachControllerAction canceled')
+                    self.info('CutPointRotateAxisController canceled')
                     result.success = False
                     return result
                 feedback_msg.tof0 = self.d_tof0
@@ -132,11 +119,6 @@ class FinalApproachControllerNode(TFNode):
                 goal_handle.publish_feedback(feedback_msg)
                 time.sleep(1)
                 
-            result.success = True
-    
-            goal_handle.succeed()
-            return result
-        
         except Exception as e:
             self.get_logger().fatal(f'{e}')
         finally:
@@ -147,10 +129,10 @@ class FinalApproachControllerNode(TFNode):
         self.info("Received goal request")
         return GoalResponse.ACCEPT
     
+
     # ===============================
     #         Timer callbacks
     # ===============================
-
     def _timer_cb_setup_tf_frames(self):
         frame_sets = [
             {"parent": "mock_pruner__base", "child": "mock_pruner__tof0"},
@@ -191,10 +173,11 @@ class FinalApproachControllerNode(TFNode):
         dist, theta = self.get_cut_point_info()
         dist_cut_point_to_branch = dist - self.tf_cut_point_to_tof0[2, 3]
         
-        if (
-            np.isclose(dist_cut_point_to_branch, 0, atol=self._dist_cut_point_to_branch_threshold)
-            or (dist_cut_point_to_branch) < 0
-        ):  
+        if False: # np.isclose(theta, 0.0, atol=np.radians(1)):
+
+            self.info(f"Reached terminating point at dist:{dist}, theta: {theta}")
+            self._timer_run_controller.cancel()
+            self.controller_running = False
             self.msg_twist.twist.linear.x = 0.0
             self.msg_twist.twist.linear.y = 0.0
             self.msg_twist.twist.linear.z = 0.0
@@ -204,35 +187,47 @@ class FinalApproachControllerNode(TFNode):
             self.msg_twist.header.frame_id = "cart__base" # TODO: if changing to EEF, change ur_servo.yaml
             self.msg_twist.header.stamp = self.get_clock().now().to_msg()
             self._pub_servo.publish(self.msg_twist)
-            
-            self.info(f"Reached terminating point at dist:{dist}, theta: {theta}")
-            self._timer_run_controller.cancel()
-            self.controller_running = False
             return
+        
+        else:
+            rot_ax = self.get_rotation_axis()
+            tf_rot_axis_to_cut_point = self.get_cut_point_to_rot_axis_transform(rot_ax=rot_ax)
+            # rot_ax_orientation = rot_ax[3:6, :].flatten()
 
-        tf_cut_point_to_world = self.lookup_transform(
-            source_frame="mock_pruner__tool0",
-            target_frame="cart__base",
-            time=self.get_clock().now(),
-            sync=True,
-            as_matrix=True,
-        )
-        twist = self.get_twist(tf_world_to_eef=tf_cut_point_to_world, dist=dist)
-        self.msg_twist.twist.linear.x = twist[0]
-        self.msg_twist.twist.linear.y = twist[1]
-        self.msg_twist.twist.linear.z = twist[2]
-        self.msg_twist.twist.angular.x = twist[3]
-        self.msg_twist.twist.angular.y = twist[4]
-        self.msg_twist.twist.angular.z = twist[5]
-        self.msg_twist.header.frame_id = "cart__base"
-        self.msg_twist.header.stamp = self.get_clock().now().to_msg()
-        self._pub_servo.publish(self.msg_twist)
+            twist_mp_tool0_frame = self.get_twist(tf_rot_axis_to_cut_point=tf_rot_axis_to_cut_point, angle_from_perpendicular=theta)
+
+            
+
+            tf_cut_point_to_world = self.lookup_transform( # TODO: change to EEF frame, can use static transform!!!
+                target_frame="mock_pruner__tool0",
+                source_frame="cart__base",
+                time=self.get_clock().now(),
+                sync=True,
+                as_matrix=True,
+            )
+
+            linear_v_world_frame = np.linalg.inv(tf_cut_point_to_world[:3, :3]) @ twist_mp_tool0_frame[0:3, 0]
+            linear_v_world_frame *= self.max_linear_speed
+            # linear_v_world_frame = linear_v_world_frame / np.linalg.norm(linear_v_world_frame) * self.max_linear_speed
+            angular_v_world_frame = np.linalg.inv(tf_cut_point_to_world[:3, :3]) @ twist_mp_tool0_frame[3:6, 0]
+            # angular_v_world_frame = angular_v_world_frame / np.linalg.norm(angular_v_world_frame) * self.
+            angular_v_world_frame *= self.max_angular_speed
+
+            self.msg_twist.twist.linear.x = linear_v_world_frame[0]
+            self.msg_twist.twist.linear.y = linear_v_world_frame[1]
+            self.msg_twist.twist.linear.z = linear_v_world_frame[2]
+            self.msg_twist.twist.angular.x = angular_v_world_frame[0]
+            self.msg_twist.twist.angular.y = angular_v_world_frame[1]
+            self.msg_twist.twist.angular.z = angular_v_world_frame[2]
+            self.msg_twist.header.frame_id = "cart__base" # TODO: if changing to EEF, change ur_servo.yaml
+            self.msg_twist.header.stamp = self.get_clock().now().to_msg()
+            self._pub_servo.publish(self.msg_twist)
         return
+    
 
     # ===============================
     #     Subscription callbacks
     # ===============================
-
     def _sub_cb_tof_filtered(self, msg: Vl6180FilteredStamped):
         # Do some checks, make sure that the readings make sense in intuitive way.
         # Make sure readings do not exceed maximum. # TODO: Find a way to get sensor parameters in here
@@ -242,55 +237,62 @@ class FinalApproachControllerNode(TFNode):
         return
     
     # ===============================
-    #        Service callbacks
-    # ===============================
-
-    def _srv_cb_start_final_approach(self, request, response):
-        self.controller_running = True
-        self._timer_run_controller = self.create_timer(
-            timer_period_sec=1 / 30, callback=self._timer_cb_run_controller, callback_group=self.callback_group
-        )
-        # self._timer_run_controller/
-        response.success = True
-        return response
-    
-    # ===============================
     #       Controller methods
     # ===============================
-
-    def print_stuff(self):
-        # self.warn(self.get_cut_point_info())
-        # self.get_cut_point_info()
-        return
-
     def get_cut_point_info(self) -> tuple:
         dist = (self.d_tof0 + self.d_tof1) / 2
         d_diff = self.d_tof0 - self.d_tof1
         theta = np.arctan(d_diff / self._tof_linear_distance)  # should return angle (-pi/2, pi/2)
-
         return dist, theta
+    
+    def get_rotation_axis(self):
+        """Get the rotation axis in the camera frame."""
+        rotation_point = np.mean([self.d_tof0, self.d_tof1], axis=0)
+        # log.debug(f"Rotation point: {rotation_point}")
+        rotation_axis = np.zeros((6, 1), dtype=float)
+        # TODO: fix with proper vector. for now, just use z-axis
+        rotation_axis[0:3, :] = np.array([[0, 0, rotation_point]]).T
+        # rotation_axis[0:3, :] = rotation_point[0, :3].reshape(3, 1)
+        rotation_axis[3:6, :] = np.cross([0,0,self.d_tof0], [0,0,self.d_tof1]).reshape(
+            3, 1
+        )  # TODO: clean up hackiness here
+        # If the cross product is zero (for current scenario, should be true) then the two vectors are parallel, so we can just choose the  y-axis (camera frame).
+        if np.linalg.norm(rotation_axis[3:6, :]) != 0:
+            rotation_axis[3:6, :] = rotation_axis[3:6, :] / np.linalg.norm(rotation_axis[3:6, :])
+        else:
+            rotation_axis[3:6, :] = np.array([[0, 1, 0]]).T
+        return rotation_axis
+    
+    def get_cut_point_to_rot_axis_transform(self, rot_ax: np.ndarray):
+        """TODO: replace with actual transform from end effector to cut point."""
+        tf_axis_to_eef = np.identity(4)
+        tf_axis_to_eef[:3, 3] = rot_ax[:3, 0]
+        tf_cut_point_to_rot_axis = mr.TransInv(self.tf_mp_cut_point_to_base) @ tf_axis_to_eef
+        # log.warn(self.tf_base_to_cut_point)
+        # log.warn(tf_axis_to_eef)
+        # log.warn(tf_cut_point_to_rot_axis)
+        return tf_cut_point_to_rot_axis
 
-    def get_twist(self, tf_world_to_eef: np.ndarray, dist: float) -> np.ndarray:
-        """Need to get the view matrix of the cut point to the rotation axis, normalize to the max lin speed"""
-        # log.info(self.tf_tof0_to_cut_point)
-        if dist - self.tf_cut_point_to_tof0[2, 3] <= 0:
-            return np.zeros((6, 1))
-        Kp = 1 / (dist - self.tf_cut_point_to_tof0[2, 3])
-
-        velocity = Kp * self.max_linear_speed * tf_world_to_eef[:3, :3] @ [0, 0, 1]
-        # tf_eef_to_world = np.asarray(self.get_view_mat_by_id_at_curr_pose(id=self.links['mock_pruner__tool0']['id'])).reshape([4, 4], order="F")
-        twist = np.zeros(6)
-        twist[0:3] = velocity / np.linalg.norm(velocity) * self.max_linear_speed
+    def get_twist(self, tf_rot_axis_to_cut_point: np.ndarray, angle_from_perpendicular: float):
+        # log.error(f"Angle from perpendicular: {angle_from_perpendicular * 180 / np.pi}")
+        desired_angle = 0.0 # We want the cut point to be perpendicular to the rotation axis
+        # We are in the mp base frame, so the angular velocity is along the y-axis, which points down
+        angular_velocity = [0, self.K_p * (desired_angle - angle_from_perpendicular), 0] 
+        linear_velocity = np.cross(angular_velocity, tf_rot_axis_to_cut_point[:3, 3])
+        
+        twist = np.concatenate((linear_velocity, angular_velocity), axis=0).reshape(6, 1)
         return twist
+    
 
 
 def main():
     rclpy.init()
-    fac_node = FinalApproachControllerNode()
+    cut_point_rotate_axis_controller = CutPointRotateAxisController()
     executor = MultiThreadedExecutor()
-    rclpy.spin(fac_node, executor=executor)
-    fac_node.destroy_node()
+    rclpy.spin(cut_point_rotate_axis_controller, executor=executor)
+    cut_point_rotate_axis_controller.destroy_node()
     rclpy.shutdown()
+
     return
 
 

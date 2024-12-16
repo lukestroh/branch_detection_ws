@@ -25,7 +25,17 @@ def launch_setup(context, *args, **kwargs) -> list:
         output="both",
     )
 
-    _to_return = [node_final_approach_controller]
+    node_cut_point_rotate_axis_controller = Node(
+        package="final_approach_controller",
+        executable="cut_point_rotate_axis_controller",
+        name="cut_point_rotate_axis_controller",
+        output="both"
+    )
+
+    _to_return = [
+        node_final_approach_controller,
+        node_cut_point_rotate_axis_controller
+    ]
 
     return _to_return
 
