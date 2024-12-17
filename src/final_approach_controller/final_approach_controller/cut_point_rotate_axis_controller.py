@@ -175,7 +175,26 @@ class CutPointRotateAxisController(TFNode):
             raise ValueError("The two ToF frames are not aligned with each other.")
         return
     
-    def _timer_cb_run_controller(self):        
+    def publish_zero_twist(self):
+        self.msg_twist.twist.linear.x = 0.0
+        self.msg_twist.twist.linear.y = 0.0
+        self.msg_twist.twist.linear.z = 0.0
+        self.msg_twist.twist.angular.x = 0.0
+        self.msg_twist.twist.angular.y = 0.0
+        self.msg_twist.twist.angular.z = 0.0
+        self.msg_twist.header.frame_id = "cart__base" # TODO: if changing to EEF, change ur_servo.yaml
+        self.msg_twist.header.stamp = self.get_clock().now().to_msg()
+        self._pub_servo.publish(self.msg_twist)
+        return
+    
+    def _timer_cb_run_controller(self):
+        if np.isclose(self.d_tof0, 255.0, atol=5.0) or np.isclose(self.d_tof1, 255.0, atol=5.0):
+            self.info(f"VL6180 sensor(s) are returning unreliable data, aborting controller. Data: {self.d_tof0}, {self.d_tof1}")
+            self._timer_run_controller.cancel()
+            self.controller_running = False
+            self.publish_zero_twist()
+            return
+
         dist, theta = self.get_cut_point_info()
         dist_cut_point_to_branch = dist - self.tf_cut_point_to_tof0[2, 3]
         
@@ -184,15 +203,7 @@ class CutPointRotateAxisController(TFNode):
             self.info(f"Reached terminating point at:\ndist:{dist_cut_point_to_branch}, theta: {theta}")
             self._timer_run_controller.cancel()
             self.controller_running = False
-            self.msg_twist.twist.linear.x = 0.0
-            self.msg_twist.twist.linear.y = 0.0
-            self.msg_twist.twist.linear.z = 0.0
-            self.msg_twist.twist.angular.x = 0.0
-            self.msg_twist.twist.angular.y = 0.0
-            self.msg_twist.twist.angular.z = 0.0
-            self.msg_twist.header.frame_id = "cart__base" # TODO: if changing to EEF, change ur_servo.yaml
-            self.msg_twist.header.stamp = self.get_clock().now().to_msg()
-            self._pub_servo.publish(self.msg_twist)
+            self.publish_zero_twist()
             return
         
         else:

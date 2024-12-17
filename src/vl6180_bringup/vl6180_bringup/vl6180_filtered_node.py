@@ -132,13 +132,13 @@ class VL6180FilterNode(Node):
         self.vl6180_msg_raw = msg
 
         try:
-            for i in range(self.depth_width * self.depth_height * 2):
+            for i in range(self.depth_width * self.depth_height * 2): # TODO: hacky, this represents two sensors. Fix.
                 if msg.data[i] != self.RANGING_ERR or msg.data[i] < self.RANGING_MAX:
                     self.kalmans[i].predict()
                     self.kalmans[i].update(self.vl6180_msg_raw.data[i])
                     self.vl6180_msg_filtered.data[i] = self.kalmans[i].x[0, 0]
 
-            # self.vl6180_msg_filtered.header.frame_id = "vl6180_0" # TODO: need two nodes for two separate frames
+            # self.vl6180_msg_filtered.header.frame_id = "vl6180_0" # TODO: need two nodes or publishers for two separate frames
             self.vl6180_msg_filtered.header.stamp = self.get_clock().now().to_msg()
             self._pub_tof_filtered.publish(self.vl6180_msg_filtered)
         except IndexError as e:
