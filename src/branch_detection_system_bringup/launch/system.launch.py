@@ -167,7 +167,7 @@ def generate_launch_description():
         # dict(name="system_description_pkg", default_value="branch_detection_system_description"),
         # dict(name="system_moveit_config_pkg", default_value="branch_detection_system_moveit_config"),
         dict(name="ur_type", default_value="ur5e", description="Robot description name (required for URDF parsing)."),
-        dict(name="ur_robot_ip", default_value="169.254.174.50", description="UR robot IP"),
+        dict(name="ur_robot_ip", default_value="169.254.177.220", description="UR robot IP"),
     ]
 
     declared_args = [
