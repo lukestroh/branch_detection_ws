@@ -6,14 +6,145 @@
 <robot name="mock_pruner">
   <!-- World link -->
   <link name="world"/>
-  <!-- <xacro:property name="end_effector_parent" value="" /> -->
   <!-- Materials -->
-  <!-- <xacro:arg name="parent" default="world" />
-    <xacro:arg name="prefix" default="''" />
-    <xacro:arg name="use_mock_hardware" default="false" />
-    <xacro:arg name="mock_sensor_commands" default="false" />
-    <xacro:arg name="sim_gazebo" default="false" />
-    <xacro:arg name="sim_gazebo_classic" default="false"/> -->
+  <!-- =========================== -->
+  <!-- Rotation Corrrection Plate  -->
+  <!-- =========================== -->
+  <material name="grass_green">
+    <color rgba="0.47058823529411764 0.6392156862745098 0.17254901960784313 1"/>
+  </material>
+  <!-- links -->
+  <link name="rotation_correction_plate__base"/>
+  <link name="rotation_correction_plate__body">
+    <visual>
+      <material name="grass_green"/>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="file:///home/luke/branch_detection_ws/install/branch_detection_system_description/share/branch_detection_system_description/meshes/end_effectors/rotation_correction_plate/RotationCorrectionPlate.STL"/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="file:///home/luke/branch_detection_ws/install/branch_detection_system_description/share/branch_detection_system_description/meshes/end_effectors/rotation_correction_plate/RotationCorrectionPlate.STL"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="0.003"/>
+      <origin xyz="0.0 0.0 0.0"/>
+      <inertia ixx="0.0001" ixy="0.0" ixz="0.0" iyy="0.0001" iyz="0.0" izz="0.0001"/>
+    </inertial>
+  </link>
+  <link name="rotation_correction_plate__tool0"/>
+  <!-- joints -->
+  <joint name="world--rotation_correction_plate__base" type="fixed">
+    <origin rpy="0.0 0.0 0.0" xyz="0 0 0"/>
+    <parent link="world"/>
+    <child link="rotation_correction_plate__base"/>
+  </joint>
+  <joint name="rotation_correction_plate__base--body" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <parent link="rotation_correction_plate__base"/>
+    <child link="rotation_correction_plate__body"/>
+  </joint>
+  <joint name="rotation_correction_plate__body--tool0" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 0.01268"/>
+    <parent link="rotation_correction_plate__body"/>
+    <child link="rotation_correction_plate__tool0"/>
+  </joint>
+  <!-- ==================== -->
+  <!-- Dovetail Male Mount  -->
+  <!-- ==================== -->
+  <material name="lavender">
+    <color rgba="0.749 0.580 0.894 1"/>
+  </material>
+  <!-- links -->
+  <link name="dovetail_male_mount__base"/>
+  <link name="dovetail_male_mount__body">
+    <visual>
+      <material name="lavender"/>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="file:///home/luke/branch_detection_ws/install/branch_detection_system_description/share/branch_detection_system_description/meshes/end_effectors/dovetail/DovetailMale.STL"/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="file:///home/luke/branch_detection_ws/install/branch_detection_system_description/share/branch_detection_system_description/meshes/end_effectors/dovetail/DovetailMale.STL"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="0.025"/>
+      <origin xyz="0.0 0.0 0.0"/>
+      <inertia ixx="0.0001" ixy="0.0" ixz="0.0" iyy="0.0001" iyz="0.0" izz="0.0001"/>
+    </inertial>
+  </link>
+  <link name="dovetail_male_mount__tool0"/>
+  <!-- joints -->
+  <joint name="rotation_correction_plate__tool0--dovetail_male_mount__base" type="fixed">
+    <origin rpy="0.0 0.0 0.0" xyz="0 0 0"/>
+    <parent link="rotation_correction_plate__tool0"/>
+    <child link="dovetail_male_mount__base"/>
+  </joint>
+  <joint name="dovetail_male_mount__base--body" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <parent link="dovetail_male_mount__base"/>
+    <child link="dovetail_male_mount__body"/>
+  </joint>
+  <joint name="dovetail_male_mount__body--tool0" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 0.008"/>
+    <parent link="dovetail_male_mount__body"/>
+    <child link="dovetail_male_mount__tool0"/>
+  </joint>
+  <!-- ====================== -->
+  <!-- Dovetail Female Mount  -->
+  <!-- ====================== -->
+  <material name="ochre">
+    <color rgba="0.929 0.710 0.145 1"/>
+  </material>
+  <!-- links -->
+  <link name="dovetail_female_mount__base"/>
+  <link name="dovetail_female_mount__body">
+    <visual>
+      <material name="ochre"/>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="file:///home/luke/branch_detection_ws/install/branch_detection_system_description/share/branch_detection_system_description/meshes/end_effectors/dovetail/DovetailFemale.STL"/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="file:///home/luke/branch_detection_ws/install/branch_detection_system_description/share/branch_detection_system_description/meshes/end_effectors/dovetail/DovetailFemale.STL"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="0.025"/>
+      <origin xyz="0.0 0.0 0.0"/>
+      <inertia ixx="0.0001" ixy="0.0" ixz="0.0" iyy="0.0001" iyz="0.0" izz="0.0001"/>
+    </inertial>
+  </link>
+  <link name="dovetail_female_mount__tool0"/>
+  <!-- joints -->
+  <joint name="dovetail_male_mount__tool0--dovetail_female_mount__base" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 0.023"/>
+    <parent link="dovetail_male_mount__tool0"/>
+    <child link="dovetail_female_mount__base"/>
+  </joint>
+  <joint name="dovetail_female_mount__base--body" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <parent link="dovetail_female_mount__base"/>
+    <child link="dovetail_female_mount__body"/>
+  </joint>
+  <joint name="dovetail_female_mount__body--tool0" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <parent link="dovetail_female_mount__body"/>
+    <child link="dovetail_female_mount__tool0"/>
+  </joint>
+  <!-- ==================== -->
+  <!--  Mock Pruner Macro   -->
+  <!-- ==================== -->
   <!-- ================== -->
   <!--       Links        -->
   <!-- ================== -->
@@ -24,13 +155,13 @@
       </material>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="./meshes/end_effectors/mock_pruner/MockPrunerASSEMBLED.STL"/>
+        <mesh filename="file:///home/luke/branch_detection_ws/install/branch_detection_system_description/share/branch_detection_system_description/meshes/end_effectors/mock_pruner/MockPruner.STL"/>
       </geometry>
     </visual>
     <collision>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="./meshes/end_effectors/mock_pruner/MockPrunerASSEMBLED.STL"/>
+        <mesh filename="file:///home/luke/branch_detection_ws/install/branch_detection_system_description/share/branch_detection_system_description/meshes/end_effectors/mock_pruner/MockPruner.STL"/>
       </geometry>
     </collision>
     <inertial>
@@ -49,23 +180,33 @@
   <!-- ================== -->
   <!--     Joints        -->
   <!-- ================== -->
-  <joint name="mock_pruner__base__camera0_joint" type="fixed">
+  <joint name="dovetail_female_mount__tool0--mock_pruner__base" type="fixed">
     <origin rpy="0 0 0" xyz="0 0 0"/>
+    <parent link="dovetail_female_mount__tool0"/>
+    <child link="mock_pruner__base"/>
+  </joint>
+  <joint name="mock_pruner__base--camera0" type="fixed">
+    <origin rpy="0 0 0" xyz="0.0 -0.069 0.16379"/>
     <parent link="mock_pruner__base"/>
     <child link="mock_pruner__camera0"/>
   </joint>
-  <joint name="mock_pruner__base__tof0_joint" type="fixed">
+  <joint name="mock_pruner__base--tof0" type="fixed">
     <!-- <xacro:insert_block name="origin"/> -->
-    <origin rpy="0 0 0" xyz="0.02 0 0"/>
+    <origin rpy="0 0 0" xyz="0.1 0.0 0.142"/>
     <parent link="mock_pruner__base"/>
     <child link="mock_pruner__tof0"/>
   </joint>
-  <joint name="mock_pruner__base__tof1_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="-0.02 0 0"/>
+  <joint name="mock_pruner__base--tof1" type="fixed">
+    <origin rpy="0 0 0" xyz="-0.1 0.0 0.142"/>
     <parent link="mock_pruner__base"/>
     <child link="mock_pruner__tof1"/>
   </joint>
-  <joint name="world__mock_pruner__base" type="fixed">
+  <joint name="mock_pruner__base--tool0" type="fixed">
+    <origin rpy="0 0 0" xyz="0.0 0.0 0.23508"/>
+    <parent link="mock_pruner__base"/>
+    <child link="mock_pruner__tool0"/>
+  </joint>
+  <joint name="world--mock_pruner__base" type="fixed">
     <origin rpy="0 0 0" xyz="0.0 180.0 0.0"/>
     <parent link="world"/>
     <child link="mock_pruner__base"/>

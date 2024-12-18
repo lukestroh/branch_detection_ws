@@ -6,7 +6,7 @@ import glob
 import rclpy.logging
 
 logger = rclpy.logging.get_logger("setup.py")
-
+import pprint as pp
 
 package_name = "branch_detection_system_description"
 
@@ -36,6 +36,7 @@ for file in mesh_files:
     install_path = os.path.join("share", package_name, mesh_relative_base_path, os.path.dirname(relative_path))
     _data_files.append((install_path, [file]))
     # logger.warn(f"{install_path}")
+# logger.warn(f'{pp.pformat(_data_files)}')
 
 setup(
     name=package_name,

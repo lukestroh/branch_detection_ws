@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="https://ros.org/wiki/xacro" name="correction_plate">
+
+    <!-- World link -->
+    <link name="world" />
+
+    
+    <!-- Args -->
+    <xacro:arg name="rotation_correction_plate_parent_link" default="world" />
+    <xacro:arg name="rotation_correction_plate_prefix" default="correction_plate__" />
+    <xacro:arg name="mesh_base_path" default="" />    
+    <xacro:arg name="tof0_offset" default="0.1 0.0 0.142" />
+    <xacro:arg name="tof1_offset" default="-0.1 0.0 0.142" />
+
+    <!-- mock_pruner macro -->
+    <xacro:include filename="$(find branch_detection_system_description)/urdf/end_effectors/rotation_correction_plate/macro/rotation_correction_plate_macro.urdf.xacro" />
+
+    <xacro:rotation_correction_plate_macro
+        parent_link="$(arg rotation_correction_plate_parent_link)"
+        rotation_correction_plate_prefix="$(arg rotation_correction_plate_prefix)"
+        mesh_base_path="$(arg mesh_base_path)"
+    />
+
+    <joint name="world--$(arg rotation_correction_plate_prefix)base" type="fixed">
+        <origin xyz="0.0 0.0 0.0" rpy="0 0 0"/>
+        <parent link="world" />
+        <child link="$(arg rotation_correction_plate_prefix)base" />
+    </joint>
+
+
+</robot> 

@@ -7,7 +7,6 @@
     <xacro:arg name="name" default="pruning_robot"/>
     <xacro:arg name="robot_stack_qty" default='0'/>
     <xacro:arg name="mesh_base_path" default=''/>
-    <xacro:arg name="urdf_base_path" default=''/>
 
     
     <!-- generate generic robot with stack_qty number of links, link parents -->
@@ -126,7 +125,7 @@
             
             <!-- Robot cart -->
             <xacro:if value="${ str(resolved_part) == 'cart' }">
-                <xacro:include filename="$(arg urdf_base_path)/base_mounts/cart/macro/cart_macro.urdf.xacro"/>
+                <xacro:include filename="$(find branch_detection_system_description)/urdf/base_mounts/cart/macro/cart_macro.urdf.xacro"/>
                 <xacro:cart_macro
                     cart_prefix="cart__"
                     cart_parent="${resolved_parent_part}"
@@ -135,7 +134,7 @@
             </xacro:if>
             
             <xacro:if value="${ str(resolved_part) == 'mock_pruner' }">
-                <xacro:include filename="$(arg urdf_base_path)/end_effectors/mock_pruner/macro/mock_pruner_macro.urdf.xacro"/>
+                <xacro:include filename="$(find branch_detection_system_description)/urdf/end_effectors/mock_pruner/macro/mock_pruner_macro.urdf.xacro"/>
                 <!-- Args -->
                 <xacro:arg name="mock_pruner_prefix" default="mock_pruner__" />
                 <xacro:arg name="mesh_base_path" default="" />    
@@ -147,7 +146,6 @@
                     eef_prefix="$(arg mock_pruner_prefix)"
                     parent_link="${resolved_parent_link}"
                     mesh_base_path="$(arg mesh_base_path)"
-                    urdf_base_path="$(arg urdf_base_path)"
                     tof0_offset='$(arg tof0_offset)'
                     tof1_offset='$(arg tof1_offset)'
                     camera_offset=''
