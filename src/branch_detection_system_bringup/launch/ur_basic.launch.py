@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import xml.etree
 from launch import LaunchDescription, LaunchContext
 
 from launch.actions import IncludeLaunchDescription, DeclareLaunchArgument, RegisterEventHandler, OpaqueFunction
@@ -103,7 +104,7 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         "mock_sensor_commands": mock_sensor_commands,
         "use_mock_hardware": use_mock_hardware,
         "use_fake_hardware": use_mock_hardware,  # UR5 humble hasn't updated
-        "urdf_base_path": os.path.join(get_package_share_directory("branch_detection_system_description"), "urdf"),
+        # "urdf_base_path": os.path.join(get_package_share_directory("branch_detection_system_description"), "urdf"),
         "mesh_base_path": os.path.join(get_package_share_directory("branch_detection_system_description"), "meshes"),
         "initial_positions_file": os.path.join(
             get_package_share_directory("branch_detection_system_description"), "config/initial_positions.yaml"
@@ -158,8 +159,21 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
             "config/pilz_cartesian_limits.yaml",
         )
     )
+    mcb.trajectory_execution(
+        file_path=os.path.join(
+            get_package_share_directory("branch_detection_system_moveit_config"), "config/moveit_controllers.yaml"
+        ),
+        moveit_manage_controllers=False
+    )
     moveit_configs = mcb.to_moveit_configs()
     ####################################################################################################################################
+
+    # import xml.etree.ElementTree as ET
+    
+    # et = ET.XML(moveit_configs.robot_description['robot_description'].value[0].perform(context))
+    # tree = ET.ElementTree(et)
+    # ET.indent(tree)
+    # tree.write("/home/luke/branch_detection_ws/src/branch_detection_system_description/urdf/tmp/robot.urdf", encoding='utf-8', xml_declaration=True)
 
     # define update rate
     update_rate_config_file = PathJoinSubstitution(
@@ -260,22 +274,28 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
     # Trajectory Execution Configuration
     controllers_yaml = load_yaml("branch_detection_system_moveit_config", "config/moveit_controllers.yaml")
     # the scaled_joint_trajectory_controller does not work on fake hardware
-    change_controllers = context.perform_substitution(use_mock_hardware)
-    if change_controllers == "true":
-        controllers_yaml["scaled_joint_trajectory_controller"]["default"] = False
-        controllers_yaml["joint_trajectory_controller"]["default"] = True
+    # change_controllers = context.perform_substitution(use_mock_hardware)
+    # if change_controllers == "true":
+    #     controllers_yaml["scaled_joint_trajectory_controller"]["default"] = False
+    #     controllers_yaml["joint_trajectory_controller"]["default"] = True
 
-    moveit_controllers = {
-        "moveit_simple_controller_manager": controllers_yaml,
-        "moveit_controller_manager": "moveit_simple_controller_manager/MoveItSimpleControllerManager",
-    }
+    # moveit_controllers = {
+    #     "moveit_simple_controller_manager": controllers_yaml,
+    #     "moveit_controller_manager": "moveit_simple_controller_manager/MoveItSimpleControllerManager",
+    # }
+    if use_mock_hardware.perform(context) == "true":
+        moveit_configs.trajectory_execution["scaled_joint_trajectory_controller"]["default"] = False
+        moveit_configs.trajectory_execution["joint_trajectory_controller"]["default"] = True
 
-    trajectory_execution = {
-        "moveit_manage_controllers": False,
+
+    params_trajectory_execution = {
         "trajectory_execution.allowed_execution_duration_scaling": 1.2,
         "trajectory_execution.allowed_goal_duration_margin": 0.5,
         "trajectory_execution.allowed_start_tolerance": 0.01,
     }
+
+    logger.warn(f"{moveit_configs.trajectory_execution}")
+
 
     warehouse_ros_config = {
         "warehouse_plugin": "warehouse_ros_sqlite::DatabaseConnection",
@@ -301,8 +321,11 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
             moveit_configs.robot_description_kinematics,
             moveit_configs.joint_limits,
             ompl_planning_pipeline_config,
-            trajectory_execution,
-            moveit_controllers,
+            # trajectory_execution,
+            # moveit_controllers,
+            {"moveit_simple_controller_manager": moveit_configs.trajectory_execution,
+             "moveit_controller_manager": "moveit_simple_controller_manager/MoveItSimpleControllerManager"},
+            params_trajectory_execution,
             moveit_configs.planning_scene_monitor,
             {"use_sim_time": use_mock_hardware},
             warehouse_ros_config,
@@ -370,8 +393,10 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
             + inactive_flags
             + controllers,
         )
+    
+    from collections import deque
 
-    controllers_active = [
+    controllers_active = deque([
         # "joint_state_broadcaster",
         "scaled_joint_trajectory_controller",
         "io_and_status_controller",
@@ -379,21 +404,26 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         "force_torque_sensor_broadcaster",
         "tcp_pose_broadcaster",
         "ur_configuration_controller",
-    ]
-    controllers_inactive = [
+    ])
+    controllers_inactive = deque([
         "joint_trajectory_controller",
         "forward_velocity_controller",
         "forward_position_controller",
         "passthrough_trajectory_controller",
-    ]
+    ])
     if use_mock_hardware.perform(context) == "true":
-        controllers_active.append('joint_trajectory_controller')
+        # controllers_active.append('joint_trajectory_controller')
         controllers_inactive.remove('joint_trajectory_controller')
-        controllers_active.remove(initial_ur_controller.perform(context))
-        controllers_inactive.append(initial_ur_controller.perform(context))
+        controllers_active.remove("scaled_joint_trajectory_controller")
+        # controllers_inactive.append("scaled_joint_trajectory_controller")
+        controllers_active.insert(0, "joint_trajectory_controller")
+        controllers_inactive.insert(0, "scaled_joint_trajectory_controller")
 
-    controller_spawners = [controller_spawner(controllers_active)] + [
-        controller_spawner(controllers_inactive, active=False)
+    logger.warn(f"{controllers_active}")
+    logger.warn(f"{controllers_inactive}")
+
+    controller_spawners = [controller_spawner(list(controllers_active))] + [
+        controller_spawner(list(controllers_inactive), active=False)
     ]
 
     # Delay rviz start after joint_state_broadcaster to avoid unnecessary warning output
