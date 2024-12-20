@@ -16,6 +16,7 @@ rosidl_generate_interfaces(
   "srv/StartFinalApproach.srv"
   "action/RunCutPointRotateAxis.action"
   "action/RunFinalApproach.action"
+  "action/RunFindBranchRollWrist.action"
   DEPENDENCIES std_msgs action_msgs
 )
 
