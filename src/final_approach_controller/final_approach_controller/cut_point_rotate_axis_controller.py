@@ -108,14 +108,14 @@ class CutPointRotateAxisController(TFNode):
             while self.controller_running:
                 if goal_handle.is_cancel_requested:
                     goal_handle.canceled()
-                    self.info('CutPointRotateAxisController canceled')
+                    self.info('CutPointRotateAxisController canceled.')
                     result.success = False
                     return result
                 feedback_msg.tof0 = self.d_tof0
                 feedback_msg.tof1 = self.d_tof1
                 feedback_msg.dist = (self.d_tof0 + self.d_tof1) / 2
                 d_diff = self.d_tof0 - self.d_tof1
-                feedback_msg.theta = np.arctan(d_diff / self._tof_linear_distance)
+                feedback_msg.theta = np.degrees(np.arctan(d_diff / self._tof_linear_distance))
                 goal_handle.publish_feedback(feedback_msg)
                 time.sleep(1)
 
@@ -199,7 +199,6 @@ class CutPointRotateAxisController(TFNode):
         dist_cut_point_to_branch = dist - self.tf_cut_point_to_tof0[2, 3]
         
         if np.isclose(theta, 0.0, atol=np.radians(1)):
-
             self.info(f"Reached terminating point at:\ndist:{dist_cut_point_to_branch}, theta: {theta}")
             self._timer_run_controller.cancel()
             self.controller_running = False

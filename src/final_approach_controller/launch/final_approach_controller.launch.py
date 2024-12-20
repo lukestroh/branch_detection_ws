@@ -32,9 +32,17 @@ def launch_setup(context, *args, **kwargs) -> list:
         output="both"
     )
 
+    node_find_branch_roll_wrist_controller = Node(
+        package="final_approach_controller",
+        executable="find_branch_roll_wrist_controller",
+        name="find_branch_roll_wrist_controller",
+        output="both"
+    )
+
     _to_return = [
         node_final_approach_controller,
-        node_cut_point_rotate_axis_controller
+        node_cut_point_rotate_axis_controller,
+        node_find_branch_roll_wrist_controller,
     ]
 
     return _to_return

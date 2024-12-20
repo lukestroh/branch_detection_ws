@@ -22,7 +22,7 @@ import yaml
 
 class TFNode(Node):
     def __init__(self, node_name, *args, **kwargs) -> None:
-        super().__init__(node_name=node_name, *args, **kwargs)
+        super().__init__(node_name=node_name, *args)
 
         qos = QoSProfile(
             reliability=ReliabilityPolicy.RELIABLE,
@@ -31,7 +31,7 @@ class TFNode(Node):
             depth=1,
         )
 
-        self.tf_buffer = Buffer()
+        self.tf_buffer = Buffer(cache_time=kwargs.get('cache_time'))
         self.tf_listener = TransformListener(self.tf_buffer, self, static_qos=qos)
         return
 

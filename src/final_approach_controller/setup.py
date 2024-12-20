@@ -25,7 +25,8 @@ setup(
     entry_points={
         "console_scripts": [
             "final_approach_controller = final_approach_controller.final_approach_controller:main",
-            "cut_point_rotate_axis_controller = final_approach_controller.cut_point_rotate_axis_controller:main"
+            "cut_point_rotate_axis_controller = final_approach_controller.cut_point_rotate_axis_controller:main",
+            "find_branch_roll_wrist_controller = final_approach_controller.find_branch_roll_wrist_controller:main",
         ],
     },
 )
