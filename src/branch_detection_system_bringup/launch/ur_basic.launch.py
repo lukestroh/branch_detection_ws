@@ -394,9 +394,7 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
             + controllers,
         )
     
-    from collections import deque
-
-    controllers_active = deque([
+    controllers_active = [
         # "joint_state_broadcaster",
         "scaled_joint_trajectory_controller",
         "io_and_status_controller",
@@ -404,23 +402,18 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         "force_torque_sensor_broadcaster",
         "tcp_pose_broadcaster",
         "ur_configuration_controller",
-    ])
-    controllers_inactive = deque([
+    ]
+    controllers_inactive = [
         "joint_trajectory_controller",
         "forward_velocity_controller",
         "forward_position_controller",
         "passthrough_trajectory_controller",
-    ])
+    ]
     if use_mock_hardware.perform(context) == "true":
-        # controllers_active.append('joint_trajectory_controller')
         controllers_inactive.remove('joint_trajectory_controller')
         controllers_active.remove("scaled_joint_trajectory_controller")
-        # controllers_inactive.append("scaled_joint_trajectory_controller")
         controllers_active.insert(0, "joint_trajectory_controller")
         controllers_inactive.insert(0, "scaled_joint_trajectory_controller")
-
-    logger.warn(f"{controllers_active}")
-    logger.warn(f"{controllers_inactive}")
 
     controller_spawners = [controller_spawner(list(controllers_active))] + [
         controller_spawner(list(controllers_inactive), active=False)
