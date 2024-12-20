@@ -4,7 +4,7 @@
     <!-- <xacro:arg name="name" default="mock_pruner"/> -->
     <!-- <xacro:arg name="mesh_base_path" default="./"/> -->
     <!-- <xacro:property name="end_effector_parent" value="" /> -->
-    <xacro:property name="mock_pruner_rot_offset" value="0.0 0.0 0.0"/>
+    <xacro:property name="mock_pruner_rot_offset" value="0.0 0.0 ${pi}"/>
     
     <!-- Materials -->
     
@@ -89,7 +89,7 @@
         <!--     Joints        -->
         <!-- ================== -->
         <joint name="$(arg dovetail_female_mount_prefix)tool0--${eef_prefix}base" type="fixed">
-            <origin xyz="0 0 0" rpy="0 0 0"/>
+            <origin xyz="0 0 0" rpy="${mock_pruner_rot_offset}"/>
             <parent link="$(arg dovetail_female_mount_prefix)tool0"/>
             <child link="${eef_prefix}base"/>
         </joint>

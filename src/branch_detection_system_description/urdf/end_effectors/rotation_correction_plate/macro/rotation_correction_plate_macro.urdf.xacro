@@ -4,6 +4,7 @@
     <xacro:property name="rotation_correction_plate_rot_offset" value="0.0 0.0 0.0"/>
 
     <xacro:property name="rotation_correction_plate_mass" value="0.047"/>
+    <xacro:property name="rotation_correction_plate_rot_offset" value="0.0 0.0 ${pi}" />
 
     <xacro:macro name="rotation_correction_plate_macro" params="parent_link rotation_correction_plate_prefix mesh_base_path">
         <!-- =========================== -->

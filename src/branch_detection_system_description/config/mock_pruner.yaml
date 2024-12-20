@@ -1,4 +1,4 @@
 eef_type: mock_pruner
 mock_pruner_prefix: mock_pruner__
-tof0_offset: "0.1 -0.015 0.21737"
-tof1_offset: "-0.1 -0.015 0.21737"
+tof0_offset: "0.04891 -0.02373 0.21737"
+tof1_offset: "-0.04891 -0.02373 0.21737"

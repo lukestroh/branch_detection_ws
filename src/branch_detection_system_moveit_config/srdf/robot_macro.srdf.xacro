@@ -55,7 +55,16 @@
     <disable_collisions link1="${prefix}wrist_2_link" link2="${prefix}wrist_3_link" reason="Adjacent" />
 
     <!-- TODO Dynamically configure. Can probably be done with just the "body" links? Or maybe virtual links here. -->
-    <disable_collisions link1="dovetail_male_mount__base" link2="${prefix}tool0" reason="Adjacent" />
+    <disable_collisions link1="rotation_correction_plate__base" link2="${prefix}tool0" reason="Adjacent" />
+    <disable_collisions link1="rotation_correction_plate__base" link2="${prefix}wrist_3_link" reason="Never" />
+    <disable_collisions link1="rotation_correction_plate__body" link2="${prefix}tool0" reason="Adjacent" />
+    <disable_collisions link1="rotation_correction_plate__body" link2="${prefix}wrist_3_link" reason="Never" />
+    <disable_collisions link1="rotation_correction_plate__body" link2="dovetail_male_mount__base" reason="Adjacent" />
+    <disable_collisions link1="rotation_correction_plate__body" link2="dovetail_male_mount__body" reason="Never" />
+    <disable_collisions link1="rotation_correction_plate__tool0" link2="dovetail_male_mount__base" reason="Adjacent" />
+    <disable_collisions link1="rotation_correction_plate__tool0" link2="dovetail_male_mount__body" reason="Never" />
+
+    <disable_collisions link1="dovetail_male_mount__base" link2="${prefix}tool0" reason="Never" />
     <disable_collisions link1="dovetail_male_mount__base" link2="dovetail_male_mount__body" reason="Never" />
     <disable_collisions link1="dovetail_male_mount__base" link2="dovetail_male_mount__tool0" reason="Never" />
     <disable_collisions link1="dovetail_male_mount__body" link2="${prefix}tool0" reason="Never"/>

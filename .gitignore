@@ -174,3 +174,7 @@ micro_ros_setup/
 uros/
 
 git-filter-repo
+
+# urdf testing
+test.urdf
+
