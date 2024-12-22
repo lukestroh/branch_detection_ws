@@ -28,7 +28,8 @@ setup(
         "console_scripts": [
             "wrench_filter_node = pruning_admittance_controller.wrench_filter:main",
             "contact_watcher_node = pruning_admittance_controller.contact_watcher:main",
-            "fake_wrench_pub_node = pruning_admittance_controller.fake_wrench_publisher:main",
+            # "fake_wrench_pub_node = pruning_admittance_controller.fake_wrench_publisher:main",
+            "admittance_controller_node = pruning_admittance_controller.admittance_controller:main",
         ],
     },
 )

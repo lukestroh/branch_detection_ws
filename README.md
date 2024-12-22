@@ -1,5 +1,10 @@
 # Branch Detection Worksapce
 
+## TODO:
+1. For Contribution 2!!!: https://stackoverflow.com/questions/77134139/fit-3d-cylinder-in-a-point-cloud
+1. https://stackoverflow.com/questions/43784618/fit-a-cylinder-to-scattered-3d-xyz-point-data/44164662#44164662
+
+
 This is a ROS2 workspace. Various packages have been provided for the development of ToF branch detection.
 
 In order to run this package, a microROS package must be created. Some steps from the microROS tutorials can be omitted.

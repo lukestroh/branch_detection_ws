@@ -4,34 +4,42 @@
     <!-- <xacro:arg name="name" default="mock_pruner"/> -->
     <!-- <xacro:arg name="mesh_base_path" default="./"/> -->
     <!-- <xacro:property name="end_effector_parent" value="" /> -->
-    <xacro:property name="mock_pruner_rot_offset" value="0.0 0.0 0.0"/>
+    <xacro:property name="mock_pruner_rot_offset" value="0.0 0.0 ${pi}"/>
     
     <!-- Materials -->
     
     
-    <xacro:macro name="mock_pruner_macro" params="parent_link eef_prefix tof0_offset tof1_offset camera_offset mesh_base_path urdf_base_path">
+    <xacro:macro name="mock_pruner_macro" params="parent_link eef_prefix tof0_offset tof1_offset camera_offset mesh_base_path">
         <!-- static properties -->
-        <xacro:property name="mock_pruner_mass" value="2.0" />
-        <xacro:property name="base__tool0_offset" value="0.0 0.0 0.27208"/>
+        <xacro:property name="mock_pruner_mass" value="0.256" />
+        <xacro:property name="base__tool0_offset" value="0.0 0.0 0.23508"/>
         <!-- <xacro:property name="base__tool0_offset" value="0.0 0.0 0.20"/> -->
         <xacro:property name="base__tof0_offset" value="${tof0_offset}"/>
         <xacro:property name="base__tof1_offset" value="${tof1_offset}"/>
         
         <!-- <xacro:property name="base__tof0_offset" value="${tof0_offset} 0 0.15"/> -->
         <!-- <xacro:property name="base__tof1_offset" value="${tof1_offset} 0 0.15"/> -->
-        <xacro:property name="base__camera0_offset" value="0.0 0.0600 0.19094"/>
+        <xacro:property name="base__camera0_offset" value="0.0 -0.069 0.16379"/>
         
         
         <!-- additional args -->
+        <xacro:arg name="rotation_correction_plate_prefix" default="rotation_correction_plate__" />
         <xacro:arg name="dovetail_male_mount_prefix" default="dovetail_male_mount__" />
         <xacro:arg name="dovetail_female_mount_prefix" default="dovetail_female_mount__" />
         <xacro:arg name="mesh_base_path" default=""/>
-        <xacro:arg name="urdf_base_path" default=""/>
+
+        <!-- rotation correction plate macro -->
+        <xacro:include filename="$(find branch_detection_system_description)/urdf/end_effectors/rotation_correction_plate/macro/rotation_correction_plate_macro.urdf.xacro" />
+        <xacro:rotation_correction_plate_macro 
+            parent_link="${parent_link}"
+            rotation_correction_plate_prefix="$(arg rotation_correction_plate_prefix)"
+            mesh_base_path="${mesh_base_path}"
+        />
         
         <!-- dovetail_mount macro -->
-        <xacro:include filename="${urdf_base_path}/end_effectors/dovetail_mount/macro/dovetail_mount_macro.urdf.xacro" />
+        <xacro:include filename="$(find branch_detection_system_description)/urdf/end_effectors/dovetail_mount/macro/dovetail_mount_macro.urdf.xacro" />
         <xacro:dovetail_mount_macro
-            parent_link="${parent_link}"
+            parent_link="$(arg rotation_correction_plate_prefix)tool0"
             dovetail_male_mount_prefix="$(arg dovetail_male_mount_prefix)"
             dovetail_female_mount_prefix="$(arg dovetail_female_mount_prefix)"
             mesh_base_path="${mesh_base_path}"
@@ -81,7 +89,7 @@
         <!--     Joints        -->
         <!-- ================== -->
         <joint name="$(arg dovetail_female_mount_prefix)tool0--${eef_prefix}base" type="fixed">
-            <origin xyz="0 0 0" rpy="0 0 0"/>
+            <origin xyz="0 0 0" rpy="${mock_pruner_rot_offset}"/>
             <parent link="$(arg dovetail_female_mount_prefix)tool0"/>
             <child link="${eef_prefix}base"/>
         </joint>

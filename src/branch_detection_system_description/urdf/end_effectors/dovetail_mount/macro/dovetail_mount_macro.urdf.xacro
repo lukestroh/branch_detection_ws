@@ -1,11 +1,6 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="https://ros.org/wiki/xacro" name="dovetail_mount">
 
-    <xacro:property name="dovetail_male_tool0_height" value="0.008"/>
-    <xacro:property name="dovetail_female_tool0_height" value="0.023"/>
-    <xacro:property name="dovetail_male_rot_offset" value="0.0 0.0 0.0"/>
-
-
     <xacro:macro name="dovetail_male_mount_macro" params="parent_link dovetail_male_mount_prefix mesh_base_path">
         <!-- ==================== -->
         <!-- Dovetail Male Mount  -->
@@ -13,7 +8,9 @@
         <material name="lavender">
             <color rgba="0.749 0.580 0.894 1"/>
         </material>
-        <xacro:property name="dovetail_male_mass" value="0.025"/>
+        <xacro:property name="dovetail_male_mass" value="0.033"/>
+        <xacro:property name="dovetail_male_tool0_height" value="0.008"/>
+        <xacro:property name="dovetail_male_rot_offset" value="0.0 0.0 0.0"/>
         
         <!-- links -->
         <link name="${dovetail_male_mount_prefix}base"/>
@@ -63,7 +60,10 @@
         <material name="ochre">
             <color rgba="0.929 0.710 0.145 1"/>
         </material>
-        <xacro:property name="dovetail_female_mass" value="0.025"/>
+        <xacro:property name="dovetail_female_mass" value="0.038"/>
+        <xacro:property name="dovetail_female_tool0_height" value="0.023"/>
+        <xacro:property name="dovetail_female_rot_offset" value="0.0 0.0 ${pi}"/>
+
         <!-- links -->
         <link name="${dovetail_female_mount_prefix}base"/>
         <link name='${dovetail_female_mount_prefix}body'>
@@ -89,7 +89,7 @@
         <link name="${dovetail_female_mount_prefix}tool0"/>
         <!-- joints -->
         <joint name="${parent_link}--${dovetail_female_mount_prefix}base" type="fixed">
-            <origin xyz="0 0 ${dovetail_female_tool0_height}" rpy="0 0 0"/>
+            <origin xyz="0 0 ${dovetail_female_tool0_height}" rpy="${dovetail_female_rot_offset}"/>
             <parent link="${parent_link}"/>
             <child link="${dovetail_female_mount_prefix}base"/>
         </joint>

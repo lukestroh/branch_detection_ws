@@ -8,6 +8,10 @@ from geometry_msgs.msg import WrenchStamped
 from collections import deque
 import numpy as np
 
+"""Flag when the cutters make contact with the branch
+Sometimes robot will jerk and we see random forces in random directions.
+
+"""
 
 class ContactWatcherNode(Node):
     def __init__(self, deque_size):
@@ -60,15 +64,16 @@ class ContactWatcherNode(Node):
             y_more_than = np.asarray(self.y_forces) > self.f_thresh
             y_outside_mask = y_less_than | y_more_than
 
-            x_less_than = np.asarray(self.x_torques) < -self.f_thresh
-            x_more_than = np.asarray(self.x_torques) > self.f_thresh
-            x_outside_mask = x_less_than | x_more_than
+            # x_less_than = np.asarray(self.x_torques) < -self.f_thresh
+            # x_more_than = np.asarray(self.x_torques) > self.f_thresh
+            # x_outside_mask = x_less_than | x_more_than
 
             num_z_outside = np.sum(self.ones[z_outside_mask])
             num_y_outside = np.sum(self.ones[y_outside_mask])
-            num_x_outside = np.sum(self.ones[x_outside_mask])
+            # num_x_outside = np.sum(self.ones[x_outside_mask])
 
-            if any(num > 5 for num in [num_x_outside, num_y_outside, num_z_outside]):
+            # If 5 of the forces read are greater than the threshold, then quit!
+            if any(num > 5 for num in [num_y_outside, num_z_outside]):
                 self.warn("Force detected! Contact triggered")
 
         return

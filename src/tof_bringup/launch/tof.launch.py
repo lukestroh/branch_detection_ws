@@ -46,7 +46,7 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         name="micro_ros_agent",
         output="screen",
         arguments=["serial", "--dev", serial_port, f"ROS_DOMAIN_ID={ENV_ROS_DOMAIN_ID}"],
-        condition=UnlessCondition(use_mock_hardware),
+        # condition=UnlessCondition(use_mock_hardware),
     )
 
     # =========================
@@ -67,7 +67,8 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
             os.path.join(dir_vl6180_bringup, "launch", "vl6180.launch.py"),
         ),
         launch_arguments=[
-            ("sensor_quantity", sensor_quantity),
+            # ("sensor_quantity", sensor_quantity),
+            ('use_plot_juggler', 'false')
         ],
         condition=IfCondition([str(sensor_type.perform(context) == "vl6180")]),
     )
@@ -81,7 +82,7 @@ def generate_launch_description():
     declared_configs = [
         dict(name="serial_port", default_value="/dev/ttyACM0"),
         dict(name="sensor_type", default_value="vl53l8cx", choices=["vl53l8cx", "vl6180"]),
-        dict(name="sensor_quantity", default_value="1"),
+        dict(name="sensor_quantity", default_value="2"),
         dict(name="use_mock_hardware", default_value="false"),
     ]
 

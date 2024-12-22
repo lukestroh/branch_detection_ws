@@ -23,12 +23,15 @@ class WrenchFilterNode(Node):
 
         # Subscribers
         self._sub_wrench_raw = self.create_subscription(
-            msg_type=WrenchStamped, topic="/wrench", callback=self._sub_cb_wrench_raw, qos_profile=1
+            msg_type=WrenchStamped,
+            topic="/force_torque_sensor_broadcaster/wrench",
+            callback=self._sub_cb_wrench_raw,
+            qos_profile=1
         )
 
         # Publishers
         self._pub_wrench_filtered = self.create_publisher(
-            msg_type=WrenchStamped, topic="/wrench_filtered", qos_profile=1
+            msg_type=WrenchStamped, topic="/force_torque_sensor_broadcaster/wrench_filtered", qos_profile=1
         )
 
         # Internal messages

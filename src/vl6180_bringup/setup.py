@@ -16,6 +16,9 @@ setup(
         (os.path.join("share", package_name, "launch"), glob.glob("launch/*launch.py")),
         # Config files
         (os.path.join("share", package_name, "config"), glob.glob("config/*.yaml")),
+        (os.path.join("share", package_name, "config"), glob.glob("config/*.json")),
+        # Plotjuggler
+        (os.path.join("share", package_name, "plotjuggler"), glob.glob('plotjuggler/*.xml')),
     ],
     install_requires=["setuptools"],
     zip_safe=True,
