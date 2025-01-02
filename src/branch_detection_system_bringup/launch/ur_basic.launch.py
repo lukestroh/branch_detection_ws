@@ -288,13 +288,14 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         moveit_configs.trajectory_execution["joint_trajectory_controller"]["default"] = True
 
 
+    # TODO: If trajectory_execution is part of mcb, check to see if this should be in yaml file?
     params_trajectory_execution = {
         "trajectory_execution.allowed_execution_duration_scaling": 1.2,
         "trajectory_execution.allowed_goal_duration_margin": 0.5,
         "trajectory_execution.allowed_start_tolerance": 0.01,
     }
 
-    logger.warn(f"{moveit_configs.trajectory_execution}")
+    # logger.warn(f"{moveit_configs.trajectory_execution}")
 
 
     warehouse_ros_config = {

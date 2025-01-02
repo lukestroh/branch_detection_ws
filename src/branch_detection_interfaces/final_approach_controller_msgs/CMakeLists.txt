@@ -13,6 +13,8 @@ find_package(rosidl_default_generators REQUIRED)
 
 rosidl_generate_interfaces(
   ${PROJECT_NAME}
+  "msg/ToFBranchFit.msg"
+  "msg/ToFBranchFitStamped.msg"
   "srv/StartFinalApproach.srv"
   "action/RunCutPointRotateAxis.action"
   "action/RunFinalApproach.action"
