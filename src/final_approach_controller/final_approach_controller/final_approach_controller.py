@@ -23,6 +23,7 @@ from scipy.spatial.transform import Rotation
 import pprint as pp
 import time
 
+
 class FinalApproachControllerNode(TFNode):
     def __init__(self):
         super().__init__(node_name="final_approach_controller_node")
@@ -39,12 +40,12 @@ class FinalApproachControllerNode(TFNode):
         self._action_svr_run_final_appoach = ActionServer(
             node=self,
             action_type=RunFinalApproach,
-            action_name='run_final_approach',
+            action_name="run_final_approach",
             goal_callback=self._action_goal_cb_run_final_approach,
             cancel_callback=self._action_cancel_cb_run_final_approach,
             execute_callback=self._action_exe_cb_run_final_approach,
             # handle_accepted_callback=self._action_handle_accepted_cb_run_final_approach,
-            callback_group=self.callback_group
+            callback_group=self.callback_group,
         )
 
         # Services
@@ -91,18 +92,21 @@ class FinalApproachControllerNode(TFNode):
         self.tf_mp_cut_point_to_base = np.identity(4)
         self.tf_cut_point_to_tof0 = np.identity(4)
         self.tf_tof0_to_tof1 = np.identity(4)
-        self._dist_cut_point_to_branch_threshold = 0.04 # This is bad, get better sensors? How to calibrate? save yaml from test, load here   
+        self._dist_cut_point_to_branch_threshold = (
+            0.04  # This is bad, get better sensors? How to calibrate? save yaml from test, load here
+        )
         self.controller_running = False
+        self.feedback_pub_prev_time = self.get_clock().now()
         return
-    
+
     # ===============================
     #        Action callbacks
     # ===============================
-    
+
     def _action_cancel_cb_run_final_approach(self, goal_handle: ServerGoalHandle):
         self.info("Received cancel request")
         return CancelResponse.ACCEPT
-    
+
     def _action_exe_cb_run_final_approach(self, goal_handle: ServerGoalHandle):
         self.controller_running = True
         if self._timer_run_controller is None:
@@ -114,31 +118,31 @@ class FinalApproachControllerNode(TFNode):
 
         try:
 
-
             feedback_msg = RunFinalApproach.Feedback()
             result = RunFinalApproach.Result()
 
             while self.controller_running:
                 if goal_handle.is_cancel_requested:
                     goal_handle.canceled()
-                    self.info('FinalApproachControllerAction canceled')
+                    self.info("FinalApproachControllerAction canceled")
                     result.success = False
                     return result
-                feedback_msg.tof0 = self.d_tof0
-                feedback_msg.tof1 = self.d_tof1
-                feedback_msg.dist = (self.d_tof0 + self.d_tof1) / 2
-                d_diff = self.d_tof0 - self.d_tof1
-                feedback_msg.theta = np.arctan(d_diff / self._tof_linear_distance)
-                goal_handle.publish_feedback(feedback_msg)
-                time.sleep(1)
-                
+                if self.get_clock().now() - self.feedback_pub_prev_time >= Duration(seconds=1):
+                    feedback_msg.tof0 = self.d_tof0
+                    feedback_msg.tof1 = self.d_tof1
+                    feedback_msg.dist = (self.d_tof0 + self.d_tof1) / 2
+                    d_diff = self.d_tof0 - self.d_tof1
+                    feedback_msg.theta = np.arctan(d_diff / self._tof_linear_distance)
+                    goal_handle.publish_feedback(feedback_msg)
+                    self.feedback_pub_prev_time = self.get_clock().now()
+
             result.success = True
-    
+
             goal_handle.succeed()
             return result
-        
+
         except Exception as e:
-            self.get_logger().fatal(f'{e}')
+            self.get_logger().fatal(f"{e}")
         finally:
             self._timer_run_controller.cancel()
         return result
@@ -146,7 +150,7 @@ class FinalApproachControllerNode(TFNode):
     def _action_goal_cb_run_final_approach(self, goal_handle: ServerGoalHandle):
         self.info("Received goal request")
         return GoalResponse.ACCEPT
-    
+
     # ===============================
     #         Timer callbacks
     # ===============================
@@ -186,45 +190,48 @@ class FinalApproachControllerNode(TFNode):
         if not np.all(np.isclose(self.tf_tof0_to_tof1[:3, :3], np.identity(3), atol=1e-3)):
             raise ValueError("The two ToF frames are not aligned with each other.")
         return
-    
-    def _timer_cb_run_controller(self):        
+
+    def _timer_cb_run_controller(self):
         dist, theta = self.get_cut_point_info()
         dist_cut_point_to_branch = dist - self.tf_cut_point_to_tof0[2, 3]
-        
+
         if (
             np.isclose(dist_cut_point_to_branch, 0, atol=self._dist_cut_point_to_branch_threshold)
             or (dist_cut_point_to_branch) < 0
-        ):  
-            self.msg_twist.twist.linear.x = 0.0
-            self.msg_twist.twist.linear.y = 0.0
-            self.msg_twist.twist.linear.z = 0.0
-            self.msg_twist.twist.angular.x = 0.0
-            self.msg_twist.twist.angular.y = 0.0
-            self.msg_twist.twist.angular.z = 0.0
-            self.msg_twist.header.frame_id = "cart__base" # TODO: if changing to EEF, change ur_servo.yaml
-            self.msg_twist.header.stamp = self.get_clock().now().to_msg()
-            self._pub_servo.publish(self.msg_twist)
-            
+        ):
+            self.publish_zero_twist()
+
             self.info(f"Reached terminating point at dist:{dist}, theta: {theta}")
             self._timer_run_controller.cancel()
             self.controller_running = False
             return
 
-        tf_cut_point_to_world = self.lookup_transform(
-            source_frame="mock_pruner__tool0",
-            target_frame="cart__base",
-            time=self.get_clock().now(),
-            sync=True,
-            as_matrix=True,
-        )
-        twist = self.get_twist(tf_world_to_eef=tf_cut_point_to_world, dist=dist)
+        # if servo_frame == "cart__base":
+        #     tf_cut_point_to_world = self.lookup_transform(
+        #         source_frame="mock_pruner__tool0",
+        #         target_frame="cart__base",
+        #         time=self.get_clock().now(),
+        #         sync=True,
+        #         as_matrix=True,
+        #     )
+        #     twist = self.get_twist(tf_world_to_eef=tf_cut_point_to_world, dist=dist)
+
+        if dist - self.tf_cut_point_to_tof0[2, 3] <= 0:
+            return np.zeros((6, 1))
+        Kp = 1 / (dist - self.tf_cut_point_to_tof0[2, 3])
+
+        velocity = Kp * self.max_linear_speed * [0, 0, 1]
+
+        twist = np.zeros(6)
+        twist[0:3] = velocity / np.linalg.norm(velocity) * self.max_linear_speed
+
         self.msg_twist.twist.linear.x = twist[0]
         self.msg_twist.twist.linear.y = twist[1]
         self.msg_twist.twist.linear.z = twist[2]
         self.msg_twist.twist.angular.x = twist[3]
         self.msg_twist.twist.angular.y = twist[4]
         self.msg_twist.twist.angular.z = twist[5]
-        self.msg_twist.header.frame_id = "cart__base"
+        self.msg_twist.header.frame_id = "mock_pruner__tool0"
         self.msg_twist.header.stamp = self.get_clock().now().to_msg()
         self._pub_servo.publish(self.msg_twist)
         return
@@ -240,7 +247,7 @@ class FinalApproachControllerNode(TFNode):
         self.d_tof1 = msg.data[1] / 1000
         # self.warn(self.d_tof0)
         return
-    
+
     # ===============================
     #        Service callbacks
     # ===============================
@@ -253,7 +260,7 @@ class FinalApproachControllerNode(TFNode):
         # self._timer_run_controller/
         response.success = True
         return response
-    
+
     # ===============================
     #       Controller methods
     # ===============================
@@ -282,6 +289,18 @@ class FinalApproachControllerNode(TFNode):
         twist = np.zeros(6)
         twist[0:3] = velocity / np.linalg.norm(velocity) * self.max_linear_speed
         return twist
+    
+    def publish_zero_twist(self, servo_frame="mock_pruner__tool0"):
+        self.msg_twist.twist.linear.x = 0.0
+        self.msg_twist.twist.linear.y = 0.0
+        self.msg_twist.twist.linear.z = 0.0
+        self.msg_twist.twist.angular.x = 0.0
+        self.msg_twist.twist.angular.y = 0.0
+        self.msg_twist.twist.angular.z = 0.0
+        self.msg_twist.header.frame_id = servo_frame  # TODO: if changing to EEF, change ur_servo.yaml
+        self.msg_twist.header.stamp = self.get_clock().now().to_msg()
+        self._pub_servo.publish(self.msg_twist)
+        return
 
 
 def main():
