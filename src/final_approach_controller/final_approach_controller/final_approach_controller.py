@@ -220,7 +220,7 @@ class FinalApproachControllerNode(TFNode):
             return np.zeros((6, 1))
         Kp = 1 / (dist - self.tf_cut_point_to_tof0[2, 3])
 
-        velocity = Kp * self.max_linear_speed * [0, 0, 1]
+        velocity = Kp * self.max_linear_speed * np.array([0, 0, 1])
 
         twist = np.zeros(6)
         twist[0:3] = velocity / np.linalg.norm(velocity) * self.max_linear_speed
@@ -289,7 +289,7 @@ class FinalApproachControllerNode(TFNode):
         twist = np.zeros(6)
         twist[0:3] = velocity / np.linalg.norm(velocity) * self.max_linear_speed
         return twist
-    
+
     def publish_zero_twist(self, servo_frame="mock_pruner__tool0"):
         self.msg_twist.twist.linear.x = 0.0
         self.msg_twist.twist.linear.y = 0.0

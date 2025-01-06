@@ -1,21 +1,33 @@
 #!/usr/bin/env python3
 import rclpy
-from rclpy.action import ActionServer, CancelResponse, GoalResponse
+from rclpy.action import ActionServer, ActionClient, CancelResponse, GoalResponse
 from rclpy.action.server import ServerGoalHandle
 from rclpy.callback_groups import ReentrantCallbackGroup
-from rclpy.executors import MultiThreadedExecutor
 from rclpy.duration import Duration
+from rclpy.executors import MultiThreadedExecutor
+from rclpy.parameter import Parameter
 from rclpy.time import Time
 
-from action_msgs.msg import GoalStatus
+
 from final_approach_controller_msgs.action import RunFindBranchRollWrist
 from final_approach_controller_msgs.msg import ToFBranchFitStamped
 import final_approach_controller.curve_fitting as cf
 from final_approach_controller.tf_node import TFNode
-
 from vl6180_msgs.msg import Vl6180FilteredStamped
+
+from action_msgs.msg import GoalStatus
+from controller_manager_msgs.srv import SwitchController
 from geometry_msgs.msg import TwistStamped
+from moveit_msgs.action import MoveGroup
+from moveit_msgs.msg import (
+    MotionPlanRequest,
+    MotionPlanResponse,
+    Constraints,
+    PositionConstraint,
+    OrientationConstraint,
+)
 from sensor_msgs.msg import JointState
+from std_srvs.srv import Trigger
 
 import modern_robotics as mr
 import numpy as np
@@ -25,6 +37,7 @@ import pprint as pp
 from collections import deque
 import time
 import secrets
+import traceback
 
 import pandas as pd
 import os
@@ -38,10 +51,20 @@ class FindBranchRollWristController(TFNode):
         self.warn = lambda x: self.get_logger().warn(f"\n{x}")
         self.error = lambda x: self.get_logger().error(f"\n{x}")
 
+        # Launch arguments
+        _param_use_mock_hardware: bool = (
+            self.declare_parameter(name="use_mock_hardware", value=Parameter.Type.BOOL).get_parameter_value().bool_value
+        )
+        if _param_use_mock_hardware:
+            self._move_group_controller = "joint_trajectory_controller"
+        else:
+            self._move_group_controller = "scaled_joint_trajectory_controller"
+        self._servo_controller = "forward_position_controller"
+
         # Callback group
         self.callback_group = ReentrantCallbackGroup()
 
-        # Actions
+        # Action servers
         self._action_svr_run_find_branch_roll_wrist = ActionServer(
             node=self,
             action_type=RunFindBranchRollWrist,
@@ -49,6 +72,29 @@ class FindBranchRollWristController(TFNode):
             goal_callback=self._action_goal_cb_run_find_branch_roll_wrist,
             cancel_callback=self._action_cancel_cb_run_find_branch_roll_wrist,
             execute_callback=self._action_exe_cb_run_find_branch_roll_wrist,
+            callback_group=self.callback_group,
+        )
+
+        # Action clients
+        self._action_client_move_group = ActionClient(
+            node=self,
+            action_name="move_action",
+            action_type=MoveGroup,
+            callback_group=self.callback_group,
+        )
+
+        # Service clients
+        self._srv_client_start_servo = self.create_client(
+            srv_type=Trigger, srv_name="/servo_node/start_servo", callback_group=self.callback_group
+        )
+
+        self._srv_client_stop_servo = self.create_client(
+            srv_type=Trigger, srv_name="/servo_node/stop_servo", callback_group=self.callback_group
+        )
+
+        self._srv_switch_ctrls = self.create_client(
+            srv_type=SwitchController,
+            srv_name="/controller_manager/switch_controller",
             callback_group=self.callback_group,
         )
 
@@ -108,7 +154,7 @@ class FindBranchRollWristController(TFNode):
         self.neg_rot_complete = False
         self.pos_rot_complete = False
         self.max_angular_vel = np.pi / 16
-        self.vl6180_far_plane = 0.160  # based on datasheet, might be more
+        self.vl6180_far_plane = 0.200  # 0.19 based on testing, but give it small window
         self.vl6180_precision = 0.001
         self.tof0_branch_found = self.tof1_branch_found = False
         self.get_final_pose_ready = False  # True when two valid tof fits have been recorded. Indicates to controller that it is ready to solve for a final pose
@@ -165,14 +211,14 @@ class FindBranchRollWristController(TFNode):
                     self._timer_run_controller.cancel()
                     result.success = False
                     return result
-                    
+
                 if goal_handle.status == GoalStatus.STATUS_ABORTED:
                     self._timer_run_controller.cancel()
                     result.success = False
                     return result
 
                 if goal_handle.status == GoalStatus.STATUS_EXECUTING:
-                    # self.warn(goal_handle.status)
+                    # Cancel action if requested
                     if goal_handle.is_cancel_requested:
                         goal_handle.canceled()
                         self.info("FindBranchRollWristController canceled.")
@@ -180,16 +226,16 @@ class FindBranchRollWristController(TFNode):
                         result.success = False
                         return result
 
+                    # Action feedback
                     if self.get_clock().now() - self.feedback_pub_prev_time >= Duration(seconds=1):
                         feedback_msg.tof0 = self.d_tof0
                         feedback_msg.tof1 = self.d_tof1
                         goal_handle.publish_feedback(feedback=feedback_msg)
                         self.feedback_pub_prev_time = self.get_clock().now()
 
-        ################################################################################################################
+                    ################################################################################################################
                     # if both have a fit, publish zero message, do pose math, call service, kill timer, controller_running = False
                     if not self.rotations_complete:
-
                         if not self.neg_rot_complete:
                             # # rotate to the closest side
                             # if self.joint_states[-1] < 0 and self.joint_states[-1] > -1 * np.pi:
@@ -199,14 +245,24 @@ class FindBranchRollWristController(TFNode):
                                 self.joint_states[2], np.pi / 2, atol=0.01
                             ):  # TODO: (long term) make sure wrist mount config is standard
                                 # Try to fit data
-                                self.info(self.timestamp_readings)
-                                self.tof0_time_center = self.get_branch_center_time_and_distance(
-                                    timestamps=self.timestamp_readings, readings=self.d_tof0_readings, sensor_name="tof0", debug_plot=self.debug_plot
+                                self.tof0_time_center, self.tof0_distance_center = (
+                                    self.get_branch_center_time_and_distance(
+                                        timestamps=self.timestamp_readings,
+                                        readings=self.d_tof0_readings,
+                                        sensor_name="tof0",
+                                        debug_plot=self.debug_plot,
+                                    )
                                 )
-                                self.tof1_time_center = self.get_branch_center_time_and_distance(
-                                    timestamps=self.timestamp_readings, readings=self.d_tof1_readings, sensor_name="tof1", debug_plot=self.debug_plot
+                                self.tof1_time_center, self.tof1_distance_center = (
+                                    self.get_branch_center_time_and_distance(
+                                        timestamps=self.timestamp_readings,
+                                        readings=self.d_tof1_readings,
+                                        sensor_name="tof1",
+                                        debug_plot=self.debug_plot,
+                                    )
                                 )
                                 if self.tof0_time_center is not None and self.tof1_time_center is not None:
+                                    self.publish_zero_twist()
                                     self.rotations_complete = True
 
                                 self.neg_rot_complete = True
@@ -217,13 +273,24 @@ class FindBranchRollWristController(TFNode):
                             angular_z = self.max_angular_vel
                             if np.isclose(self.joint_states[2], np.pi + np.pi / 2, atol=0.01):
                                 # Try to fit data
-                                self.tof0_time_center, self.tof0_distance_center = self.get_branch_center_time_and_distance(
-                                    timestamps=self.timestamp_readings, readings=self.d_tof0_readings, sensor_name="tof0", debug_plot=self.debug_plot
+                                self.tof0_time_center, self.tof0_distance_center = (
+                                    self.get_branch_center_time_and_distance(
+                                        timestamps=self.timestamp_readings,
+                                        readings=self.d_tof0_readings,
+                                        sensor_name="tof0",
+                                        debug_plot=self.debug_plot,
+                                    )
                                 )
-                                self.tof1_time_center, self.tof1_distance_center = self.get_branch_center_time_and_distance(
-                                    timestamps=self.timestamp_readings, readings=self.d_tof1_readings, sensor_name="tof1", debut_plot=self.debug_plot
+                                self.tof1_time_center, self.tof1_distance_center = (
+                                    self.get_branch_center_time_and_distance(
+                                        timestamps=self.timestamp_readings,
+                                        readings=self.d_tof1_readings,
+                                        sensor_name="tof1",
+                                        debug_plot=self.debug_plot,
+                                    )
                                 )
                                 if self.tof0_time_center is not None and self.tof1_time_center is not None:
+                                    self.publish_zero_twist()
                                     self.rotations_complete = True
 
                                 self.pos_rot_complete = True
@@ -243,7 +310,9 @@ class FindBranchRollWristController(TFNode):
                             self.rotations_complete = True
 
                     else:
-                        if self.tof0_time_center is None or self.tof1_time_center is None: # TODO: Check and/or logic here
+                        if (
+                            self.tof0_time_center is None or self.tof1_time_center is None
+                        ):  # TODO: Check and/or logic here
                             if not self._goal_handle.status == GoalStatus.STATUS_ABORTED:
                                 self.warn("Could not find the branch. Aborting FindBranchRollWristController.")
                                 self._goal_handle.abort()
@@ -255,46 +324,167 @@ class FindBranchRollWristController(TFNode):
                             return result
 
                         else:
+                            # Stop servo
+                            self._srv_client_stop_servo.call(request=Trigger.Request())
+
+                            # Switch controllers
+                            switch_ctrlr_req = SwitchController.Request(
+                                activate_controllers=[self._move_group_controller],
+                                deactivate_controllers=[self._servo_controller],
+                                strictness=2,  # STRICT
+                            )
+                            self._srv_switch_ctrls.call_async(request=switch_ctrlr_req)
+
                             # If the eef is moving, we need a common frame, which should be world or cart__base
-                            self.info(self.tof0_time_center)
                             tf_tof0_to_world__time_center_pose = self.lookup_transform(
-                                target_frame="mock_pruner__tof0",
-                                source_frame="world",
+                                target_frame="cart__base",  # TODO: probably best to dynamically get robot base, whatever it is.
+                                source_frame="mock_pruner__tof0",
                                 time=self.tof0_time_center,
                                 sync=True,
                                 as_matrix=True,
                             )
                             tf_tof1_to_world__time_center_pose = self.lookup_transform(
-                                target_frame="mock_pruner__tof1",
-                                source_frame="world",
+                                target_frame="cart__base",
+                                source_frame="mock_pruner__tof1",
                                 time=self.tof1_time_center,
                                 sync=True,
                                 as_matrix=True,
                             )
 
+                            # self.warn(f"POSE:\n{tf_tof0_to_world__time_center_pose}")
+                            # self.warn(f"POSE:\n{tf_tof1_to_world__time_center_pose}")
+
                             # Get branch locations in world coordinates
-                            tof0_vec_tof0_frame = [0, 0, self.tof0_distance_center, 1]
-                            tof1_vec_tof1_frame = [0, 0, self.tof1_distance_center, 1]
+                            tof0_vec_tof0_frame = np.array([[0, 0, self.tof0_distance_center, 1]]).T
+                            tof1_vec_tof1_frame = np.array([[0, 0, self.tof1_distance_center, 1]]).T
 
-                            self.warn(tf_tof0_to_world__time_center_pose)
+                            # self.error(tof0_vec_tof0_frame)
 
-                            tof0_vec_world_frame = tf_tof0_to_world__time_center_pose @ tof0_vec_tof0_frame
-                            tof1_vec_world_frame = tf_tof1_to_world__time_center_pose @ tof1_vec_tof1_frame
+                            tof0_vec_base_frame = tf_tof0_to_world__time_center_pose @ tof0_vec_tof0_frame
+                            tof1_vec_base_frame = tf_tof1_to_world__time_center_pose @ tof1_vec_tof1_frame
+                            self.warn(f"VEC:\n{tof0_vec_base_frame}")
+                            self.warn(f"VEC:\n{tof1_vec_base_frame}")
 
-                            self.warn(tof0_vec_world_frame)
+                            # Get the centerpoint of these two points.
+                            branch_center_point = np.mean([tof0_vec_base_frame, tof1_vec_base_frame], axis=0).flatten()
+                            self.warn(f"CENTER:\n{branch_center_point}")
+                            # branch_center_point = branch_center_point / np.linalg.norm(branch_center_point)
+                            # Get normalized vector perpendicular to this point
+                            world_z = [0, 0, 1]
+                            branch_norm_vec = np.cross(world_z, branch_center_point[0:3])
                             
+                            try:
+                                branch_norm_vec = branch_norm_vec / np.linalg.norm(branch_norm_vec)
+                            except ZeroDivisionError:
+                                branch_norm_vec = [0, -1, 0]
+
+                            self.error(branch_norm_vec)
+                            self.error(branch_norm_vec * 0.1 + branch_center_point[0:3])
+
+                            # Calc point 10cm from the branch in orientation direction
+                            desired_eef_xyz = branch_center_point[0:3] + (branch_norm_vec * 0.10)
+
+                            if self.debug_plot:
+                                fig = go.Figure()
+                                # fig.add_trace(
+                                #     go.Scatter3d(
+                                #         x=[0],
+                                #         y=[0],
+                                #         z=[0],
+                                #         name="cart__base"
+                                #     )
+                                # )
+                                fig.add_trace(
+                                    go.Scatter3d(
+                                        x=[tof0_vec_base_frame[0][0]],
+                                        y=[tof0_vec_base_frame[1][0]],
+                                        z=[tof0_vec_base_frame[2][0]],
+                                        name="tof0_reading",
+                                    )
+                                )
+                                fig.add_trace(
+                                    go.Scatter3d(
+                                        x=[tof1_vec_base_frame[0][0]],
+                                        y=[tof1_vec_base_frame[1][0]],
+                                        z=[tof1_vec_base_frame[2][0]],
+                                        name="tof1_reading",
+                                    )
+                                )
+                                fig.add_trace(
+                                    go.Scatter3d(
+                                        x=[branch_center_point[0]],
+                                        y=[branch_center_point[1]],
+                                        z=[branch_center_point[2]],
+                                        name="branch_center_point",
+                                    )
+                                )
+                                fig.add_trace(
+                                    go.Scatter3d(
+                                        x=[desired_eef_xyz[0]],
+                                        y=[desired_eef_xyz[1]],
+                                        z=[desired_eef_xyz[2]],
+                                        name="desired_eef_xyz",
+                                    )
+                                )
+                                fig.show()
+
+                            # If the branch points to the left, the cross product will be pointing toward the robot
+                            if branch_center_point[0] < 0:
+                                eef_orientation_vec = -1 * branch_norm_vec
+                            else:
+                                eef_orientation_vec = branch_norm_vec
+
+                            _motion_plan_request = MotionPlanRequest()
+                            _goal_pose_constraint = Constraints()
+                            _position_constraint = PositionConstraint()
+                            _orientation_constraint = OrientationConstraint()
+
+                            _position_constraint.header.frame_id = "cart__base"
+                            _position_constraint.target_point_offset.x = desired_eef_xyz[0]
+                            _position_constraint.target_point_offset.y = desired_eef_xyz[1]
+                            _position_constraint.target_point_offset.z = desired_eef_xyz[2]
+                            _goal_pose_constraint.position_constraints.append(_position_constraint)
+
+                            rot_axis = np.cross(world_z, eef_orientation_vec)
+                            rot_angle = np.arccos(np.dot(world_z, eef_orientation_vec))
+                            orientation_quat = Rotation.from_rotvec(rotvec=rot_angle * rot_axis).as_quat()
+                            _orientation_constraint.header.frame_id = "cart__base"
+                            _orientation_constraint.orientation.x = orientation_quat[0]
+                            _orientation_constraint.orientation.x = orientation_quat[1]
+                            _orientation_constraint.orientation.x = orientation_quat[2]
+                            _orientation_constraint.orientation.x = orientation_quat[3]
+                            _goal_pose_constraint.orientation_constraints.append(_orientation_constraint)
+
+                            _motion_plan_request.workspace_parameters.header.frame_id = "cart__base"
+                            _motion_plan_request.goal_constraints.append(_goal_pose_constraint)
+                            _motion_plan_request.allowed_planning_time = 5.0
+                            _motion_plan_request.num_planning_attempts = 10
+                            self.arm_prefix = "ur__"  # TODO: Get prefix params from launch
+                            self.robot_name = "pruning_robot"  # TODO: fix SRDF name structure as well
+                            _motion_plan_request.group_name = f"{self.arm_prefix}{self.robot_name}_manipulator"
+
+                            # get angle between the two to determine direction
+                            # np.dot()
+                            # self.warn(dir_vec)
+                            # TODO: need initial edge case where a ToF is reading at the start of the controller so that we save it's position and don't need to fit (also avoid poor parabola fit)
+
+                            # self.warn(branch_center_point)
+
                             self._goal_handle.succeed()
                             result.success = True
-                            
+                            self.controller_running = False
                             return result
             ############################################################################################################
 
         except Exception as e:
-            self.get_logger().fatal(f"{e}")
+            self.get_logger().fatal(f"{traceback.format_exc()}")
+            result.success = False
+            self._goal_handle.abort()
         finally:
             self._timer_run_controller.cancel()
             # self._timer_run_quadradic_fit.cancel()
-            self.controller_running = False
+            # self.controller_running = False # TODO: reset controller?
+            self.reset_controller()
             self.info("FindBranchRollWristController has terminated.")
         return result
 
@@ -433,39 +623,39 @@ class FindBranchRollWristController(TFNode):
 
         # self.info(self.d_tof0_readings_filtered)
 
-        if not self.tof0_branch_found:
-            tof0_time_center = self.get_branch_center_time(
-                timestamps=self.timestamp_readings, readings=self.d_tof0_readings, sensor_name="tof0"
-            )
-            if tof0_time_center is not None:
-                tof0_center_pose = self.lookup_transform(
-                    target_frame="mock_pruner__tool0",
-                    source_frame="cart__base",
-                    time=tof0_time_center,
-                    sync=True,
-                    as_matrix=True,
-                )
-                self.warn(tof0_center_pose)
+        # if not self.tof0_branch_found:
+        #     tof0_time_center = self.get_branch_center_time(
+        #         timestamps=self.timestamp_readings, readings=self.d_tof0_readings, sensor_name="tof0"
+        #     )
+        #     if tof0_time_center is not None:
+        #         tof0_center_pose = self.lookup_transform(
+        #             target_frame="mock_pruner__tool0",
+        #             source_frame="cart__base",
+        #             time=tof0_time_center,
+        #             sync=True,
+        #             as_matrix=True,
+        #         )
+        #         self.warn(tof0_center_pose)
 
-        if not self.tof1_branch_found:
-            tof1_time_center = self.get_branch_center_time(
-                timestamps=self.timestamp_readings, readings=self.d_tof1_readings, sensor_name="tof1"
-            )
-            if tof1_time_center is not None:
-                tof1_center_pose = self.lookup_transform(
-                    target_frame="mock_pruner__tool0",
-                    source_frame="cart__base",
-                    time=tof1_time_center,
-                    sync=True,
-                    as_matrix=True,
-                )
-                self.warn(tof1_center_pose)
+        # if not self.tof1_branch_found:
+        #     tof1_time_center = self.get_branch_center_time(
+        #         timestamps=self.timestamp_readings, readings=self.d_tof1_readings, sensor_name="tof1"
+        #     )
+        #     if tof1_time_center is not None:
+        #         tof1_center_pose = self.lookup_transform(
+        #             target_frame="mock_pruner__tool0",
+        #             source_frame="cart__base",
+        #             time=tof1_time_center,
+        #             sync=True,
+        #             as_matrix=True,
+        #         )
+        #         self.warn(tof1_center_pose)
 
-        # End search when both fits found
-        if self.tof0_branch_found and self.tof1_branch_found:
-            self.info("Found branch with both sensors.")
-            self.get_pose_ready = True
-            self._timer_run_quadradic_fit.cancel()
+        # # End search when both fits found
+        # if self.tof0_branch_found and self.tof1_branch_found:
+        #     self.info("Found branch with both sensors.")
+        #     self.get_pose_ready = True
+        #     self._timer_run_quadradic_fit.cancel()
 
         return
 
@@ -484,20 +674,20 @@ class FindBranchRollWristController(TFNode):
         self.d_tof1 = msg.data[1] / 1000
 
         if self.controller_running:
-            if not self.tof0_branch_found: # TODO: These flags are doing nothing currently.
+            if not self.tof0_branch_found:  # TODO: These flags are doing nothing currently.
                 self.d_tof0_readings.append(self.d_tof0)
             if not self.tof1_branch_found:
                 self.d_tof1_readings.append(self.d_tof1)
             if not self.tof0_branch_found or not self.tof1_branch_found:
                 self.timestamp_readings.append(msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9)
-        
+
         return
 
     def _sub_cb_joint_states(self, msg: JointState):
         self.joint_states = msg.position
         # self.warn(joint_states)
         return
-    
+
     def reset_controller(self) -> None:
         self.controller_running = False
         self.rotations_complete = False
@@ -524,7 +714,9 @@ class FindBranchRollWristController(TFNode):
         self._pub_servo.publish(self.msg_twist)
         return
 
-    def get_branch_center_time_and_distance(self, timestamps, readings, sensor_name: str, debug_plot: bool = False) -> Time | None:
+    def get_branch_center_time_and_distance(
+        self, timestamps, readings, sensor_name: str, debug_plot: bool = False
+    ) -> Time | None:
         try:
             readings_filtered = np.where(np.asarray(readings) < self.vl6180_far_plane, readings, np.nan)
             timestamps_filtered = np.where(np.isnan(readings_filtered), np.nan, timestamps)
@@ -552,12 +744,10 @@ class FindBranchRollWristController(TFNode):
         )
         fit_data = cf.parabola(t_fit, *fit_params)
         idx_min = np.argmin(fit_data)
-
         timestamp_min = timestamps_filtered[idx_min]
-        fit_min = fit_data[idx_min]
+        fit_min = float(fit_data[idx_min])
         split_time = np.modf(timestamp_min)
         time_center = Time(seconds=int(split_time[1]), nanoseconds=split_time[0] * 1e9)
-
 
         if debug_plot:
             fig = go.Figure()
@@ -565,18 +755,15 @@ class FindBranchRollWristController(TFNode):
                 go.Scatter(
                     x=normalized_timestamps_filtered,
                     y=readings_filtered,
-                    name="raw_data",
+                    name="filtered_data",
                 )
             )
-            fig.add_trace(
-                go.Scatter(
-                    x=t_fit,
-                    y=fit_data,
-                    name="fit_data"
-                )
-            )
+            fig.add_trace(go.Scatter(x=t_fit, y=fit_data, name="fit_data"))
+            fig.add_trace(go.Scatter(x=np.asarray(timestamps) - timestamps[0], y=readings, name="raw_data"))
+            fig.update_layout(title=dict(text=sensor_name))
             fig.show()
 
+        # TODO: reinstate publisher
         # self.msg_tof_branch_fit.timestamps = list(timestamps_filtered)
         # self.msg_tof_branch_fit.tof_data = list(readings_filtered)
         # self.msg_tof_branch_fit.fit_data = list(fit_data)
@@ -586,6 +773,10 @@ class FindBranchRollWristController(TFNode):
         # self._pub_fit.publish(self.msg_tof_branch_fit)
 
         return time_center, fit_min
+
+    def send_move_group_goal(self):
+
+        return
 
 
 def main():

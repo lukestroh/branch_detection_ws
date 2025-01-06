@@ -287,7 +287,7 @@ class CutPointRotateAxisController(TFNode):
 
         twist = np.concatenate((linear_velocity, angular_velocity), axis=0).reshape(6, 1)
         return twist
-    
+
     def publish_zero_twist(self, servo_frame="mock_pruner__tool0"):
         self.msg_twist.twist.linear.x = 0.0
         self.msg_twist.twist.linear.y = 0.0
