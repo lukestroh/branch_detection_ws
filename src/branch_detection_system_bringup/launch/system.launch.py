@@ -105,6 +105,9 @@ def launch_setup(context, *args, **kwargs) -> list:
                 'final_approach_controller.launch.py'
             )
         ),
+        launch_arguments=[
+            ("use_mock_hardware", use_mock_hardware),
+        ],
         condition=IfCondition(use_final_approach_controller)
     )
 
