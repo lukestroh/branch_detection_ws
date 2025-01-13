@@ -4,7 +4,7 @@
     <!-- <xacro:arg name="name" default="mock_pruner"/> -->
     <!-- <xacro:arg name="mesh_base_path" default="./"/> -->
     <!-- <xacro:property name="end_effector_parent" value="" /> -->
-    <xacro:property name="mock_pruner_rot_offset" value="0.0 0.0 ${pi}"/>
+    <xacro:property name="mock_pruner_rot_offset" value="0.0 0.0 0.0"/>
     
     <!-- Materials -->
     
@@ -12,14 +12,14 @@
     <xacro:macro name="mock_pruner_macro" params="parent_link eef_prefix tof0_offset tof1_offset camera_offset mesh_base_path">
         <!-- static properties -->
         <xacro:property name="mock_pruner_mass" value="0.256" />
-        <xacro:property name="base__tool0_offset" value="0.0 0.0 0.15208"/>
+        <xacro:property name="base__tool0_offset" value="0.0 0.0050825 0.1601525"/>
         <!-- <xacro:property name="base__tool0_offset" value="0.0 0.0 0.20"/> -->
         <xacro:property name="base__tof0_offset" value="${tof0_offset}"/>
         <xacro:property name="base__tof1_offset" value="${tof1_offset}"/>
         
         <!-- <xacro:property name="base__tof0_offset" value="${tof0_offset} 0 0.15"/> -->
         <!-- <xacro:property name="base__tof1_offset" value="${tof1_offset} 0 0.15"/> -->
-        <xacro:property name="base__camera0_offset" value="0.0 -0.069 0.16379"/>
+        <xacro:property name="base__camera0_offset" value="-0.0017977 -0.0715747 0.0711646"/>
         
         
         <!-- additional args -->
