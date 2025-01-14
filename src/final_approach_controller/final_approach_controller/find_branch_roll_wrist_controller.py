@@ -2,12 +2,14 @@
 import rclpy
 from rclpy.action import ActionServer, ActionClient, CancelResponse, GoalResponse
 from rclpy.action.server import ServerGoalHandle
-from rclpy.callback_groups import ReentrantCallbackGroup
+from rclpy.callback_groups import ReentrantCallbackGroup, MutuallyExclusiveCallbackGroup
 from rclpy.duration import Duration
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.parameter import Parameter
+from rclpy.task import Future
 from rclpy.time import Time
 
+import final_approach_controller.plotly_helpers as ph
 
 from final_approach_controller_msgs.action import RunFindBranchRollWrist
 from final_approach_controller_msgs.msg import ToFBranchFitStamped
@@ -17,19 +19,22 @@ from vl6180_msgs.msg import Vl6180FilteredStamped
 
 from action_msgs.msg import GoalStatus
 from controller_manager_msgs.srv import SwitchController
-from geometry_msgs.msg import TwistStamped
+from geometry_msgs.msg import TwistStamped, Pose
 from moveit_msgs.action import MoveGroup
+
+# from moveit_msgs.srv import GetCartesianPath
 from moveit_msgs.msg import (
-    Constraints,
-    MotionPlanRequest,
-    MotionPlanResponse,
     RobotState,
+    MotionPlanRequest,
+    JointConstraint,
     OrientationConstraint,
+    PositionConstraint,
+    Constraints,
     PlanningOptions,
-    PositionConstraint
 )
 from sensor_msgs.msg import JointState
 from std_srvs.srv import Trigger
+from trajectory_msgs.msg import JointTrajectory
 
 import modern_robotics as mr
 import numpy as np
@@ -39,7 +44,7 @@ import pprint as pp
 from collections import deque
 import time
 import secrets
-from threading import Event
+from threading import Event, Lock
 import traceback
 
 import pandas as pd
@@ -64,8 +69,14 @@ class FindBranchRollWristController(TFNode):
             self._move_group_controller = "scaled_joint_trajectory_controller"
         self._servo_controller = "forward_velocity_controller"
 
+        # Threading locks
+        self._data_lock = Lock()
+        self._timer_lock = Lock()
+        # self._branch_found_lock = Lock()
+
         # Callback group
         self.callback_group = ReentrantCallbackGroup()
+        self._parabola_fitting_cb_group = MutuallyExclusiveCallbackGroup()
 
         # Action servers
         self._action_svr_run_find_branch_roll_wrist = ActionServer(
@@ -85,8 +96,18 @@ class FindBranchRollWristController(TFNode):
             action_type=MoveGroup,
             callback_group=self.callback_group,
         )
+        # self._action_client_execute_trajectory = ActionClient(
+        #     node=self,
+        #     action_name='execute_trajectory',
+        #     action_type=ExecuteTrajectory,
+        #     callback_group=self.callback_group
+        # )
 
         # Service clients
+        # self._srv_client_get_cartesian_path = self.create_client(
+        #     srv_type=GetCartesianPath,
+        #     srv_name="/compute_cartesian_path",
+        # )
         self._srv_client_start_servo = self.create_client(
             srv_type=Trigger, srv_name="/servo_node/start_servo", callback_group=self.callback_group
         )
@@ -134,7 +155,6 @@ class FindBranchRollWristController(TFNode):
 
         # Timers
         self._timer_setup_tf_frames = self.create_timer(timer_period_sec=3.0, callback=self._timer_cb_setup_tf_frames)
-        self._timer_run_controller = None
         self._timer_run_quadratic_fit = None
         self._timer_debug = self.create_timer(timer_period_sec=1.0, callback=self._timer_cb_debug)
 
@@ -151,7 +171,7 @@ class FindBranchRollWristController(TFNode):
 
         # Controller attributes
         # self.generator = np.random.default_rng(seed=secrets.randbits(128))
-        self.generator = np.random.default_rng(1)
+        # self.generator = np.random.default_rng(1)
         self.controller_running = False
         self.rotations_complete = False
         self.neg_rot_complete = False
@@ -159,22 +179,28 @@ class FindBranchRollWristController(TFNode):
         self.max_angular_vel = np.pi / 16
         self.vl6180_far_plane = 0.200  # 0.19 based on testing, but give it small window
         self.vl6180_precision = 0.001
-        self.tof0_branch_found = self.tof1_branch_found = False
+
         self.get_final_pose_ready = False  # True when two valid tof fits have been recorded. Indicates to controller that it is ready to solve for a final pose
 
         # df = pd.read_csv(os.path.expanduser("~/branch_detection_ws/analysis/csv/tof_data.csv"))
         self.debug_plot = True
         self.d_tof0 = 0.255
         self.d_tof1 = 0.255
-        self.timestamp_readings = []
+        self.tof0_branch_found = False
+        self.tof1_branch_found = False
+        self.timestamp_readings_tof0 = []
+        self.timestamp_readings_tof1 = []
         self.timestamps_tof0_filtered = []
         self.timestamps_tof1_filtered = []
         self.d_tof0_readings = []
         self.d_tof1_readings = []
         self.d_tof0_readings_filtered = []
         self.d_tof1_readings_filtered = []
+        self.tof0_time_center = None
+        self.tof1_time_center = None
         self.tof0_distance_center = None
         self.tof1_distance_center = None
+        self.eef_weight = 0.355  # Measured IRL
 
         self.start_time = self.get_clock().now()
         self.start_controller_tf = np.identity(4, dtype=float)
@@ -197,44 +223,51 @@ class FindBranchRollWristController(TFNode):
 
     def _action_exe_cb_run_find_branch_roll_wrist(self, goal_handle: ServerGoalHandle):
         self.controller_running = True
-        self._goal_handle = goal_handle
+        self._goal_handle = goal_handle  # TODO: can probably get rid of class attr.
 
         self.start_controller_tf = self.lookup_transform(
-            target_frame="cart__base",
-            source_frame="mock_pruner__tool0",
-            sync=True,
-            as_matrix=True
+            target_frame="cart__base", source_frame="mock_pruner__tool0", sync=True, as_matrix=True
         )
-
-        if self._timer_run_controller is None:
-            self._timer_run_controller = self.create_timer(
-                timer_period_sec=1 / 30, callback=self._timer_cb_run_controller, callback_group=self.callback_group
-            )
-            # self._timer_run_quadradic_fit = self.create_timer(
-            #     timer_period_sec=1.0, callback=self._timer_cb_run_quadradic_fit, callback_group=self.callback_group
-            # )
-        else:
-            self._timer_run_controller.reset()
-            # self._timer_run_quadradic_fit.reset()
+        with self._timer_lock:
+            if self._timer_run_quadratic_fit is None:
+                self._timer_run_quadratic_fit = self.create_timer(
+                    timer_period_sec=3.0,
+                    callback=self._timer_cb_run_quadratic_fit,
+                    callback_group=self._parabola_fitting_cb_group,
+                )
+            else:
+                self._timer_run_quadratic_fit.reset()
 
         try:
             feedback_msg = RunFindBranchRollWrist.Feedback()
             result = RunFindBranchRollWrist.Result()
 
+            # TODO: check if initial reading of sensor. If so, set flag to data found and record tf pose time.
+
             while self.controller_running:
                 if goal_handle.status == GoalStatus.STATUS_CANCELED:
-                    self._timer_run_controller.cancel()
+                    # self._timer_run_controller.cancel()
+                    with self._timer_lock:
+                        if self._timer_run_quadratic_fit is not None:
+                            self._timer_run_quadratic_fit.cancel()
                     result.success = False
                     return result
 
                 if goal_handle.status == GoalStatus.STATUS_ABORTED:
-                    self._timer_run_controller.cancel()
+                    with self._timer_lock:
+                        if self._timer_run_quadratic_fit is not None:
+                            self._timer_run_quadratic_fit.cancel()
                     result.success = False
                     return result
 
                 if goal_handle.status == GoalStatus.STATUS_EXECUTING:
+                    # self.warn(f"gen rot complete: {self.rotations_complete}")
+                    # self.warn(f"neg rot complete: {self.neg_rot_complete}")
+                    # self.warn(f"pos rot complete: {self.pos_rot_complete}")
+
                     # Cancel action if requested
                     if goal_handle.is_cancel_requested:
+                        self.publish_zero_twist()
                         goal_handle.canceled()
                         self.info("FindBranchRollWristController canceled.")
                         self.reset_controller()
@@ -250,66 +283,35 @@ class FindBranchRollWristController(TFNode):
 
                     ################################################################################################################
                     # if both have a fit, publish zero message, do pose math, call service, kill timer, controller_running = False
+                    # with self._branch_found_lock:
+                    self.warn(f"tof0 found: {self.tof0_branch_found}")
+                    self.warn(f"tof1 found: {self.tof1_branch_found}")
+                    if self.tof0_branch_found and self.tof1_branch_found:
+                        self.rotations_complete = True
+                        with self._timer_lock:
+                            if self._timer_run_quadratic_fit is not None:
+                                self._timer_run_quadratic_fit.cancel()
+                        self.publish_zero_twist()
+                        self.info("Branch readings found for both ToFs!")
+
                     if not self.rotations_complete:
                         if not self.neg_rot_complete:
                             # # rotate to the closest side
                             # if self.joint_states[-1] < 0 and self.joint_states[-1] > -1 * np.pi:
                             # negative angular rotation
                             angular_z = -1 * self.max_angular_vel
-                            if np.isclose(
-                                self.joint_states[2], np.pi / 2, atol=0.01
-                            ):  # TODO: (long term) make sure wrist mount config is standard
-                                # Try to fit data
-                                self.tof0_time_center, self.tof0_distance_center = (
-                                    self.get_branch_center_time_and_distance(
-                                        timestamps=self.timestamp_readings,
-                                        readings=self.d_tof0_readings,
-                                        sensor_name="tof0",
-                                        debug_plot=self.debug_plot,
-                                    )
-                                )
-                                self.tof1_time_center, self.tof1_distance_center = (
-                                    self.get_branch_center_time_and_distance(
-                                        timestamps=self.timestamp_readings,
-                                        readings=self.d_tof1_readings,
-                                        sensor_name="tof1",
-                                        debug_plot=self.debug_plot,
-                                    )
-                                )
-                                if self.tof0_time_center is not None and self.tof1_time_center is not None:
-                                    self.publish_zero_twist()
-                                    self.rotations_complete = True
-
+                            if np.isclose(self.joint_states[2], -np.pi / 2, atol=0.05):
+                                # TODO: (long term) make sure wrist mount config is standard
                                 self.neg_rot_complete = True
+                                self.publish_zero_twist()
 
                         elif not self.pos_rot_complete:
                             # if self.joint_states[-1] > 0 and self.joint_states[-1] < np.pi:
                             # positive angular rotation
                             angular_z = self.max_angular_vel
-                            if np.isclose(self.joint_states[2], np.pi + np.pi / 2, atol=0.01):
-                                # Try to fit data TODO: if fit is upside down, nix it
-                                self.tof0_time_center, self.tof0_distance_center = (
-                                    self.get_branch_center_time_and_distance(
-                                        timestamps=self.timestamp_readings,
-                                        readings=self.d_tof0_readings,
-                                        sensor_name="tof0",
-                                        debug_plot=self.debug_plot,
-                                    )
-                                )
-
-                                self.tof1_time_center, self.tof1_distance_center = (
-                                    self.get_branch_center_time_and_distance(
-                                        timestamps=self.timestamp_readings,
-                                        readings=self.d_tof1_readings,
-                                        sensor_name="tof1",
-                                        debug_plot=self.debug_plot,
-                                    )
-                                )
-                                if self.tof0_time_center is not None and self.tof1_time_center is not None:
-                                    self.publish_zero_twist()
-                                    self.rotations_complete = True
-
+                            if np.isclose(self.joint_states[2], np.pi / 2, atol=0.05):
                                 self.pos_rot_complete = True
+                                self.publish_zero_twist()
 
                         self.msg_twist.twist.linear.x = 0.0
                         self.msg_twist.twist.linear.y = 0.0
@@ -331,27 +333,30 @@ class FindBranchRollWristController(TFNode):
                         ):  # TODO: Check and/or logic here
                             if not self._goal_handle.status == GoalStatus.STATUS_ABORTED:
                                 self.warn("Could not find the branch. Aborting FindBranchRollWristController.")
+                                with self._timer_lock:
+                                    if self._timer_run_quadratic_fit is not None:
+                                        self._timer_run_quadratic_fit.cancel()
                                 self._goal_handle.abort()
-                                self._timer_run_controller.cancel()
-                                # self._timer_run_quadratic_fit.cancel()
-                                self.reset_controller()
+                                # self.reset_controller() # Done in 'finally'
 
                                 result.success = False
                             return result
 
                         else:
                             # Stop servo
+                            self.publish_zero_twist() # Just in case
                             self._srv_client_stop_servo.call(request=Trigger.Request())
 
                             # Switch controllers
                             switch_ctrlr_req = SwitchController.Request(
                                 activate_controllers=[self._move_group_controller],
                                 deactivate_controllers=[self._servo_controller],
-                                strictness=2,  # STRICT
+                                strictness=SwitchController.Request.STRICT,
                             )
                             self._srv_switch_ctrls.call_async(request=switch_ctrlr_req)
 
                             # If the eef is moving, we need a common frame, which should be world or cart__base
+                            # Get tof poses at calculated signal minimum times
                             tf_tof0_to_base__time_center_pose = self.lookup_transform(
                                 target_frame="cart__base",  # TODO: probably best to dynamically get robot base, whatever it is.
                                 source_frame="mock_pruner__tof0",
@@ -365,6 +370,14 @@ class FindBranchRollWristController(TFNode):
                                 time=self.tof1_time_center,
                                 sync=True,
                                 as_matrix=True,
+                            )
+                            # Get the current eef pose
+                            tf_cut_point_to_base = self.lookup_transform(
+                                target_frame="cart__base",
+                                source_frame="mock_pruner__tool0",
+                                sync=True,
+                                as_matrix=True,
+                                time=self.get_clock().now(),
                             )
 
                             self.warn(f"POSE:\n{tf_tof0_to_base__time_center_pose}")
@@ -380,53 +393,54 @@ class FindBranchRollWristController(TFNode):
                             tof1_vec_base_frame = tf_tof1_to_base__time_center_pose @ tof1_vec_tof1_frame
                             self.warn(f"VEC:\n{tof0_vec_base_frame}")
                             self.warn(f"VEC:\n{tof1_vec_base_frame}")
-                            tof0_vec_base_frame = tof0_vec_base_frame.flatten()
-                            tof1_vec_base_frame = tof1_vec_base_frame.flatten()
+                            tof0_vec_base_frame = tof0_vec_base_frame.flatten()[0:3]
+                            tof1_vec_base_frame = tof1_vec_base_frame.flatten()[0:3]
                             self.warn(tof0_vec_base_frame)
 
                             # Get the centerpoint of these two points.
-                            branch_center_point = np.mean([tof0_vec_base_frame, tof1_vec_base_frame], axis=0).flatten()
+                            branch_center_point = np.mean([tof0_vec_base_frame, tof1_vec_base_frame], axis=0)  # C
                             self.warn(f"CENTER:\n{branch_center_point}")
                             # branch_center_point = branch_center_point / np.linalg.norm(branch_center_point)
                             # Get normalized vector perpendicular to this point
                             ############################################################################################
-                            # world_z = [0, 0, 1]
-                            # branch_norm_vec = np.cross(world_z, tof0_vec_base_frame[0:3] - tof1_vec_base_frame[0:3])
-                            
-                            # try:
-                            #     branch_norm_vec = branch_norm_vec / np.linalg.norm(branch_norm_vec)
-                            # except ZeroDivisionError:
-                            #     branch_norm_vec = [0, -1, 0]
 
-                            # self.error(branch_norm_vec)
-                            # self.error(branch_center_point[0:3] - branch_norm_vec * 0.1)
+                            # Get closest point on a circle from point, given circle center,
+                            # point, plane normal
+                            # https://www.geometrictools.com/Documentation/DistanceToCircle3.pdf
+                            world_z = [0, 0, 1]
 
-                            # # Calc point 10cm from the branch in orientation direction
-                            # desired_eef_xyz = branch_center_point[0:3] - (branch_norm_vec * 0.10) # TODO: check if subtraction is correct
-                            ############################################################################################
-                            world_z = [0,0,1]
-                            tf_cut_point_to_base = self.lookup_transform(
-                                target_frame="cart__base",
-                                source_frame="mock_pruner__tool0",
-                                sync=True,
-                                as_matrix=True
+                            branch_vec = tof0_vec_base_frame - tof1_vec_base_frame
+                            branch_vec_normalized = branch_vec / np.linalg.norm(branch_vec)  # N
+
+                            curr_pose = tf_cut_point_to_base[0:3, 3]  # P
+
+                            delta = curr_pose - branch_center_point
+                            _Q_C = delta - np.dot(branch_vec_normalized, delta) * branch_vec_normalized
+
+                            desired_radius_from_branch = 0.1  # m
+
+                            desired_eef_xyz = (
+                                branch_center_point + _Q_C / np.linalg.norm(_Q_C) * desired_radius_from_branch
                             )
-                            cut_point_world_orientation_vec = tf_cut_point_to_base[0:3, 0:3] @ world_z
-                            cut_point_world_orientation_quat = Rotation.from_matrix(tf_cut_point_to_base[0:3, 0:3]).as_quat()
-                        
 
-                            desired_eef_xyz = branch_center_point[0:3] - (cut_point_world_orientation_vec * 0.1)
+                            desired_orientation_vec_to_branch = branch_center_point - desired_eef_xyz
+
+                            # desired_orientation_rot, rssd = Rotation.align_vectors(
+                            #     desired_orientation_vec_to_branch, world_z
+                            # )
+                            desired_orientation_vec_to_branch_norm = desired_orientation_vec_to_branch / np.linalg.norm(desired_orientation_vec_to_branch)
+                            rot_angle = np.arccos(np.dot(world_z, desired_orientation_vec_to_branch_norm))
+                            rot_axis = np.cross(world_z, desired_orientation_vec_to_branch)
+                            desired_orientation_rot = Rotation.from_rotvec(rotvec=rot_axis * rot_angle)
+                            desired_orientation_quat = desired_orientation_rot.as_quat()
+                            self.warn(desired_orientation_vec_to_branch)
+                            self.warn(np.degrees(rot_angle))
+                            self.warn(rot_axis)
+                            self.warn(desired_orientation_rot.as_euler('xyz'))
 
                             if self.debug_plot:
                                 fig = go.Figure()
-                                fig.add_trace(
-                                    go.Scatter3d(
-                                        x=[0],
-                                        y=[0],
-                                        z=[0],
-                                        name="cart__base"
-                                    )
-                                )
+                                fig.add_trace(go.Scatter3d(x=[0], y=[0], z=[0], name="cart__base"))
                                 fig.add_trace(
                                     go.Scatter3d(
                                         x=[tof0_vec_base_frame[0]],
@@ -459,12 +473,11 @@ class FindBranchRollWristController(TFNode):
                                         name="desired_eef_xyz",
                                     )
                                 )
-                                fig.update_layout(scene=dict(aspectmode='data'))
+                                ph.plot_vector(fig=fig, position=desired_eef_xyz, orientation=desired_orientation_vec_to_branch_norm, scale=0.5)
+                                fig.update_layout(scene=dict(aspectmode="data"))
+
                                 fig.show()
 
-                            # If the branch points to the left, the cross product will be pointing toward the robot
-                        
- 
                             _motion_plan_request = MotionPlanRequest()
                             _goal_pose_constraint = Constraints()
                             _position_constraint = PositionConstraint()
@@ -472,37 +485,22 @@ class FindBranchRollWristController(TFNode):
 
                             _position_constraint.header.frame_id = "cart__base"
                             _position_constraint.link_name = "mock_pruner__tool0"
+                            _position_constraint.weight = self.eef_weight
                             _position_constraint.target_point_offset.x = desired_eef_xyz[0]
                             _position_constraint.target_point_offset.y = desired_eef_xyz[1]
                             _position_constraint.target_point_offset.z = desired_eef_xyz[2]
                             _goal_pose_constraint.position_constraints.append(_position_constraint)
 
-                            # rot_axis = np.cross(world_z, eef_orientation_vec)
-                            # rot_angle = np.arccos(np.dot(world_z, eef_orientation_vec))
-                            # orientation_quat = Rotation.from_rotvec(rotvec=rot_angle * rot_axis).as_quat()
-                            # self.warn(rot_axis)
-                            # self.warn(rot_angle * 180 / np.pi)
-                            # self.warn(f"ORIENTATION: {orientation_quat}")
                             _orientation_constraint.header.frame_id = "cart__base"
                             _orientation_constraint.link_name = "mock_pruner__tool0"
-                            _orientation_constraint.orientation.x = cut_point_world_orientation_quat[0]
-                            _orientation_constraint.orientation.x = cut_point_world_orientation_quat[1]
-                            _orientation_constraint.orientation.x = cut_point_world_orientation_quat[2]
-                            _orientation_constraint.orientation.x = cut_point_world_orientation_quat[3]
-
-                            # self.arm_prefix = "ur__"  # TODO: Get prefix params from launch
-                            # self.robot_name = "pruning_robot"  # TODO: fix SRDF name structure as well
-                            # kwargs = {"position_constraints": _position_constraint, "orientation_constraints": _orientation_constraint}
-                            # _motion_plan_request = MotionPlanRequest(
-                            #     group_name = f"{self.arm_prefix}{self.robot_name}_manipulator",
-                            #     goal_constraints=[Constraints(**kwargs)],
-                            #     allowed_planning_time=5.0
-                            # )
-                            # _move_group_goal = MoveGroup.Goal()
-                            # _move_group_goal.request = _motion_plan_request
-
-                            
-                            #########################################################################
+                            _orientation_constraint.weight = self.eef_weight
+                            _orientation_constraint.absolute_x_axis_tolerance = 0.01
+                            _orientation_constraint.absolute_y_axis_tolerance = 0.01
+                            _orientation_constraint.absolute_z_axis_tolerance = 0.01
+                            _orientation_constraint.orientation.x = desired_orientation_quat[0]
+                            _orientation_constraint.orientation.y = desired_orientation_quat[1]
+                            _orientation_constraint.orientation.z = desired_orientation_quat[2]
+                            _orientation_constraint.orientation.w = desired_orientation_quat[3]
                             _goal_pose_constraint.orientation_constraints.append(_orientation_constraint)
 
                             _motion_plan_request.workspace_parameters.header.frame_id = "cart__base"
@@ -510,10 +508,13 @@ class FindBranchRollWristController(TFNode):
                             _motion_plan_request.allowed_planning_time = 5.0
                             _motion_plan_request.num_planning_attempts = 10
                             # _motion_plan_request.start_state = RobotState(joint_state=JointState(position=self.joint_states))
+                            _motion_plan_request.start_state.is_diff = True
+                            # _motion_plan_request.start_state.
                             self.arm_prefix = "ur5e__"  # TODO: Get prefix params from launch
                             self.robot_name = "pruning_robot"  # TODO: fix SRDF name structure as well
                             _motion_plan_request.group_name = f"{self.arm_prefix}{self.robot_name}_manipulator"
-                            # _motion_plan_request.planner_id = "RRTConnect" # linear
+
+                            _motion_plan_request.planner_id = "RRTstarkConfigDefault"
                             # _motion_plan_request.pipeline_id = "ompl"
 
                             _move_group_goal = MoveGroup.Goal()
@@ -541,10 +542,12 @@ class FindBranchRollWristController(TFNode):
             result.success = False
             self._goal_handle.abort()
         finally:
-            self._timer_run_controller.cancel()
+            # self._timer_run_controller.cancel()
             self.publish_zero_twist()
-            # self._timer_run_quadradic_fit.cancel()
-            # self.controller_running = False # TODO: reset controller?
+            with self._timer_lock:
+                if self._timer_run_quadratic_fit is not None:
+                    self._timer_run_quadratic_fit.cancel()
+
             self.reset_controller()
             self.info("FindBranchRollWristController has terminated.")
         return result
@@ -553,10 +556,29 @@ class FindBranchRollWristController(TFNode):
         self.info("Received goal request")
         # self.goal_handle_aborted = False
         return GoalResponse.ACCEPT
-    
-    def _action_client_move_group_done_cb(self):
 
-        return
+    # def _action_client_execute_trajectory_done_cb(self, future: Future):
+    #     goal_handle = future.result()
+    #     if not goal_handle.accepted:
+    #         self.error("Trajectory goal was rejected")
+    #         return
+    #     else:
+    #         ...
+    #     return
+
+    # ===============================
+    #        Service callbacks
+    # ===============================
+
+    # def _srv_client_get_cartesian_path_done_cb(self, future: Future):
+    #     response: GetCartesianPath.Response = future.result()
+
+    #     if response.fraction == 1.0:
+    #         self.execute_trajectory(trajectory=response.solution.joint_trajectory)
+    #     else:
+    #         self.error(f"Could not find a complete Cartesian path to goal pose. ({response.fraction * 100.0}% computed")
+
+    #     return
 
     # ===============================
     #         Timer callbacks
@@ -595,12 +617,45 @@ class FindBranchRollWristController(TFNode):
         self._tof_linear_distance = np.linalg.norm(tof0_to_tof1_pos_vec)
         if not np.all(np.isclose(self.tf_tof0_to_tof1[:3, :3], np.identity(3), atol=1e-3)):
             raise ValueError("The two ToF frames are not aligned with each other.")
+        self.info("Static TF frames acquired.")
         return
 
     def _timer_cb_run_controller(self):
         return
 
-    def _timer_cb_run_quadradic_fit(self):
+    def _timer_cb_run_quadratic_fit(self):
+        """Periodically run a fit on the data"""
+        # with self._branch_found_lock:
+            
+        if not self.tof0_branch_found:
+            # Make a copy of the recorded data so that the subscriber may continue to append
+            with self._data_lock:
+                timestamp_readings_tof0_copy = list(self.timestamp_readings_tof0)
+                d_tof0_readings_copy = list(self.d_tof0_readings)
+            tof0_time_and_dist = self.get_branch_center_time_and_distance(
+                timestamps=timestamp_readings_tof0_copy,
+                readings=d_tof0_readings_copy,
+                sensor_name="tof0",
+                debug_plot=self.debug_plot,
+            )
+            if tof0_time_and_dist is not None:
+                self.tof0_time_center, self.tof0_distance_center = tof0_time_and_dist
+                self.tof0_branch_found = True
+
+        if not self.tof1_branch_found:
+            with self._data_lock:
+                timestamp_readings_tof1_copy = list(self.timestamp_readings_tof1)
+                d_tof1_readings_copy = list(self.d_tof1_readings)
+            tof1_time_and_dist = self.get_branch_center_time_and_distance(
+                timestamps=timestamp_readings_tof1_copy,
+                readings=d_tof1_readings_copy,
+                sensor_name="tof1",
+                debug_plot=self.debug_plot,
+            )
+            if tof1_time_and_dist is not None:
+                self.tof1_time_center, self.tof1_distance_center = tof1_time_and_dist
+                self.tof1_branch_found = True
+
         return
 
     def _timer_cb_debug(self):
@@ -617,12 +672,16 @@ class FindBranchRollWristController(TFNode):
         self.d_tof1 = msg.data[1] / 1000
 
         if self.controller_running:
-            if not self.tof0_branch_found:  # TODO: These flags are doing nothing currently.
-                self.d_tof0_readings.append(self.d_tof0)
-            if not self.tof1_branch_found:
-                self.d_tof1_readings.append(self.d_tof1)
-            if not self.tof0_branch_found or not self.tof1_branch_found:
-                self.timestamp_readings.append(msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9)
+            timestamp_float = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+            # with self._branch_found_lock:
+            with self._data_lock:
+                if not self.tof0_branch_found:
+                    self.d_tof0_readings.append(self.d_tof0)
+                    self.timestamp_readings_tof0.append(timestamp_float)
+                if not self.tof1_branch_found:
+                    self.d_tof1_readings.append(self.d_tof1)
+                    self.timestamp_readings_tof1.append(timestamp_float)
+
         return
 
     def _sub_cb_joint_states(self, msg: JointState):
@@ -635,19 +694,30 @@ class FindBranchRollWristController(TFNode):
         self.rotations_complete = False
         self.neg_rot_complete = False
         self.pos_rot_complete = False
+        # with self._branch_found_lock:
+        self.tof0_branch_found = False
+        self.tof1_branch_found = False
         self.tof0_time_center = None
-        self.tof0_distance_center = None
         self.tof1_time_center = None
+        self.tof0_distance_center = None
         self.tof1_distance_center = None
-        self.d_tof0_readings = []
-        self.d_tof1_readings = []
-        self.d_tof0_readings_filtered = []
-        self.d_tof1_readings_filtered = []
-        self.timestamp_readings = []
-        self.timestamps_tof0_filtered = []
-        self.timestamps_tof1_filtered = []
         self.start_controller_tf = np.identity(4)
+        with self._data_lock:
+            self.d_tof0_readings = []
+            self.d_tof1_readings = []
+            self.d_tof0_readings_filtered = []
+            self.d_tof1_readings_filtered = []
+            self.timestamp_readings_tof0 = []
+            self.timestamp_readings_tof1 = []
+            self.timestamps_tof0_filtered = []
+            self.timestamps_tof1_filtered = []
+
+        with self._timer_lock:
+            if self._timer_run_quadratic_fit is not None:
+                self._timer_run_quadratic_fit.cancel()
         self._action_client_move_group_done_event.clear()
+
+        self.info("Controller parameters have been reset")
         return
 
     def publish_zero_twist(self):
@@ -662,33 +732,38 @@ class FindBranchRollWristController(TFNode):
         self._pub_servo.publish(self.msg_twist)
         return
 
+    # def execute_trajectory(self, trajectory):
+    #     traj_goal = ExecuteTrajectory.Goal()
+    #     traj_goal.trajectory = trajectory
+
+    #     execute_traj_future = self._action_client_execute_trajectory.send_goal_async(
+    #         goal=traj_goal,
+    #     )
+    #     execute_traj_future.add_done_callback(callback=self._action_client_execute_trajectory_done_cb)
+
+    #     return
+
     def get_branch_center_time_and_distance(
         self, timestamps, readings, sensor_name: str, debug_plot: bool = False
     ) -> Time | None:
         try:
             readings_filtered = np.where(np.asarray(readings) < self.vl6180_far_plane, readings, np.nan)
-            timestamps_filtered = np.where(np.isnan(readings_filtered), np.nan, timestamps)
+            timestamps_filtered = np.where(np.isnan(readings_filtered), np.nan, np.asarray(timestamps))
             readings_filtered = readings_filtered[~np.isnan(readings_filtered)]
             timestamps_filtered = timestamps_filtered[~np.isnan(timestamps_filtered)]
             normalized_timestamps_filtered = timestamps_filtered - timestamps_filtered[0]
-        except (ValueError, IndexError) as e:
-            self.info(f"{e}: Did not find branch, aborting fit for this rotation.")
-            # if debug_plot:
-            #     fig = go.Figure()
-            #     fig.add_trace(
-            #         go.Scatter(
-            #             x=normalized_timestamps_filtered,
-            #             y=readings_filtered,
-            #             name="filtered_data",
-            #         )
-            #     )
-            #     fig.add_trace(go.Scatter(x=t_fit, y=fit_data, name="fit_data"))
-            #     fig.add_trace(go.Scatter(x=np.asarray(timestamps) - timestamps[0], y=readings, name="raw_data"))
-            #     fig.update_layout(title=dict(text=sensor_name))
-            #     fig.show()
+        except IndexError:
+            self.info(f"No branch found for {sensor_name}")
             return None
-        
-        
+        except ValueError as e:
+            self.warn(traceback.format_exc())
+            self.info(f"{e}: Sensor {sensor_name} did not find branch")
+            self.error(f"readings: {np.asarray(readings).shape}")
+            self.error(f"timestamps: {np.asarray(readings).shape}")
+            self.error(f"readings filtered: {np.asarray(readings_filtered).shape}")
+            # self.error(len(timestamps_filtered))
+            # self.error(len(normalized_timestamps_filtered))
+            return None
 
         fit_params, fit_covs = so.curve_fit(
             f=cf.parabola,
@@ -737,6 +812,9 @@ class FindBranchRollWristController(TFNode):
         # self.msg_tof_branch_fit.header.stamp = self.get_clock().now().to_msg()
 
         # self._pub_fit.publish(self.msg_tof_branch_fit)
+
+        if time_center:
+            self.info(f"Branch found at distance {fit_min} at time {timestamp_min} for {sensor_name}")
 
         return time_center, fit_min
 

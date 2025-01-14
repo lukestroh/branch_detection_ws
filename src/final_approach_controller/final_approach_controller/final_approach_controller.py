@@ -200,7 +200,7 @@ class FinalApproachControllerNode(TFNode):
             or (dist_cut_point_to_branch) < 0
         ):
             self.publish_zero_twist()
-
+            
             self.info(f"Reached terminating point at dist:{dist}, theta: {theta}")
             self._timer_run_controller.cancel()
             self.controller_running = False
