@@ -66,5 +66,6 @@ ur5e__pruning_robot_manipulator:
     - PRMkConfigDefault
     - PRMstarkConfigDefault
   ##Note: commenting the following line lets moveit chose RRTConnect as default planner rather than LBKPIECE
-  #projection_evaluator: joints(shoulder_pan_joint,shoulder_lift_joint)
+  projection_evaluator: joints(ur5e__shoulder_pan_joint,ur5e__shoulder_lift_joint)
+  enforce_constrained_state_space: true
   longest_valid_segment_fraction: 0.01
