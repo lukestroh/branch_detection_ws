@@ -133,6 +133,7 @@ def launch_setup(context, *args, **kwargs) -> list:
         # launch_admittance_controller,
         launch_tof_bringup, 
         launch_ur_basic,
+        # launch_move_group_control,
         launch_final_approach_controller,
         # delay_launch_final_approach_controller_after_timeout
     ]

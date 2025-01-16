@@ -166,14 +166,19 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         moveit_manage_controllers=False
     )
     moveit_configs = mcb.to_moveit_configs()
-    ####################################################################################################################################
 
+    # logger.error(f"{moveit_configs.robot_description_semantic}")
+    
+    # ##############################################################
+    # # SAVE HARD-CODED URDF
     # import xml.etree.ElementTree as ET
     
     # et = ET.XML(moveit_configs.robot_description['robot_description'].value[0].perform(context))
     # tree = ET.ElementTree(et)
     # ET.indent(tree)
     # tree.write("/home/luke/branch_detection_ws/src/branch_detection_system_description/urdf/tmp/robot.urdf", encoding='utf-8', xml_declaration=True)
+
+    # ##############################################################
 
     # define update rate
     update_rate_config_file = PathJoinSubstitution(
@@ -333,6 +338,17 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         ],
     )
 
+    node_move_arm = Node(
+        package="branch_detection_system_moveit_interface",
+        executable="move_arm",
+        name='move_arm',
+        parameters=[
+            moveit_configs.robot_description,
+            moveit_configs.robot_description_semantic,
+            # moveit_configs.robot_description_kinematics,
+        ]
+    )
+
     # MoveIt Servo
     filepath_servo_config = PathJoinSubstitution(
         [
@@ -454,6 +470,7 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         node_dashboard_client,
         register_event_delay_rviz_after_JSB_spawner,
         node_move_group,
+        node_move_arm,
         node_servo,
         warehouse_server_node,
     ] + register_events_delay_robot_controller_spawners_after_JSB_spawner
