@@ -12,6 +12,7 @@
     <xacro:property name="cart_collision_box_x" value='0.5'/>
     <xacro:property name="cart_collision_box_y" value='1.0'/>
     <xacro:property name="cart_collision_box_z" value='0.75711'/>
+    <xacro:property name="cart_tool0_mount_rotation" value="0.0 0.0 -${pi/4}"/>
     
     <!-- ================== -->
     <!--       Links        -->
@@ -61,7 +62,7 @@
         <child link="${cart_prefix}cart"/>
     </joint>
     <joint name="${cart_prefix}cart--${cart_prefix}tool0" type="fixed">
-        <origin rpy="0 0 0" xyz="0 0 ${cart_collision_box_z}"/>
+        <origin rpy="${cart_tool0_mount_rotation}" xyz="0 0 ${cart_collision_box_z}"/>
         <parent link="${cart_prefix}cart"/>
         <child link="${cart_prefix}tool0"/>
     </joint>

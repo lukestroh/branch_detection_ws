@@ -34,6 +34,7 @@
        
             <!-- UR5e -->
             <xacro:if value="${ str(resolved_part) == 'ur5e' }">
+                
                 <xacro:include filename="$(find ur_description)/urdf/ur_macro.xacro"/>
                 <xacro:arg name="ur_type" default='ur5e'/>
                 <xacro:arg name="ur_prefix" default='$(arg ur_type)__'/>
