@@ -34,12 +34,12 @@ class CutPointRotateAxisController(TFNode):
         self._action_svr_run_final_appoach = ActionServer(
             node=self,
             action_type=RunCutPointRotateAxis,
-            action_name='run_cut_point_rotate_axis',
+            action_name="run_cut_point_rotate_axis",
             goal_callback=self._action_goal_cb_run_final_approach,
             cancel_callback=self._action_cancel_cb_run_cut_point_rotate_axis,
             execute_callback=self._action_exe_cb_run_cut_point_rotate_axis,
             # handle_accepted_callback=self._action_handle_accepted_cb_run_final_approach,
-            callback_group=self.callback_group
+            callback_group=self.callback_group,
         )
 
         # Subscribers
@@ -72,25 +72,25 @@ class CutPointRotateAxisController(TFNode):
         self.d_tof1 = 0.0
         self.max_linear_speed = 0.05
         self.max_angular_speed = np.pi / 2
-        self.K_p = 1 / self.max_angular_speed 
+        self.K_p = 1 / self.max_angular_speed
 
         self.tf_mp_base_to_tof0 = np.identity(4)
         self.tf_mp_base_to_tof1 = np.identity(4)
         self.tf_mp_cut_point_to_base = np.identity(4)
         self.tf_tof0_to_cut_point = np.identity(4)
         self.tf_tof0_to_tof1 = np.identity(4)
-        self._dist_cut_point_to_branch_threshold = 0.04 # This is bad, get better sensors? How to calibrate?
+        self._dist_cut_point_to_branch_threshold = 0.04  # This is bad, get better sensors? How to calibrate?
         self.controller_running = False
-        
+
         return
-    
+
     # ===============================
     #        Action callbacks
     # ===============================
     def _action_cancel_cb_run_cut_point_rotate_axis(self, goal_handle: ServerGoalHandle):
         self.info("Received cancel request")
         return CancelResponse.ACCEPT
-    
+
     def _action_exe_cb_run_cut_point_rotate_axis(self, goal_handle: ServerGoalHandle):
         """TODO: This is the same as final_approach_controller, let the high level controller do this in the future"""
         self.controller_running = True
@@ -108,7 +108,7 @@ class CutPointRotateAxisController(TFNode):
             while self.controller_running:
                 if goal_handle.is_cancel_requested:
                     goal_handle.canceled()
-                    self.info('CutPointRotateAxisController canceled.')
+                    self.info("CutPointRotateAxisController canceled.")
                     result.success = False
                     return result
                 feedback_msg.tof0 = self.d_tof0
@@ -119,14 +119,13 @@ class CutPointRotateAxisController(TFNode):
                 goal_handle.publish_feedback(feedback_msg)
                 time.sleep(1)
 
-
             result.success = True
-    
+
             goal_handle.succeed()
             return result
-                
+
         except Exception as e:
-            self.get_logger().fatal(f'{e}')
+            self.get_logger().fatal(f"{e}")
         finally:
             self._timer_run_controller.cancel()
         return result
@@ -134,7 +133,6 @@ class CutPointRotateAxisController(TFNode):
     def _action_goal_cb_run_final_approach(self, goal_handle: ServerGoalHandle):
         self.info("Received goal request")
         return GoalResponse.ACCEPT
-    
 
     # ===============================
     #         Timer callbacks
@@ -174,22 +172,12 @@ class CutPointRotateAxisController(TFNode):
         if not np.all(np.isclose(self.tf_tof0_to_tof1[:3, :3], np.identity(3), atol=1e-3)):
             raise ValueError("The two ToF frames are not aligned with each other.")
         return
-    
-    def publish_zero_twist(self):
-        self.msg_twist.twist.linear.x = 0.0
-        self.msg_twist.twist.linear.y = 0.0
-        self.msg_twist.twist.linear.z = 0.0
-        self.msg_twist.twist.angular.x = 0.0
-        self.msg_twist.twist.angular.y = 0.0
-        self.msg_twist.twist.angular.z = 0.0
-        self.msg_twist.header.frame_id = "cart__base" # TODO: if changing to EEF, change ur_servo.yaml
-        self.msg_twist.header.stamp = self.get_clock().now().to_msg()
-        self._pub_servo.publish(self.msg_twist)
-        return
-    
+
     def _timer_cb_run_controller(self):
         if np.isclose(self.d_tof0, 255.0, atol=5.0) or np.isclose(self.d_tof1, 255.0, atol=5.0):
-            self.info(f"VL6180 sensor(s) are returning unreliable data, aborting controller. Data: {self.d_tof0}, {self.d_tof1}")
+            self.info(
+                f"VL6180 sensor(s) are returning unreliable data, aborting controller. Data: {self.d_tof0}, {self.d_tof1}"
+            )
             self._timer_run_controller.cancel()
             self.controller_running = False
             self.publish_zero_twist()
@@ -197,46 +185,50 @@ class CutPointRotateAxisController(TFNode):
 
         dist, theta = self.get_cut_point_info()
         dist_cut_point_to_branch = dist - self.tf_cut_point_to_tof0[2, 3]
-        
+
         if np.isclose(theta, 0.0, atol=np.radians(1)):
             self.info(f"Reached terminating point at:\ndist:{dist_cut_point_to_branch}, theta: {theta}")
             self._timer_run_controller.cancel()
             self.controller_running = False
             self.publish_zero_twist()
             return
-        
+
         else:
             rot_ax = self.get_rotation_axis()
             tf_rot_axis_to_cut_point = self.get_cut_point_to_rot_axis_transform(rot_ax=rot_ax)
 
-            twist_mp_tool0_frame = self.get_twist(tf_rot_axis_to_cut_point=tf_rot_axis_to_cut_point, angle_from_perpendicular=theta)
-
-            tf_cut_point_to_world = self.lookup_transform( # TODO: change to EEF frame, can use static transform!!!
-                target_frame="mock_pruner__tool0",
-                source_frame="cart__base",
-                time=self.get_clock().now(),
-                sync=True,
-                as_matrix=True,
+            twist_mp_tool0_frame = self.get_twist(
+                tf_rot_axis_to_cut_point=tf_rot_axis_to_cut_point, angle_from_perpendicular=theta
             )
 
-            linear_v_world_frame = np.linalg.inv(tf_cut_point_to_world[:3, :3]) @ twist_mp_tool0_frame[0:3, 0]
-            linear_v_world_frame *= self.max_linear_speed
-            # linear_v_world_frame = linear_v_world_frame / np.linalg.norm(linear_v_world_frame) * self.max_linear_speed
-            angular_v_world_frame = np.linalg.inv(tf_cut_point_to_world[:3, :3]) @ twist_mp_tool0_frame[3:6, 0]
-            # angular_v_world_frame = angular_v_world_frame / np.linalg.norm(angular_v_world_frame) * self.
-            angular_v_world_frame *= self.max_angular_speed
+            # tf_cut_point_to_world = self.lookup_transform(  # TODO: change to EEF frame, can use static transform!!!
+            #     target_frame="mock_pruner__tool0",
+            #     source_frame="cart__base",
+            #     time=self.get_clock().now(),
+            #     sync=True,
+            #     as_matrix=True,
+            # )
 
-            self.msg_twist.twist.linear.x = linear_v_world_frame[0]
-            self.msg_twist.twist.linear.y = linear_v_world_frame[1]
-            self.msg_twist.twist.linear.z = linear_v_world_frame[2]
-            self.msg_twist.twist.angular.x = angular_v_world_frame[0]
-            self.msg_twist.twist.angular.y = angular_v_world_frame[1]
-            self.msg_twist.twist.angular.z = angular_v_world_frame[2]
-            self.msg_twist.header.frame_id = "cart__base" # TODO: if changing to EEF, change ur_servo.yaml
+            # linear_v_world_frame = np.linalg.inv(tf_cut_point_to_world[:3, :3]) @ twist_mp_tool0_frame[0:3, 0]
+            linear_v_mp_tool0_frame = twist_mp_tool0_frame[0:3, 0]
+            linear_v_mp_tool0_frame *= self.max_linear_speed
+            # linear_v_world_frame = linear_v_world_frame / np.linalg.norm(linear_v_world_frame) * self.max_linear_speed
+
+            # angular_v_world_frame = np.linalg.inv(tf_cut_point_to_world[:3, :3]) @ twist_mp_tool0_frame[3:6, 0]
+            angular_v_mp_tool0_frame = twist_mp_tool0_frame[3:6, 0]
+            # angular_v_world_frame = angular_v_world_frame / np.linalg.norm(angular_v_world_frame) * self.
+            angular_v_mp_tool0_frame *= self.max_angular_speed
+
+            self.msg_twist.twist.linear.x = linear_v_mp_tool0_frame[0]
+            self.msg_twist.twist.linear.y = linear_v_mp_tool0_frame[1]
+            self.msg_twist.twist.linear.z = linear_v_mp_tool0_frame[2]
+            self.msg_twist.twist.angular.x = angular_v_mp_tool0_frame[0]
+            self.msg_twist.twist.angular.y = angular_v_mp_tool0_frame[1]
+            self.msg_twist.twist.angular.z = angular_v_mp_tool0_frame[2]
+            self.msg_twist.header.frame_id = "mock_pruner__tool0"
             self.msg_twist.header.stamp = self.get_clock().now().to_msg()
             self._pub_servo.publish(self.msg_twist)
         return
-    
 
     # ===============================
     #     Subscription callbacks
@@ -248,7 +240,7 @@ class CutPointRotateAxisController(TFNode):
         self.d_tof1 = msg.data[1] / 1000
         # self.warn(self.d_tof0)
         return
-    
+
     # ===============================
     #       Controller methods
     # ===============================
@@ -257,7 +249,7 @@ class CutPointRotateAxisController(TFNode):
         d_diff = self.d_tof0 - self.d_tof1
         theta = np.arctan(d_diff / self._tof_linear_distance)  # should return angle (-pi/2, pi/2)
         return dist, theta
-    
+
     def get_rotation_axis(self):
         """Get the rotation axis in the camera frame."""
         rotation_point = np.mean([self.d_tof0, self.d_tof1], axis=0)
@@ -266,7 +258,7 @@ class CutPointRotateAxisController(TFNode):
         # TODO: fix with proper vector. for now, just use z-axis
         rotation_axis[0:3, :] = np.array([[0, 0, rotation_point]]).T
         # rotation_axis[0:3, :] = rotation_point[0, :3].reshape(3, 1)
-        rotation_axis[3:6, :] = np.cross([0,0,self.d_tof0], [0,0,self.d_tof1]).reshape(
+        rotation_axis[3:6, :] = np.cross([0, 0, self.d_tof0], [0, 0, self.d_tof1]).reshape(
             3, 1
         )  # TODO: clean up hackiness here
         # If the cross product is zero (for current scenario, should be true) then the two vectors are parallel, so we can just choose the  y-axis (camera frame).
@@ -275,7 +267,7 @@ class CutPointRotateAxisController(TFNode):
         else:
             rotation_axis[3:6, :] = np.array([[0, 1, 0]]).T
         return rotation_axis
-    
+
     def get_cut_point_to_rot_axis_transform(self, rot_ax: np.ndarray):
         """TODO: replace with actual transform from end effector to cut point."""
         tf_axis_to_eef = np.identity(4)
@@ -288,14 +280,25 @@ class CutPointRotateAxisController(TFNode):
 
     def get_twist(self, tf_rot_axis_to_cut_point: np.ndarray, angle_from_perpendicular: float):
         # log.error(f"Angle from perpendicular: {angle_from_perpendicular * 180 / np.pi}")
-        desired_angle = 0.0 # We want the cut point to be perpendicular to the rotation axis
+        desired_angle = 0.0  # We want the cut point to be perpendicular to the rotation axis
         # We are in the mp base frame, so the angular velocity is along the y-axis, which points down
-        angular_velocity = [0, self.K_p * (desired_angle - angle_from_perpendicular), 0] 
+        angular_velocity = [0, self.K_p * (desired_angle - angle_from_perpendicular), 0]
         linear_velocity = np.cross(angular_velocity, tf_rot_axis_to_cut_point[:3, 3])
-        
+
         twist = np.concatenate((linear_velocity, angular_velocity), axis=0).reshape(6, 1)
         return twist
-    
+
+    def publish_zero_twist(self, servo_frame="mock_pruner__tool0"):
+        self.msg_twist.twist.linear.x = 0.0
+        self.msg_twist.twist.linear.y = 0.0
+        self.msg_twist.twist.linear.z = 0.0
+        self.msg_twist.twist.angular.x = 0.0
+        self.msg_twist.twist.angular.y = 0.0
+        self.msg_twist.twist.angular.z = 0.0
+        self.msg_twist.header.frame_id = servo_frame  # TODO: if changing to EEF, change ur_servo.yaml
+        self.msg_twist.header.stamp = self.get_clock().now().to_msg()
+        self._pub_servo.publish(self.msg_twist)
+        return
 
 
 def main():

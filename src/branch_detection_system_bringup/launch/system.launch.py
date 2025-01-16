@@ -105,6 +105,9 @@ def launch_setup(context, *args, **kwargs) -> list:
                 'final_approach_controller.launch.py'
             )
         ),
+        launch_arguments=[
+            ("use_mock_hardware", use_mock_hardware),
+        ],
         condition=IfCondition(use_final_approach_controller)
     )
 
@@ -130,6 +133,7 @@ def launch_setup(context, *args, **kwargs) -> list:
         # launch_admittance_controller,
         launch_tof_bringup, 
         launch_ur_basic,
+        # launch_move_group_control,
         launch_final_approach_controller,
         # delay_launch_final_approach_controller_after_timeout
     ]

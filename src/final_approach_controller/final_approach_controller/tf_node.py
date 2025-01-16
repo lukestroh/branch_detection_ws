@@ -31,7 +31,7 @@ class TFNode(Node):
             depth=1,
         )
 
-        self.tf_buffer = Buffer(cache_time=kwargs.get('cache_time'))
+        self.tf_buffer = Buffer(cache_time=kwargs.get("cache_time"))
         self.tf_listener = TransformListener(self.tf_buffer, self, static_qos=qos)
         return
 

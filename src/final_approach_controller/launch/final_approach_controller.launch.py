@@ -17,6 +17,7 @@ logger = rclpy.logging.get_logger("final_approach_controller.launch")
 
 
 def launch_setup(context, *args, **kwargs) -> list:
+    use_mock_hardware = LaunchConfiguration("use_mock_hardware")
 
     node_final_approach_controller = Node(
         package="final_approach_controller",
@@ -29,14 +30,15 @@ def launch_setup(context, *args, **kwargs) -> list:
         package="final_approach_controller",
         executable="cut_point_rotate_axis_controller",
         name="cut_point_rotate_axis_controller",
-        output="both"
+        output="both",
     )
 
     node_find_branch_roll_wrist_controller = Node(
         package="final_approach_controller",
         executable="find_branch_roll_wrist_controller",
         name="find_branch_roll_wrist_controller",
-        output="both"
+        output="both",
+        parameters=[{"use_mock_hardware": use_mock_hardware}],
     )
 
     _to_return = [
@@ -52,6 +54,7 @@ def generate_launch_description():
 
     declared_configs = [
         dict(name="headless_mode", default_value="true"),
+        dict(name="use_mock_hardware", default_value="false"),
     ]
 
     declared_args = [

@@ -18,7 +18,7 @@ def get_databases() -> List[str]:
     return dbs
 
 def get_df_from_db(database: str):
-
+    
     br = BagReader(bag_file=database)
     metadata = list(br.query(topic_name='/microROS/vl53l8cx/distance'))
     # print(list(data[0][1].data))
