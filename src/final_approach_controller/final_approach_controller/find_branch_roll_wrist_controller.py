@@ -245,7 +245,7 @@ class FindBranchRollWristController(TFNode):
             # TODO: check if initial reading of sensor. If so, set flag to data found and record tf pose time.
 
             while self.controller_running:
-                self.debug_counter += 1
+                # self.debug_counter += 1
 
                 if goal_handle.status == GoalStatus.STATUS_CANCELED:
                     # self._timer_run_controller.cancel()
@@ -292,11 +292,13 @@ class FindBranchRollWristController(TFNode):
                         # self.info("hello world")
                         tof0_branch_found = self.tof0_branch_found
                         tof1_branch_found = self.tof1_branch_found
-                        self.debug_counter -= 1
+                        # self.debug_counter -= 1
 
                     if tof0_branch_found and tof1_branch_found:
-                        if self.debug_counter:
-                            self.error(f'debug counter: {self.debug_counter}')
+                        # if self.debug_counter:
+                        #     self.error(f'debug counter: {self.debug_counter}')
+                        self.neg_rot_complete = True
+                        self.pos_rot_complete = True
                         self.rotations_complete = True
                         self.info(f"tof0: {tof0_branch_found}, tof1: {tof1_branch_found}")
                         with self._timer_lock:
