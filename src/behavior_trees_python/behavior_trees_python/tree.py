@@ -9,15 +9,19 @@ import functools as ft
 import operator
 import py_trees
 import py_trees_ros
+import sys
 from threading import Lock
 
 import rclpy
 from rclpy.duration import Duration
+from rclpy.executors import SingleThreadedExecutor, ExternalShutdownException
 from rclpy.node import Node
 
 from vl6180_msgs.msg import Vl6180FilteredStamped
 
+from behavior_trees_python.cut_point_rotate_axis_client import CutPointRotateAxisControllerBehavior
 from behavior_trees_python.final_approach_controller_client import FinalApproachControllerBehavior
+from behavior_trees_python.find_branch_roll_wrist_client import FindBranchRollWristControllerBehavior
 
 class FinalApproachTreeNode(Node):
     def __init__(self):
@@ -41,7 +45,7 @@ class FinalApproachTreeNode(Node):
         self.bb.register_key(key="d_tof1", access=py_trees.common.Access.WRITE)
 
         # Behavior tree setup
-        self.tree = self.create_behavior_tree_ros()
+        self.tree: py_trees_ros.trees.BehaviourTree = self.create_behavior_tree_ros()
         self.snapshot_visitor = py_trees.visitors.SnapshotVisitor()
         self.tree.add_post_tick_handler(
             ft.partial(self.post_tick_handler, self.snapshot_visitor)
@@ -87,19 +91,36 @@ class FinalApproachTreeNode(Node):
         A selector executes each of its child behaviours in turn until one of them succeeds (at which point it itself returns ~py_trees.common.Status.RUNNING or ~py_trees.common.Status.SUCCESS"""
 
         # Behaviors
-        final_approach_behavior = FinalApproachControllerBehavior(name="fac_client", node=self)
-
-        find_branch_selector = py_trees.composites.Selector( 
-            name="find_branch_controller_selector",
-            memory=True,
+        # cut_point_rotate_axis_behavior = CutPointRotateAxisControllerBehavior(
+        #     name="cut_point_rotate_axis_client",
+        #     node=self
+        # )
+        final_approach_behavior = FinalApproachControllerBehavior(
+            name="final_approach_behavior_client",
+            node=self
         )
+        # find_branch_rotate_wrist_behavior = FindBranchRollWristControllerBehavior(
+        #     name="find_branch_rotate_wrist_client",
+        #     node=self
+        # )
 
-        find_branch_selector.add_children([
-            
-        ])
+        # find_branch_selector = py_trees.composites.Selector( 
+        #     name="find_branch_controller_selector",
+        #     memory=True,
+        # )
 
-        align_and_approach_sequence = py_trees.composites.Sequence(
-            name="align_and_approach_sequence",
+        # find_branch_selector.add_children([
+        #     find_branch_rotate_wrist_behavior
+        # ])
+
+        # align_and_approach_sequence = py_trees.composites.Sequence(
+        #     name="align_and_approach_sequence",
+        #     memory=True,
+        #     children=[cut_point_rotate_axis_behavior, final_approach_behavior]
+        # )
+
+        test_sequence = py_trees.composites.Sequence(
+            name="test_sequence",
             memory=True,
             children=[final_approach_behavior]
         )
@@ -109,10 +130,17 @@ class FinalApproachTreeNode(Node):
         #     child=find_branch_selector,
         #     policy=py_trees.common.OneShotPolicy.ON_COMPLETION # Allow some controllers to fail. If the FindBranch controllers fail, then the whole system fails.
         # )
-        root = py_trees.composites.Sequence(
+
+        root_sequence = py_trees.composites.Sequence(
             name="root_sequence",
             memory=True,
-            children=[find_branch_selector, align_and_approach_sequence]
+            # children=[find_branch_selector, align_and_approach_sequence]
+            children=[test_sequence]
+        )
+        root = py_trees.decorators.OneShot(
+            name='root',
+            child=root_sequence,
+            policy=py_trees.common.OneShotPolicy.ON_COMPLETION
         )
         tree = py_trees_ros.trees.BehaviourTree(root=root, unicode_tree_debug=True)
         tree.setup(node=self)
@@ -121,9 +149,9 @@ class FinalApproachTreeNode(Node):
         # _task_one_sensor_reading = py_trees.behaviours.Success(name=f"Task2: One tof < {self.vl6180_far_plane}")
         # _task_both_sensor_readings = py_trees.behaviours.Success(name=f"Task3: Both tof < {self.vl6180_far_plane}")
 
-        conditions = [
-            py_trees.common.ComparisonExpression(variable="d_tof0", value=self.vl6180_far_plane, operator=operator.gt)
-        ]
+        # conditions = [
+        #     py_trees.common.ComparisonExpression(variable="d_tof0", value=self.vl6180_far_plane, operator=operator.gt)
+        # ]
 
         
 
@@ -136,16 +164,19 @@ class FinalApproachTreeNode(Node):
         behavior_tree: py_trees.trees.BehaviourTree
     ):
         """Write the tree snapshot to the console."""
-        if self.get_clock().now() - self._last_log_time > Duration(seconds=3):
-            self.info("\n")
-            self.info(py_trees.display.unicode_tree(
-                root=behavior_tree.root,
-                visited=snapshot_visitor.visited,
-                previously_visited=snapshot_visitor.previously_visited
-            ) + "\n" + py_trees.display.unicode_blackboard())
-            self._last_log_time = self.get_clock().now()
+        # if self.get_clock().now() - self._last_log_time > Duration(seconds=0.005):
+        #     self.info("\n")
+        #     self.info(py_trees.display.unicode_tree(
+        #         root=behavior_tree.root,
+        #         visited=snapshot_visitor.visited,
+        #         previously_visited=snapshot_visitor.previously_visited
+        #     ) + "\n" + py_trees.display.unicode_blackboard())
+        #     self._last_log_time = self.get_clock().now()
+
+        if behavior_tree.root.status == py_trees.common.Status.SUCCESS:
+            behavior_tree.shutdown()
+            sys.exit(0)
         
-        # self.info(py_trees.display.unicode_blackboard())
         return
         
     def cli_arg_parser(self) -> argparse.ArgumentParser:
@@ -171,13 +202,17 @@ def main():
     # if args.interactive:
     #     ...
     #     py_trees.console.read_single_keypress()
-    # fa_tree_node.tree.tick_tock(period_ms=5.0)
-    # rclpy.spin(fa_tree_node)
-    while rclpy.ok():
-        fa_tree_node.tree.tick()
-        rclpy.spin_once(node=fa_tree_node)
-        
-        fa_tree_node.get_clock().sleep_for(Duration(nanoseconds=int(0.05 * 1e9)))
-        
-    rclpy.shutdown()
+    fa_tree_node.tree.tick_tock(period_ms=5.0)
+    try:
+        rclpy.spin(fa_tree_node)
+    except KeyboardInterrupt:
+        # TODO: Need to find a way to send cancel goal to running action from here.
+        fa_tree_node.
+        fa_tree_node.info("Shutting down")
+    except ExternalShutdownException:
+        sys.exit(0)
+    finally:
+        fa_tree_node.destroy_node()
+        rclpy.try_shutdown()
+    
     return

@@ -6,6 +6,7 @@ from rclpy.action import ActionClient
 from rclpy.action.client import ClientGoalHandle
 from rclpy.task import Future
 
+from action_msgs.msg import GoalStatus
 from final_approach_controller_msgs.action import RunCutPointRotateAxis
 
 
@@ -15,7 +16,7 @@ class CutPointRotateAxisControllerBehavior(pt.behaviour.Behaviour):
         super(CutPointRotateAxisControllerBehavior, self).__init__(name)
 
         self.node = node
-        self.bb = pt.blackboard.Blackboard()
+        # self.bb = pt.blackboard.Blackboard()
         
         self.info = lambda x: self.node.get_logger().info(f"\n{x}")
         self.warn = lambda x: self.node.get_logger().warn(f"\n{x}")
@@ -65,7 +66,19 @@ class CutPointRotateAxisControllerBehavior(pt.behaviour.Behaviour):
                 return pt.common.Status.FAILURE
         return pt.common.Status.RUNNING
     
-    def terminate(self,  new_status: pt.common.Status):
+    def terminate(self, new_status: pt.common.Status):
+        if self._goal_handle.status == GoalStatus.STATUS_EXECUTING:
+            _goal_canceled_future: Future = self._goal_handle.cancel_goal_async()
+            _goal_canceled_future.add_done_callback(self._on_cancel_cb)
+
         self.logger.info(f"Terminated with status {new_status}")
         self.client = None
+        return
+
+    def _on_cancel_cb(self, future: Future):
+        _cancel_result  = future.result().result
+        if _cancel_result:
+            self.info("Action successfully canceled.")
+        else:
+            self.error("ACTION NOT CANCELED. ROBOT MAY STILL BE IN OPERATION.")
         return
