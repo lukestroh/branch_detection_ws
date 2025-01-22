@@ -2,6 +2,8 @@
 import py_trees as pt
 
 from rclpy.action import ActionClient
+from rclpy.action.client import ClientGoalHandle
+from rclpy.task import Future
 
 from action_msgs.msg import GoalStatus
 from final_approach_controller_msgs.action import RunFinalApproach
@@ -14,9 +16,13 @@ class FinalApproachControllerBehavior(pt.behaviour.Behaviour):
 
         self.node = node
         self.bb = pt.blackboard.Blackboard()
-
+        
+        self.info = lambda x: self.node.get_logger().info(f"\n{x}")
+        self.warn = lambda x: self.node.get_logger().warn(f"\n{x}")
+        self.error = lambda x: self.node.get_logger().error(f"\n{x}")
+        self.fatal = lambda x: self.node.get_logger().fatal(f"\n{x}")
         return
-    
+
     def initialise(self):
         """Sends the inital RunFinalApproach goal"""
         self.client = ActionClient(
@@ -27,36 +33,67 @@ class FinalApproachControllerBehavior(pt.behaviour.Behaviour):
         self.client.wait_for_server()
 
         self.goal_status = None
-
-        self.send_goal_future = self.client.send_goal_async(
+        self._goal_handle = None
+        self._result_future = None
+        
+        self.goal = RunFinalApproach.Goal()
+        self._send_goal_future: Future = self.client.send_goal_async(
             goal=self.goal,
         )
-        self.send_goal_future.add_done_callback(self.goal_result_callback)
+        self._send_goal_future.add_done_callback(self._send_goal_cb)
         return
-    
-    def goal_callback(self, future):
-        res = future.result()
-        if res is None or not res.accepted():
-            return
-        future = res.get_result_async()
-        future.add_done_callback(self.goal_result_callback)
-        return
-    
-    def goal_result_callback(self, future):
+
+    # def goal_callback(self, future):
+    #     res = future.result()
+    #     if res is None or not res.accepted():
+    #         return
+    #     future = res.get_result_async()
+    #     future.add_done_callback(self.goal_result_callback)
+    #     return
+
+    def _send_goal_cb(self, future: Future):
         # If there is a result, consider action complete and save result code to be checked in the `update()` method
-        self.goal_status = future.result().status
+        self._goal_handle: ClientGoalHandle = future.result()
+        if not self._goal_handle.accepted:
+            self.warn(f"{self.name}: Action server not available.")
+            # self.feedback_message = "Action server not available."
+        else:
+            self.info(f"{self.name}: Goal accepted.")
+            self._result_future: Future = self._goal_handle.get_result_async()
+            self._result_future.add_done_callback(callback=self._on_result_cb)
+        # self.goal_status = goal_handle.status
+        # self.info((f"{self.goal_status}"))
         return
-    
+        
+    def _on_result_cb(self, future: Future):
+        result: RunFinalApproach.Result = future.result().result
+        self.info(f"{self.name}: Result: {result}")
+        self.goal_status = result.success
+        return
+
     def update(self):
         if self.goal_status is not None:
-            if self.goal_status == GoalStatus.STATUS_SUCCEEDED:
+            if self.goal_status == True:
                 return pt.common.Status.SUCCESS
             else:
                 return pt.common.Status.FAILURE
         return pt.common.Status.RUNNING
-    
-    def terminate(self, status):
-        self.logger.info(f"Terminated with status {status}")
+
+    def terminate(self,  new_status: pt.common.Status):
+        # TODO: send cancel request to action server!!!!!!!!!!!
+
+        if self._goal_handle.status == GoalStatus.STATUS_EXECUTING:
+            _goal_canceled_future: Future = self._goal_handle.cancel_goal_async()
+            _goal_canceled_future.add_done_callback(self._on_cancel_cb)
+
+        self.logger.info(f"Terminated with status {new_status}")
         self.client = None
-        # self.bb.set
+        return
+
+    def _on_cancel_cb(self, future: Future):
+        _cancel_result  = future.result().result
+        if _cancel_result:
+            self.info("Action successfully canceled.")
+        else:
+            self.error("ACTION NOT CANCELED. ROBOT MAY STILL BE IN OPERATION.")
         return
