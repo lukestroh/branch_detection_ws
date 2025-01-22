@@ -171,6 +171,7 @@ class CutPointRotateAxisController(TFNode):
         self._tof_linear_distance = np.linalg.norm(tof0_to_tof1_pos_vec)
         if not np.all(np.isclose(self.tf_tof0_to_tof1[:3, :3], np.identity(3), atol=1e-3)):
             raise ValueError("The two ToF frames are not aligned with each other.")
+        self.warn(f"\n{mr.TransInv(self.tf_mp_cut_point_to_base)}")
         return
 
     def _timer_cb_run_controller(self):

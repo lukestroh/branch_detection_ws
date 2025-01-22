@@ -110,10 +110,11 @@ class FindBranchRollWristController(TFNode):
         self._srv_client_start_servo = self.create_client(
             srv_type=Trigger, srv_name="/servo_node/start_servo", callback_group=self.callback_group
         )
-
+        self._srv_client_start_servo.wait_for_service()
         self._srv_client_stop_servo = self.create_client(
             srv_type=Trigger, srv_name="/servo_node/stop_servo", callback_group=self.callback_group
         )
+        self._srv_client_stop_servo.wait_for_service()
 
         self._srv_switch_ctrls = self.create_client(
             srv_type=SwitchController,
@@ -176,7 +177,7 @@ class FindBranchRollWristController(TFNode):
         self.neg_rot_complete = False
         self.pos_rot_complete = False
         self.max_angular_vel = np.pi / 16
-        self.vl6180_far_plane = 0.200  # 0.19 based on testing, but give it small window
+        self.vl6180_far_plane = 0.200  # 0.19 based on testing, but give it small window. TODO: Get from param file
         self.vl6180_precision = 0.001
 
         self.get_final_pose_ready = False  # True when two valid tof fits have been recorded. Indicates to controller that it is ready to solve for a final pose
@@ -204,7 +205,6 @@ class FindBranchRollWristController(TFNode):
         self.start_time = self.get_clock().now()
         self.start_controller_tf = np.identity(4, dtype=float)
         self.feedback_pub_prev_time = self.get_clock().now()
-        self._goal_handle: ServerGoalHandle | None = None
         self.goal_handle_aborted: bool = False
 
         # Controller handlers
@@ -223,7 +223,7 @@ class FindBranchRollWristController(TFNode):
 
     def _action_exe_cb_run_find_branch_roll_wrist(self, goal_handle: ServerGoalHandle):
         self.controller_running = True
-        self._goal_handle = goal_handle  # TODO: can probably get rid of class attr.
+        self._srv_client_start_servo.call(request=Trigger.Request())
 
         self.start_controller_tf = self.lookup_transform(
             target_frame="cart__base", source_frame="mock_pruner__tool0", sync=True, as_matrix=True
@@ -344,12 +344,12 @@ class FindBranchRollWristController(TFNode):
                         if (
                             self.tof0_time_center is None or self.tof1_time_center is None
                         ):  # TODO: Check and/or logic here
-                            if not self._goal_handle.status == GoalStatus.STATUS_ABORTED:
+                            if not goal_handle.status == GoalStatus.STATUS_ABORTED:
                                 self.warn("Could not find the branch. Aborting FindBranchRollWristController.")
                                 with self._timer_lock:
                                     if self._timer_run_quadratic_fit is not None:
                                         self._timer_run_quadratic_fit.cancel()
-                                self._goal_handle.abort()
+                                goal_handle.abort()
                                 # self.reset_controller() # Done in 'finally'
 
                                 result.success = False
@@ -358,7 +358,9 @@ class FindBranchRollWristController(TFNode):
                         else:
                             # Stop servo
                             self.publish_zero_twist() # Just in case
-                            self._srv_client_stop_servo.call(request=Trigger.Request())
+                            stop_servo_response: Trigger.Response = self._srv_client_stop_servo.call(request=Trigger.Request())
+                            if not stop_servo_response.success:
+                                raise Exception
 
                             # Switch controllers
                             switch_ctrlr_req = SwitchController.Request(
@@ -394,8 +396,8 @@ class FindBranchRollWristController(TFNode):
                                 time=self.get_clock().now(),
                             )
 
-                            self.warn(f"POSE:\n{tf_tof0_to_base__time_center_pose}")
-                            self.warn(f"POSE:\n{tf_tof1_to_base__time_center_pose}")
+                            # self.warn(f"POSE:\n{tf_tof0_to_base__time_center_pose}")
+                            # self.warn(f"POSE:\n{tf_tof1_to_base__time_center_pose}")
 
                             # Get branch locations in world coordinates
                             tof0_vec_tof0_frame = np.array([[0, 0, self.tof0_distance_center, 1]]).T
@@ -405,18 +407,15 @@ class FindBranchRollWristController(TFNode):
 
                             tof0_vec_base_frame = tf_tof0_to_base__time_center_pose @ tof0_vec_tof0_frame
                             tof1_vec_base_frame = tf_tof1_to_base__time_center_pose @ tof1_vec_tof1_frame
-                            self.warn(f"VEC:\n{tof0_vec_base_frame}")
-                            self.warn(f"VEC:\n{tof1_vec_base_frame}")
+                            # self.warn(f"VEC:\n{tof0_vec_base_frame}")
+                            # self.warn(f"VEC:\n{tof1_vec_base_frame}")
                             tof0_vec_base_frame = tof0_vec_base_frame.flatten()[0:3]
                             tof1_vec_base_frame = tof1_vec_base_frame.flatten()[0:3]
                             self.warn(tof0_vec_base_frame)
 
                             # Get the centerpoint of these two points.
                             branch_center_point = np.mean([tof0_vec_base_frame, tof1_vec_base_frame], axis=0)  # C
-                            self.warn(f"CENTER:\n{branch_center_point}")
-                            # branch_center_point = branch_center_point / np.linalg.norm(branch_center_point)
-                            # Get normalized vector perpendicular to this point
-                            ############################################################################################
+                            # self.warn(f"CENTER:\n{branch_center_point}")
 
                             # Get closest point on a circle from point, given circle center,
                             # point, plane normal
@@ -439,37 +438,18 @@ class FindBranchRollWristController(TFNode):
 
                             desired_orientation_vec_to_branch = branch_center_point - desired_eef_xyz
 
-                            # desired_orientation_rot, rssd = Rotation.align_vectors(
-                            #     desired_orientation_vec_to_branch, world_z
-                            # )
                             desired_orientation_vec_to_branch_norm = desired_orientation_vec_to_branch / np.linalg.norm(desired_orientation_vec_to_branch)
 
-                            # WE need to create a coordinate basis with respect to this vector. Use a temp vec, like world_z. Mimicking the 'camera' frame, this would give us the x-axis, which we want pointing to the right. Therefore, we should take desired x world_z
-
+                            # CREATE BASIS VECTORS: we need to create a coordinate basis with respect to the calculated vector. Use a temp vec, like world_z. Mimicking the 'camera' frame, this would give us the x-axis, which we want pointing to the right. Therefore, we should take desired x world_z
                             desired_x_axis = np.cross(desired_orientation_vec_to_branch_norm, world_z)
                             desired_x_axis = desired_x_axis / np.linalg.norm(desired_x_axis) # this SHOULD be 1 already....
                             desired_y_axis = np.cross(desired_orientation_vec_to_branch_norm, desired_x_axis)
                             desired_y_axis = desired_y_axis / np.linalg.norm(desired_y_axis)
 
+                            # Form the rotation matrix from our basis vectors
                             rot_mat = np.column_stack((desired_x_axis, desired_y_axis, desired_orientation_vec_to_branch_norm))
-
                             desired_orientation_rot = Rotation.from_matrix(matrix=rot_mat)
                             desired_orientation_quat = desired_orientation_rot.as_quat()
-
-
-
-                            # rot_angle = np.arccos(np.dot(world_z, desired_orientation_vec_to_branch_norm))
-                            # rot_axis = np.cross(world_z, desired_orientation_vec_to_branch_norm)
-                            # desired_orientation_rot = Rotation.from_rotvec(rotvec=rot_axis * rot_angle)
-                            # desired_orientation_quat = desired_orientation_rot.as_quat()
-                            self.warn(f"desired orientation vec to branch\n{desired_orientation_vec_to_branch}")
-                            # self.warn(f"rot angle: {np.degrees(rot_angle)}")
-                            # self.warn(f"Rot axis: {rot_axis}")
-                            # self.warn(f"rotvec: {rot_axis * rot_angle}")
-                            # self.info(f"branch norm len: {np.linalg.norm(desired_orientation_vec_to_branch_norm)}")
-                            # self.info(f"rot_ax norm {np.linalg.norm(rot_axis)}")
-                            self.warn(f"as euler {desired_orientation_rot.as_euler('xyz')}")
-                            self.warn(f"quat: {desired_orientation_quat}")
 
                             if self.debug_plot:
                                 fig = go.Figure()
@@ -520,11 +500,19 @@ class FindBranchRollWristController(TFNode):
                             move_to_pose_req.goal.orientation.y = desired_orientation_quat[1]
                             move_to_pose_req.goal.orientation.z = desired_orientation_quat[2]
                             move_to_pose_req.goal.orientation.w = desired_orientation_quat[3]
-                            # move_to_pose_req.goal.orientation.x = 0.0
-                            # move_to_pose_req.goal.orientation.y = 0.707
-                            # move_to_pose_req.goal.orientation.z = 0.0
-                            # move_to_pose_req.goal.orientation.w = 0.707
-                            future = self._srv_cartesian_move_to_pose.call_async(request=move_to_pose_req)
+                            
+                            move_group_response: MoveToPose.Response = self._srv_cartesian_move_to_pose.call(request=move_to_pose_req)
+                            # future.add_done_callback(callback=self._done_cb_srv_cartesian_move_to_pose)
+                            # response = await future
+
+                            if move_group_response.result:
+                                goal_handle.succeed()
+                                result.success = True
+                            else:
+                                goal_handle.abort()
+                                result.success = False
+                                
+                            
                             ####################################################################################
                             # future.add_done_callback(self._action_client_move_group_done_cb)
                             # get angle between the two to determine direction
@@ -534,8 +522,6 @@ class FindBranchRollWristController(TFNode):
 
                             # self.warn(branch_center_point)
 
-                            self._goal_handle.succeed()
-                            result.success = True
                             self.controller_running = False
                             return result
             ############################################################################################################
@@ -543,7 +529,7 @@ class FindBranchRollWristController(TFNode):
         except Exception as e:
             self.get_logger().fatal(f"{traceback.format_exc()}")
             result.success = False
-            self._goal_handle.abort()
+            goal_handle.abort()
         finally:
             # self._timer_run_controller.cancel()
             self.publish_zero_twist()
@@ -582,6 +568,16 @@ class FindBranchRollWristController(TFNode):
     #         self.error(f"Could not find a complete Cartesian path to goal pose. ({response.fraction * 100.0}% computed")
 
     #     return
+
+    # ===============================
+    #        Future callbacks
+    # ===============================
+
+    def _done_cb_srv_cartesian_move_to_pose(self, future: Future):
+        goal_handle: MoveToPose.Response = future.result()
+        # self.
+        self.info(f"Cartesian move to pose result: {goal_handle.result}.")
+        return
 
     # ===============================
     #         Timer callbacks
@@ -723,7 +719,7 @@ class FindBranchRollWristController(TFNode):
         with self._timer_lock:
             if self._timer_run_quadratic_fit is not None:
                 self._timer_run_quadratic_fit.cancel()
-        self._action_client_move_group_done_event.clear()
+        # self._action_client_move_group_done_event.clear()
 
         self.info("Controller parameters have been reset")
         return
