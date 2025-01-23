@@ -70,10 +70,12 @@ class FindBranchRollWristController(TFNode):
         self._data_lock = Lock()
         self._timer_lock = Lock()
         self._branch_found_lock = Lock()
+        self._servo_msg_lock = Lock()
 
         # Callback group
-        self.callback_group = ReentrantCallbackGroup()
+        self._reentrant_cb_group = ReentrantCallbackGroup()
         self._parabola_fitting_cb_group = MutuallyExclusiveCallbackGroup()
+        self._pub_servo_cb_group = MutuallyExclusiveCallbackGroup()
 
         # Action servers
         self._action_svr_run_find_branch_roll_wrist = ActionServer(
@@ -83,7 +85,7 @@ class FindBranchRollWristController(TFNode):
             goal_callback=self._action_goal_cb_run_find_branch_roll_wrist,
             cancel_callback=self._action_cancel_cb_run_find_branch_roll_wrist,
             execute_callback=self._action_exe_cb_run_find_branch_roll_wrist,
-            callback_group=self.callback_group,
+            callback_group=self._reentrant_cb_group,
         )
 
         # Action clients
@@ -91,35 +93,31 @@ class FindBranchRollWristController(TFNode):
             node=self,
             action_name="move_action",
             action_type=MoveGroup,
-            callback_group=self.callback_group,
+            callback_group=self._reentrant_cb_group,
         )
-        # self._action_client_execute_trajectory = ActionClient(
-        #     node=self,
-        #     action_name='execute_trajectory',
-        #     action_type=ExecuteTrajectory,
-        #     callback_group=self.callback_group
-        # )
 
         # Service clients
         self._srv_move_to_pose = self.create_client(
-            srv_type=MoveToPose, srv_name="/move_to_pose", callback_group=self.callback_group
+            srv_type=MoveToPose, srv_name="/move_to_pose", callback_group=self._reentrant_cb_group
         )
+
         self._srv_cartesian_move_to_pose = self.create_client(
-            srv_type=MoveToPose, srv_name="/cartesian_move_to_pose", callback_group=self.callback_group
+            srv_type=MoveToPose, srv_name="/cartesian_move_to_pose", callback_group=self._reentrant_cb_group
         )
+
         self._srv_client_start_servo = self.create_client(
-            srv_type=Trigger, srv_name="/servo_node/start_servo", callback_group=self.callback_group
+            srv_type=Trigger, srv_name="/servo_node/start_servo", callback_group=self._reentrant_cb_group
         )
         self._srv_client_start_servo.wait_for_service()
         self._srv_client_stop_servo = self.create_client(
-            srv_type=Trigger, srv_name="/servo_node/stop_servo", callback_group=self.callback_group
+            srv_type=Trigger, srv_name="/servo_node/stop_servo", callback_group=self._reentrant_cb_group
         )
         self._srv_client_stop_servo.wait_for_service()
 
         self._srv_switch_ctrls = self.create_client(
             srv_type=SwitchController,
             srv_name="/controller_manager/switch_controller",
-            callback_group=self.callback_group,
+            callback_group=self._reentrant_cb_group,
         )
 
         # Subscribers
@@ -127,14 +125,14 @@ class FindBranchRollWristController(TFNode):
             msg_type=Vl6180FilteredStamped,
             topic="/vl6180/filtered",
             callback=self._sub_cb_tof_filtered,
-            callback_group=self.callback_group,
+            callback_group=self._reentrant_cb_group,
             qos_profile=1,
         )
         self._sub_joint_states = self.create_subscription(
             msg_type=JointState,
             topic="joint_states",
             callback=self._sub_cb_joint_states,
-            callback_group=self.callback_group,
+            callback_group=self._reentrant_cb_group,
             qos_profile=1,
         )
 
@@ -142,20 +140,21 @@ class FindBranchRollWristController(TFNode):
         self._pub_servo = self.create_publisher(
             msg_type=TwistStamped,
             topic="/servo_node/delta_twist_cmds",
-            callback_group=self.callback_group,
+            callback_group=self._reentrant_cb_group,
             qos_profile=1,
         )
         # Fit data publisher
         self._pub_fit = self.create_publisher(
             msg_type=ToFBranchFitStamped,
             topic="find_branch_roll_wrist/tof_branch_fit",
-            callback_group=self.callback_group,
+            callback_group=self._reentrant_cb_group,
             qos_profile=5,
         )
 
         # Timers
         self._timer_setup_tf_frames = self.create_timer(timer_period_sec=3.0, callback=self._timer_cb_setup_tf_frames)
         self._timer_run_quadratic_fit = None
+        self._timer_pub_servo = None
         self._timer_debug = self.create_timer(timer_period_sec=1.0, callback=self._timer_cb_debug)
 
         # Messages
@@ -170,55 +169,30 @@ class FindBranchRollWristController(TFNode):
         self.tf_tof0_to_tof1 = np.identity(4)
 
         # Controller attributes
-        # self.generator = np.random.default_rng(seed=secrets.randbits(128))
-        # self.generator = np.random.default_rng(1)
-        self.controller_running = False
-        self.rotations_complete = False
-        self.neg_rot_complete = False
-        self.pos_rot_complete = False
+        self.reset_controller()
+        self.feedback_pub_prev_time = self.get_clock().now()
         self.max_angular_vel = np.pi / 16
+        self.debug_plot = True
+        self.eef_weight = 0.355  # TODO: measure again. Measured IRL
+
+        # Sensor attributes
         self.vl6180_far_plane = 0.200  # 0.19 based on testing, but give it small window. TODO: Get from param file
         self.vl6180_precision = 0.001
-
-        self.get_final_pose_ready = False  # True when two valid tof fits have been recorded. Indicates to controller that it is ready to solve for a final pose
-
-        # df = pd.read_csv(os.path.expanduser("~/branch_detection_ws/analysis/csv/tof_data.csv"))
-        self.debug_plot = True
+        
         self.d_tof0 = 0.255
         self.d_tof1 = 0.255
-        self.tof0_branch_found = False
-        self.tof1_branch_found = False
-        self.timestamp_readings_tof0 = []
-        self.timestamp_readings_tof1 = []
-        self.timestamps_tof0_filtered = []
-        self.timestamps_tof1_filtered = []
-        self.d_tof0_readings = []
-        self.d_tof1_readings = []
-        self.d_tof0_readings_filtered = []
-        self.d_tof1_readings_filtered = []
-        self.tof0_time_center = None
-        self.tof1_time_center = None
-        self.tof0_distance_center = None
-        self.tof1_distance_center = None
-        self.eef_weight = 0.355  # Measured IRL
-
-        self.start_time = self.get_clock().now()
-        self.start_controller_tf = np.identity(4, dtype=float)
-        self.feedback_pub_prev_time = self.get_clock().now()
-        self.goal_handle_aborted: bool = False
-
-        # Controller handlers
-        self._action_client_move_group_done_event = Event()
-
-        self.debug_counter = 0
+        
         return
 
     # ===============================
     #        Action callbacks
     # ===============================
-
     def _action_cancel_cb_run_find_branch_roll_wrist(self, goal_handle: ServerGoalHandle):
         self.info("Received cancel request")
+        self.info("Canceling quadratic fit timer")
+        with self._timer_lock:
+            self._timer_pub_servo.cancel()
+            self._timer_run_quadratic_fit.cancel()
         return CancelResponse.ACCEPT
 
     def _action_exe_cb_run_find_branch_roll_wrist(self, goal_handle: ServerGoalHandle):
@@ -237,6 +211,14 @@ class FindBranchRollWristController(TFNode):
                 )
             else:
                 self._timer_run_quadratic_fit.reset()
+            if self._timer_pub_servo is None:
+                self._timer_pub_servo = self.create_timer(
+                    timer_period_sec=1/250,
+                    callback=self._timer_cb_pub_servo,
+                    callback_group=self._pub_servo_cb_group
+                )
+            else:
+                self._timer_pub_servo.reset()
 
         try:
             feedback_msg = RunFindBranchRollWrist.Feedback()
@@ -252,6 +234,7 @@ class FindBranchRollWristController(TFNode):
                     with self._timer_lock:
                         if self._timer_run_quadratic_fit is not None:
                             self._timer_run_quadratic_fit.cancel()
+                        self._timer_pub_servo.cancel()
                     result.success = False
                     return result
 
@@ -259,6 +242,7 @@ class FindBranchRollWristController(TFNode):
                     with self._timer_lock:
                         if self._timer_run_quadratic_fit is not None:
                             self._timer_run_quadratic_fit.cancel()
+                        self._timer_pub_servo.cancel()
                     result.success = False
                     return result
 
@@ -289,7 +273,7 @@ class FindBranchRollWristController(TFNode):
                     # self.warn(f"tof0 found: {self.tof0_branch_found}")
                     # self.warn(f"tof1 found: {self.tof1_branch_found}")
                     with self._branch_found_lock:
-                        # self.info("hello world")
+                        self.info("hello world")
                         tof0_branch_found = self.tof0_branch_found
                         tof1_branch_found = self.tof1_branch_found
                         # self.debug_counter -= 1
@@ -326,15 +310,15 @@ class FindBranchRollWristController(TFNode):
                                 self.pos_rot_complete = True
                                 self.publish_zero_twist()
 
-                        self.msg_twist.twist.linear.x = 0.0
-                        self.msg_twist.twist.linear.y = 0.0
-                        self.msg_twist.twist.linear.z = 0.0
-                        self.msg_twist.twist.angular.x = 0.0
-                        self.msg_twist.twist.angular.y = 0.0
-                        self.msg_twist.twist.angular.z = angular_z
-                        self.msg_twist.header.frame_id = "mock_pruner__tool0"  # TODO: Get name dynamically
-                        self.msg_twist.header.stamp = self.get_clock().now().to_msg()
-                        self._pub_servo.publish(self.msg_twist)
+                        with self._servo_msg_lock:
+                            self.msg_twist.twist.linear.x = 0.0
+                            self.msg_twist.twist.linear.y = 0.0
+                            self.msg_twist.twist.linear.z = 0.0
+                            self.msg_twist.twist.angular.x = 0.0
+                            self.msg_twist.twist.angular.y = 0.0
+                            self.msg_twist.twist.angular.z = angular_z
+                            self.msg_twist.header.frame_id = "mock_pruner__tool0"  # TODO: Get name dynamically
+                            self.msg_twist.header.stamp = self.get_clock().now().to_msg()
 
                         if self.neg_rot_complete and self.pos_rot_complete:
                             self.publish_zero_twist()
@@ -358,9 +342,11 @@ class FindBranchRollWristController(TFNode):
                         else:
                             # Stop servo
                             self.publish_zero_twist() # Just in case
+                            with self._timer_lock:
+                                self._timer_pub_servo.cancel()
                             stop_servo_response: Trigger.Response = self._srv_client_stop_servo.call(request=Trigger.Request())
                             if not stop_servo_response.success:
-                                raise Exception
+                                raise Exception("Failed to stop servo.")
 
                             # Switch controllers
                             switch_ctrlr_req = SwitchController.Request(
@@ -619,6 +605,11 @@ class FindBranchRollWristController(TFNode):
         self.info("Static TF frames acquired.")
         return
 
+    def _timer_cb_pub_servo(self):
+        with self._servo_msg_lock:
+            self._pub_servo.publish(self.msg_twist)
+        return
+
     def _timer_cb_run_controller(self):
         return
 
@@ -659,7 +650,6 @@ class FindBranchRollWristController(TFNode):
                 self.tof1_time_center, self.tof1_distance_center = tof1_time_and_dist
                 with self._branch_found_lock:
                     self.tof1_branch_found = True
-
         return
 
     def _timer_cb_debug(self):
@@ -693,7 +683,7 @@ class FindBranchRollWristController(TFNode):
         # self.warn(joint_states)
         return
 
-    def reset_controller(self) -> None:
+    def reset_controller(self) -> None:  
         self.controller_running = False
         self.rotations_complete = False
         self.neg_rot_complete = False
@@ -705,7 +695,7 @@ class FindBranchRollWristController(TFNode):
         self.tof1_time_center = None
         self.tof0_distance_center = None
         self.tof1_distance_center = None
-        self.start_controller_tf = np.identity(4)
+        self.start_controller_tf = np.identity(4) # TODO: unused.
         with self._data_lock:
             self.d_tof0_readings = []
             self.d_tof1_readings = []
@@ -725,15 +715,16 @@ class FindBranchRollWristController(TFNode):
         return
 
     def publish_zero_twist(self):
-        self.msg_twist.twist.linear.x = 0.0
-        self.msg_twist.twist.linear.y = 0.0
-        self.msg_twist.twist.linear.z = 0.0
-        self.msg_twist.twist.angular.x = 0.0
-        self.msg_twist.twist.angular.y = 0.0
-        self.msg_twist.twist.angular.z = 0.0
-        self.msg_twist.header.frame_id = "mock_pruner__tool0"  # TODO: if changing to EEF, change ur_servo.yaml
-        self.msg_twist.header.stamp = self.get_clock().now().to_msg()
-        self._pub_servo.publish(self.msg_twist)
+        with self._servo_msg_lock:
+            self.msg_twist.twist.linear.x = 0.0
+            self.msg_twist.twist.linear.y = 0.0
+            self.msg_twist.twist.linear.z = 0.0
+            self.msg_twist.twist.angular.x = 0.0
+            self.msg_twist.twist.angular.y = 0.0
+            self.msg_twist.twist.angular.z = 0.0
+            self.msg_twist.header.frame_id = "mock_pruner__tool0"  # TODO: if changing to EEF, change ur_servo.yaml
+            self.msg_twist.header.stamp = self.get_clock().now().to_msg()
+            self._pub_servo.publish(self.msg_twist)
         return
 
     # def execute_trajectory(self, trajectory):

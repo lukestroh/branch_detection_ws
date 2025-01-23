@@ -62,10 +62,12 @@ class FinalApproachControllerNode(TFNode):
         self._srv_client_start_servo = self.create_client(
             srv_type=Trigger, srv_name="/servo_node/start_servo", callback_group=self.callback_group
         )
+        self._srv_client_start_servo.wait_for_service()
         self._srv_client_stop_servo = self.create_client(
             srv_type=Trigger, srv_name="/servo_node/stop_servo", callback_group=self.callback_group
         )
-        self._srv_client_start_servo.wait_for_service()
+        self._srv_client_stop_servo.wait_for_service()
+        
 
         # Subscribers
         self._sub_tof_filtered = self.create_subscription(
