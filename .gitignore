@@ -165,6 +165,7 @@ cython_debug/
 # Custom
 build/
 .vscode/
+.zed/
 log/
 install/
 bags/
@@ -180,3 +181,6 @@ test.urdf
 
 # Ryan's repo
 Ground_Truth_Ros
+
+*test.py
+*test.urdf
