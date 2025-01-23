@@ -30,7 +30,8 @@ publish_joint_velocities: true
 publish_joint_accelerations: false
 
 ## Plugins for smoothing outgoing commands
-smoothing_filter_plugin_name: "online_signal_smoothing::ButterworthFilterPlugin"
+# smoothing_filter_plugin_name: "online_signal_smoothing::ButterworthFilterPlugin"
+smoothing_filter_plugin_name: "online_signal_smoothing::RuckigFilterPlugin"
 
 ## Incoming Joint State properties
 low_pass_filter_coeff: 10.0  # Larger --> trust the filtered data more, trust the measurements less.
