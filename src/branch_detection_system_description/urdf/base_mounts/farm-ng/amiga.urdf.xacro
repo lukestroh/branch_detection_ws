@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="https://ros.org/wiki/xacro" name="amiga">
+
+    <!-- World link -->
+    <link name="world" />
+    
+    <!-- Args -->
+    <xacro:arg name="amiga_prefix" default="amiga__"/>
+    <xacro:arg name="amiga_parent" default="world" />
+    <xacro:arg name="mesh_base_path" default=""/>
+
+    <!-- amiga macro -->
+    <xacro:include filename="./macro/amiga_macro.urdf.xacro" />
+    
+    <xacro:amiga_macro
+        amiga_prefix="$(arg amiga_prefix)"
+        amiga_parent="$(arg amiga_parent)"
+        mesh_base_path="$(arg mesh_base_path)"
+    />
+    
+    <joint name="world__$(arg amiga_prefix)base" type="fixed">
+        <origin xyz="0.0 0.0 0.0" rpy="0 0 0"/>
+        <parent link="world" />
+        <child link="$(arg amiga_prefix)base" />
+    </joint>
+
+</robot>

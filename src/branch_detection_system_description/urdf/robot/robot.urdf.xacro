@@ -133,7 +133,17 @@
                     mesh_base_path="$(arg mesh_base_path)"
                 />
             </xacro:if>
+
+            <xacro:if value="${ str(resolved_part) == 'amiga' }">
+                <xacro:include filename="$(find branch_detection_system_description)/urdf/base_mounts/farm-ng/macro/amiga_macro.urdf.xacro"/>
+                <xacro:amiga_macro
+                    amiga_prefix="amiga__"
+                    amiga_parent="${resolved_parent_part}"
+                    mesh_base_path="$(arg mesh_base_path)"
+                />
+            </xacro:if>
             
+            <!-- Mock Pruner -->
             <xacro:if value="${ str(resolved_part) == 'mock_pruner' }">
                 <xacro:include filename="$(find branch_detection_system_description)/urdf/end_effectors/mock_pruner/macro/mock_pruner_macro.urdf.xacro"/>
                 <!-- Args -->

@@ -42,6 +42,7 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
     headless_mode = LaunchConfiguration("headless_mode")
     mock_sensor_commands = LaunchConfiguration("mock_sensor_commands")
     initial_ur_controller = LaunchConfiguration("initial_ur_controller")
+    start_servo_mode = LaunchConfiguration("start_servo_mode")
 
     reverse_ip = LaunchConfiguration("reverse_ip")
     reverse_port = LaunchConfiguration("reverse_port")
@@ -413,24 +414,33 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
     
     controllers_active = [
         # "joint_state_broadcaster",
-        "scaled_joint_trajectory_controller",
+        
         "io_and_status_controller",
         "speed_scaling_state_broadcaster",
         "force_torque_sensor_broadcaster",
-        "tcp_pose_broadcaster",
+        # "tcp_pose_broadcaster",
         "ur_configuration_controller",
     ]
     controllers_inactive = [
+        "scaled_joint_trajectory_controller",
+        "scaled_joint_trajectory_controller",
         "joint_trajectory_controller",
         "forward_velocity_controller",
         "forward_position_controller",
-        "passthrough_trajectory_controller",
+        # "passthrough_trajectory_controller",
     ]
-    if use_mock_hardware.perform(context) == "true":
-        controllers_inactive.remove('joint_trajectory_controller')
-        controllers_active.remove("scaled_joint_trajectory_controller")
-        controllers_active.insert(0, "joint_trajectory_controller")
-        controllers_inactive.insert(0, "scaled_joint_trajectory_controller")
+    
+    if start_servo_mode.perform(context) == "true":
+        controllers_active.insert(0, "forward_velocity_controller")
+        controllers_inactive.remove("forward_velocity_controller")
+    else:
+        if use_mock_hardware.perform(context) == "true":
+            controllers_active.insert(0, "joint_trajectory_controller")
+            controllers_inactive.remove('joint_trajectory_controller')
+        else:
+            controllers_active.insert(0, "scaled_joint_trajectory_controller")
+            controllers_inactive.remove('scaled_joint_trajectory_controller')
+    
 
     controller_spawners = [controller_spawner(list(controllers_active))] + [
         controller_spawner(list(controllers_inactive), active=False)
@@ -498,6 +508,7 @@ def generate_launch_description():
         dict(name="launch_rviz", default_value="true"),
         dict(name="launch_servo", default_value="true"),
         dict(name="mock_sensor_commands", default_value="false"),
+        dict(name="start_servo_mode", default_value="true", description="If true, starts the forward_velocity_controller rather than the joint_trajectory_controller"),
         dict(
             name="system_description_package",
             default_value="branch_detection_system_description",

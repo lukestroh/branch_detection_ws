@@ -6,7 +6,8 @@ from launch.actions import (
     RegisterEventHandler,
     OpaqueFunction,
     SetEnvironmentVariable,
-    TimerAction
+    TimerAction, 
+    ExecuteProcess
 )
 from launch.conditions import IfCondition, UnlessCondition
 from launch.event_handlers import OnProcessStart
@@ -39,6 +40,7 @@ def launch_setup(context, *args, **kwargs) -> list:
     use_admittance_controller = LaunchConfiguration("use_admittance_controller")
     use_final_approach_controller = LaunchConfiguration("use_final_approach_controller")
     use_mock_hardware = LaunchConfiguration("use_mock_hardware")
+    use_behavior_trees_python = LaunchConfiguration("use_behavior_trees_python")
 
     #
     # system_bringup_pkg = LaunchConfiguration("system_bringup_pkg")
@@ -126,16 +128,36 @@ def launch_setup(context, *args, **kwargs) -> list:
     #     )
     # )
 
-    
+    launch_behavior_trees = IncludeLaunchDescription(
+        AnyLaunchDescriptionSource(
+            os.path.join(get_package_share_directory("behavior_trees_python"), "launch", "behavior_trees_python.launch.py")
+        ),
+        condition=IfCondition(use_behavior_trees_python)
+    )
+    # delay_launch_behavior_trees_after_timeout = RegisterEventHandler(
+    #     OnProcessStart(
+    #         target_action=launch_ur_basic,
+    #         on_start=[
+    #             TimerAction(period=10.0, actions=[launch_behavior_trees])
+    #         ]
+    #     )
+    # )
+    # process = ExecuteProcess(cmd=["py-trees-tree-viewer", "--no-sandbox"])
+    delay_launch_behavior_trees_timer_action = TimerAction(
+        period=10.0,
+        actions=[launch_behavior_trees]
+    )
 
     _to_run = [
         ENV_ROS_DOMAIN_ID,
         # launch_admittance_controller,
-        launch_tof_bringup, 
+        launch_tof_bringup,
         launch_ur_basic,
         # launch_move_group_control,
         launch_final_approach_controller,
+        # process
         # delay_launch_final_approach_controller_after_timeout
+        delay_launch_behavior_trees_timer_action
     ]
 
     return _to_run
@@ -154,6 +176,7 @@ def generate_launch_description():
             description="Launches the admittance controller nodes.",
             choices=['true', 'false']
         ),
+        dict(name="use_behavior_trees_python", default_value="false", description="If true, launches behavior_trees Python implementation"),
         dict(name="use_final_approach_controller", default_value="true", description='If true, launches final approach controller', choices=['true', 'false']),
         dict(
             name="use_mock_hardware",
@@ -171,7 +194,7 @@ def generate_launch_description():
         # dict(name="system_description_pkg", default_value="branch_detection_system_description"),
         # dict(name="system_moveit_config_pkg", default_value="branch_detection_system_moveit_config"),
         dict(name="ur_type", default_value="ur5e", description="Robot description name (required for URDF parsing)."),
-        dict(name="ur_robot_ip", default_value="169.254.177.220", description="UR robot IP"),
+        dict(name="ur_robot_ip", default_value="169.254.177.230", description="UR robot IP"),
     ]
 
     declared_args = [
