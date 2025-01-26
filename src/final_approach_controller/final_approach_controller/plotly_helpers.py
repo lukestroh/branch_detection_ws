@@ -3,7 +3,16 @@
 import plotly.graph_objects as go
 import numpy as np
 
-def plot_vector(fig: go.Figure, position: np.ndarray, orientation: np.ndarray, scale: float, name: str = ""):
+
+def plot_vector(
+    fig: go.Figure,
+    position: np.ndarray,
+    orientation: np.ndarray,
+    scale: float,
+    color: str,
+    anchor: str = "tail",
+    name: str = "",
+):
 
     fig.add_trace(
         go.Cone(
@@ -14,14 +23,17 @@ def plot_vector(fig: go.Figure, position: np.ndarray, orientation: np.ndarray, s
             v=[orientation[1]],
             w=[orientation[2]],
             name=name,
-            sizemode='scaled',
+            sizemode="scaled",
             sizeref=0.1 * scale,
             showscale=False,
-            showlegend=False
+            showlegend=False,
+            anchor=anchor,
+            colorscale=[[0, color], [1, color]],
         )
     )
 
     return fig
+
 
 def plot_3d_coordinate_frame(fig: go.Figure, position: np.ndarray, orientation: np.ndarray, name: str = "origin"):
     # if name in self.coordinate_frames:
@@ -100,13 +112,11 @@ def plot_3d_coordinate_frame(fig: go.Figure, position: np.ndarray, orientation: 
 
 def main():
 
-
-
     fig = go.Figure()
 
     fig = plot_3d_coordinate_frame(fig=fig, position=np.zeros(3), orientation=None)
 
-    fig = plot_vector(fig=fig, position=[1,1,1], orientation=[1,1,1], scale=0.5)
+    fig = plot_vector(fig=fig, position=[1, 1, 1], orientation=[1, 1, 1], scale=0.5)
 
     fig.show()
 

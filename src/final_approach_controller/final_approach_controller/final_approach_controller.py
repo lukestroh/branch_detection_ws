@@ -67,7 +67,6 @@ class FinalApproachControllerNode(TFNode):
             srv_type=Trigger, srv_name="/servo_node/stop_servo", callback_group=self.callback_group
         )
         self._srv_client_stop_servo.wait_for_service()
-        
 
         # Subscribers
         self._sub_tof_filtered = self.create_subscription(
@@ -126,14 +125,16 @@ class FinalApproachControllerNode(TFNode):
         self.info("Servo started")
         if self._timer_run_controller is None:
             self._timer_run_controller = self.create_timer(
-                timer_period_sec=1 / 30, callback=self._timer_cb_run_controller, callback_group=self._cb_group_servo_controller
+                timer_period_sec=1 / 30,
+                callback=self._timer_cb_run_controller,
+                callback_group=self._cb_group_servo_controller,
             )
         else:
             self._timer_run_controller.reset()
 
         feedback_msg = RunFinalApproach.Feedback()
         result = RunFinalApproach.Result()
-        
+
         try:
             while self.controller_running:
                 if goal_handle.is_cancel_requested:
@@ -218,7 +219,7 @@ class FinalApproachControllerNode(TFNode):
             or (dist_cut_point_to_branch) < 0
         ):
             self.publish_zero_twist()
-            
+
             self.info(f"Reached terminating point at dist:{dist}, theta: {theta}")
             self._timer_run_controller.cancel()
             self.controller_running = False

@@ -15,8 +15,8 @@ _target_pose = Pose(
         x=desired_orientation_quat[0],
         y=desired_orientation_quat[1],
         z=desired_orientation_quat[2],
-        w=desired_orientation_quat[3]
-    )
+        w=desired_orientation_quat[3],
+    ),
 )
 _position_constraint.constraint_region.primitive_poses.append(_target_pose)
 _goal_pose_constraint.position_constraints.append(_position_constraint)
