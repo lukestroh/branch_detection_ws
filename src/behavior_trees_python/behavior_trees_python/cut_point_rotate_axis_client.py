@@ -32,6 +32,7 @@ class CutPointRotateAxisControllerBehavior(pt.behaviour.Behaviour):
         self.client.wait_for_server()
 
         self.goal_status = None
+        self._goal_handle = None
         self._result_future = None
 
         self.goal = RunCutPointRotateAxis.Goal()
@@ -43,12 +44,12 @@ class CutPointRotateAxisControllerBehavior(pt.behaviour.Behaviour):
 
     def _send_goal_cb(self, future: Future):
         # If there is a result, consider action complete and save result code to be checked in the `update()` method
-        goal_handle: ClientGoalHandle = future.result()
-        if not goal_handle.accepted:
+        self._goal_handle: ClientGoalHandle = future.result()
+        if not self._goal_handle.accepted:
             self.warn(f"{self.name}: Action server not available.")
         else:
             self.info(f"{self.name}: Goal accepted.")
-            self._result_future: Future = goal_handle.get_result_async()
+            self._result_future: Future = self._goal_handle.get_result_async()
             self._result_future.add_done_callback(callback=self._on_result_cb)
         return
 
