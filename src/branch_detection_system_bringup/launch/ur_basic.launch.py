@@ -110,7 +110,7 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         "initial_positions_file": os.path.join(
             get_package_share_directory("branch_detection_system_description"), "config/initial_positions.yaml"
         ),
-        "kinematics_params_file": os.path.join(get_package_share_directory("ur_description"), "config", ur_type.perform(context), "default_kinematics.yaml"),
+        "kinematics_params_file": os.path.join(get_package_share_directory("branch_detection_system_description"), "config", "cindy_ur5e_calibration.yaml"),
         "joint_limit_params": os.path.join(get_package_share_directory("ur_description"), "config", ur_type.perform(context), "joint_limits.yaml"),
         "physical_params": os.path.join(get_package_share_directory("ur_description"), "config", ur_type.perform(context), "physical_parameters.yaml"),
         "visual_params": os.path.join(get_package_share_directory("ur_description"), "config", ur_type.perform(context), "visual_parameters.yaml"),
@@ -431,8 +431,8 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
     ]
     
     if start_servo_mode.perform(context) == "true":
-        controllers_active.insert(0, "forward_velocity_controller")
-        controllers_inactive.remove("forward_velocity_controller")
+        controllers_active.insert(0, "forward_position_controller")
+        controllers_inactive.remove("forward_position_controller")
     else:
         if use_mock_hardware.perform(context) == "true":
             controllers_active.insert(0, "joint_trajectory_controller")

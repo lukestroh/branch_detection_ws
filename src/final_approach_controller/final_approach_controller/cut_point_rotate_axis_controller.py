@@ -105,7 +105,12 @@ class CutPointRotateAxisController(TFNode):
     def _action_exe_cb_run_cut_point_rotate_axis(self, goal_handle: ServerGoalHandle):
         """TODO: This is the same as final_approach_controller, let the high level controller do this in the future"""
         self.controller_running = True
-        self._srv_client_start_servo.call(request=Trigger.Request())
+        start_servo_resp: Trigger.Response = self._srv_client_start_servo.call(request=Trigger.Request())
+        if start_servo_resp.success:
+            self.info(f"Servo started")
+        else:
+            self.error(f"Servo failed to start")
+            
         if self._timer_run_controller is None:
             self._timer_run_controller = self.create_timer(
                 timer_period_sec=1 / 30, callback=self._timer_cb_run_controller, callback_group=self.callback_group
@@ -139,7 +144,11 @@ class CutPointRotateAxisController(TFNode):
         except Exception as e:
             self.get_logger().fatal(f"{e}")
         finally:
-            self._srv_client_stop_servo.call(request=Trigger.Request())
+            stop_servo_resp: Trigger.Response = self._srv_client_stop_servo.call(request=Trigger.Request())
+            if stop_servo_resp.success:
+                self.info(f"Servo stopped.")
+            else:
+                self.error(f"Servo failed to stop.")
             self._timer_run_controller.cancel()
         return result
 

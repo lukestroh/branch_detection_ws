@@ -176,7 +176,12 @@ class FindBranchRollWristController(TFNode):
         # Controller attributes
         self.reset_controller()
         self.feedback_pub_prev_time = self.get_clock().now()
-        self.max_angular_vel = np.pi / 16
+        if _param_use_mock_hardware:
+            self.max_angular_vel = np.pi / 16
+        else:
+            self.max_angular_vel = np.pi / 2 # For some reason the UR5e scales down servoing movement very hard?
+
+        self.max_angular_vel = np.pi / 2
         self.debug_plot = True
         self.eef_weight = 0.355  # TODO: measure again. Measured IRL
 
@@ -197,7 +202,8 @@ class FindBranchRollWristController(TFNode):
         self.info("Canceling quadratic fit timer")
         self.publish_zero_twist()
         with self._timer_lock:
-            self._timer_pub_servo.cancel()
+            if not self._timer_pub_servo.is_canceled():
+                self._timer_pub_servo.cancel()
             if not self._timer_run_quadratic_fit.is_canceled():
                 self._timer_run_quadratic_fit.cancel()
         goal_handle.abort()
@@ -206,7 +212,12 @@ class FindBranchRollWristController(TFNode):
 
     async def _action_exe_cb_run_find_branch_roll_wrist(self, goal_handle: ServerGoalHandle):
         self.controller_running = True
-        self._srv_client_start_servo.call(request=Trigger.Request())
+
+        start_servo_resp: Trigger.Response = self._srv_client_start_servo.call(request=Trigger.Request())
+        if start_servo_resp.success:
+            self.info(f"Servo started")
+        else:
+            self.error(f"Servo failed to start")
 
         self.start_controller_tf = self.lookup_transform(
             target_frame="cart__base", source_frame="mock_pruner__tool0", sync=True, as_matrix=True
@@ -245,7 +256,8 @@ class FindBranchRollWristController(TFNode):
                     with self._timer_lock:
                         if not self._timer_run_quadratic_fit.is_canceled():
                             self._timer_run_quadratic_fit.cancel()
-                        self._timer_pub_servo.cancel()
+                        if not self._timer_pub_servo.is_canceled():
+                            self._timer_pub_servo.cancel()
                     result.success = False
                     return result
 
@@ -253,7 +265,8 @@ class FindBranchRollWristController(TFNode):
                     with self._timer_lock:
                         if not self._timer_run_quadratic_fit.is_canceled():
                             self._timer_run_quadratic_fit.cancel()
-                        self._timer_pub_servo.cancel()
+                        if not self._timer_pub_servo.is_canceled():
+                            self._timer_pub_servo.cancel()
                     result.success = False
                     return result
 
@@ -330,7 +343,7 @@ class FindBranchRollWristController(TFNode):
                                 self.pos_rot_complete = True
                                 self.publish_zero_twist()
 
-                        with self._servo_msg_lock:
+                        with self._servo_msg_lock: # TODO: Fill out once
                             self.msg_twist.twist.linear.x = 0.0
                             self.msg_twist.twist.linear.y = 0.0
                             self.msg_twist.twist.linear.z = 0.0
@@ -363,7 +376,8 @@ class FindBranchRollWristController(TFNode):
                             # Stop servo
                             self.publish_zero_twist()  # Just in case
                             with self._timer_lock:
-                                self._timer_pub_servo.cancel()
+                                if not self._timer_pub_servo.is_canceled():
+                                    self._timer_pub_servo.cancel()
                             self.info("Stopping servo...")
                             stop_servo_response: Trigger.Response = self._srv_client_stop_servo.call(
                                 request=Trigger.Request()
@@ -607,6 +621,13 @@ class FindBranchRollWristController(TFNode):
 
             self.reset_controller()
             self.info("FindBranchRollWristController has terminated.")
+
+            stop_servo_resp: Trigger.Response = self._srv_client_stop_servo.call(request=Trigger.Request())
+            if stop_servo_resp.success:
+                self.info(f"Servo stopped.")
+            else:
+                self.error(f"Servo failed to stop.")
+                
         return result
 
     def _action_goal_cb_run_find_branch_roll_wrist(self, goal_handle: ServerGoalHandle):
@@ -843,8 +864,10 @@ class FindBranchRollWristController(TFNode):
             len(normalized_timestamps_filtered),
         )
         fit_data = cf.parabola(t_fit, *fit_params)
-        # idx_min = np.argmin(fit_data)
-        idx_min = np.argmax(fit_data)
+        if fit_params[0] > 0:
+            idx_min = np.argmin(fit_data)
+        else:
+            idx_min = np.argmax(fit_data)
         timestamp_min = timestamps_filtered[idx_min]
         fit_min = float(fit_data[idx_min])
         split_time = np.modf(timestamp_min)

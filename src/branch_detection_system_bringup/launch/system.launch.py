@@ -86,7 +86,7 @@ def launch_setup(context, *args, **kwargs) -> list:
     launch_tof_bringup = IncludeLaunchDescription(
         AnyLaunchDescriptionSource(
             os.path.join(
-                get_package_share_directory("tof_bringup"),  # TODO: change to just "teensy", add board type to args
+                get_package_share_directory("tof_bringup"),  # TODO:
                 "launch",
                 "tof.launch.py",
             )
