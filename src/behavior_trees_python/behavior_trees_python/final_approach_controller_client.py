@@ -11,20 +11,23 @@ from final_approach_controller_msgs.action import RunFinalApproach
 
 class FinalApproachControllerBehavior(pt.behaviour.Behaviour):
     """Behavior wrapper for the final approach controller action client"""
-    def __init__(self, name, node):
+    def __init__(self, name):
         super(FinalApproachControllerBehavior, self).__init__(name)
 
-        self.node = node
         # self.bb = pt.blackboard.Blackboard()
         
+        
+        return
+
+    def setup(self, node):
+        """Sends the inital RunFinalApproach goal"""
+        self.node = node
         self.info = lambda x: self.node.get_logger().info(f"\n{x}")
         self.warn = lambda x: self.node.get_logger().warn(f"\n{x}")
         self.error = lambda x: self.node.get_logger().error(f"\n{x}")
         self.fatal = lambda x: self.node.get_logger().fatal(f"\n{x}")
-        return
 
-    def initialise(self):
-        """Sends the inital RunFinalApproach goal"""
+        self.info("Setting up FinalApproachControllerBehavior")
         self.client = ActionClient(
             node=self.node,
             action_type=RunFinalApproach,
@@ -35,7 +38,11 @@ class FinalApproachControllerBehavior(pt.behaviour.Behaviour):
         self.goal_status = None
         self._goal_handle = None
         self._result_future = None
-        
+
+        return
+    
+    def initialise(self):
+        """Send a goal to the RunFinalApproach action server"""
         self.goal = RunFinalApproach.Goal()
         self._send_goal_future: Future = self.client.send_goal_async(
             goal=self.goal,

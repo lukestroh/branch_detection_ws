@@ -75,7 +75,7 @@ class FinalApproachTreeNode(Node):
         """Print description about the program"""
         # content =
         # self.get_logger().info(f"{py_trees.console.colours}")
-        self.get_logger().info(f'{py_trees.console.has_colours}')
+        # self.get_logger().info(f'{py_trees.console.has_colours}')
         # py_trees.console.banner("FinalApproachControllerTree\n\n")
         msg = "FinalApproachControllerTree"
         self.info(py_trees.console.green + 80 * "*" + py_trees.console.reset + '\n' + py_trees.console.green + "* " + py_trees.console.bold_white + msg.center(80) + py_trees.console.reset + "\n" + py_trees.console.green + 80 * "*" + py_trees.console.reset)
@@ -87,21 +87,19 @@ class FinalApproachTreeNode(Node):
         find_branch_selector: Set of find branch controllers, quits at first success
         align_and_approach_sequence: Runs both to SUCCESS/FAILURE
 
-        A selector executes each of its child behaviours in turn until one of them succeeds (at which point it itself returns ~py_trees.common.Status.RUNNING or ~py_trees.common.Status.SUCCESS"""
+        A selector executes each of its child behaviours in turn until one of them succeeds (at which point it itself returns ~py_trees.common.Status.RUNNING or ~py_trees.common.Status.SUCCESS
+        """
 
         # Behaviors
         cut_point_rotate_axis_behavior = CutPointRotateAxisControllerBehavior(
             name="cut_point_rotate_axis_client",
-            node=self
         )
         final_approach_behavior = FinalApproachControllerBehavior(
             name="final_approach_behavior_client",
-            node=self
         )
         
         find_branch_rotate_wrist_behavior = FindBranchRollWristControllerBehavior(
             name="find_branch_rotate_wrist_client",
-            node=self
         )
 
         find_branch_selector = py_trees.composites.Selector( 
@@ -119,20 +117,23 @@ class FinalApproachTreeNode(Node):
             children=[cut_point_rotate_axis_behavior, final_approach_behavior]
         )
 
+        # Root sequence
+        # Run find_branch_selector until success, then run align_and_approach_sequence
         root_sequence = py_trees.composites.Sequence(
             name="root_sequence",
             memory=True,
-            children=[align_and_approach_sequence]
             # children=[align_and_approach_sequence]
+            children=[find_branch_selector, align_and_approach_sequence]
         )
         root = py_trees.decorators.OneShot(
             name='root',
             child=root_sequence,
             policy=py_trees.common.OneShotPolicy.ON_COMPLETION
         )
+        # root.setup_with_descendants()
         tree = py_trees_ros.trees.BehaviourTree(root=root, unicode_tree_debug=False)
-        tree.setup(node=self)  
-
+        tree.setup(node=self) 
+        
         self.description()
         return tree
 

@@ -12,18 +12,21 @@ from final_approach_controller_msgs.action import RunCutPointRotateAxis
 
 class CutPointRotateAxisControllerBehavior(pt.behaviour.Behaviour):
     """Behaviour wrapper for the cut point rotate axis action client"""
-    def __init__(self, name, node):
+    def __init__(self, name):
         super(CutPointRotateAxisControllerBehavior, self).__init__(name)
 
-        self.node = node
-        # self.bb = pt.blackboard.Blackboard()
+        return
+    
+    def setup(self, node):
         
+        self.node = node
         self.info = lambda x: self.node.get_logger().info(f"\n{x}")
         self.warn = lambda x: self.node.get_logger().warn(f"\n{x}")
         self.error = lambda x: self.node.get_logger().error(f"\n{x}")
-        return
-    
-    def initialise(self):
+        self.fatal = lambda x: self.node.get_logger().fatal(f"\n{x}")
+
+        self.info("Setting up CutPointRotateAxisControllerBehavior")
+
         self.client = ActionClient(
             node=self.node,
             action_type=RunCutPointRotateAxis,
@@ -34,7 +37,10 @@ class CutPointRotateAxisControllerBehavior(pt.behaviour.Behaviour):
         self.goal_status = None
         self._goal_handle = None
         self._result_future = None
-
+        return
+    
+    def initialise(self):
+        """Send the CutPointRotate Action server a goal"""
         self.goal = RunCutPointRotateAxis.Goal()
         self._send_goal_future: Future = self.client.send_goal_async(
             goal=self.goal,
