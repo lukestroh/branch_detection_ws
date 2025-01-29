@@ -106,9 +106,12 @@ class VL6180FilterNode(Node):
         self.vl6180_msg_raw.data = [0,0]
         self.vl6180_msg_filtered = Vl6180FilteredStamped()
         self.vl6180_msg_filtered.data = [0.0, 0.0]
+
+        # Butterworth filter
+        self.bf, self.a = si.butter()
        
 
-        self.deque_size = 10
+        self.deque_size = 40
         self.deques = [deque([self.RANGING_MAX] * self.deque_size), deque([self.RANGING_MAX] * self.deque_size)]
 
 
@@ -119,6 +122,8 @@ class VL6180FilterNode(Node):
     def _sub_cb_vl6180_distance_raw(self, msg: Vl6180):
         """
         Callback for raw distance data from the VL6180 sensor
+        TODO: change message type to have id, data. Then set up interrupts with flags, then process each
+        piece of data in its own stream by id
         """
         self.vl6180_msg_raw = msg
 
@@ -126,7 +131,7 @@ class VL6180FilterNode(Node):
 
         try:
             for i in range(2): # TODO: hacky, this represents two sensors. Fix.
-                if (msg.data[i] != self.RANGING_ERR) or (msg.data[i] != 0) or (msg.data[i] < self.RANGING_MAX): # TODO: This is bad logic, need an and...
+                if msg.data[i] != self.RANGING_ERR or msg.data[i] < self.RANGING_MAX: # TODO: This is bad logic, need an and...
                     self.deques[i].popleft()
                     self.deques[i].append(self.vl6180_msg_raw.data[i])
                     self.vl6180_msg_filtered.data[i] = np.mean(self.deques[i])
