@@ -17,7 +17,7 @@ from final_approach_controller_msgs.action import RunFindBranchRollWrist
 from final_approach_controller_msgs.msg import ToFBranchFitStamped
 import final_approach_controller.curve_fitting as cf
 from final_approach_controller.tf_node import TFNode
-from vl6180_msgs.msg import Vl6180FilteredStamped
+from vl6180_msgs.msg import Vl6180, Vl6180FilteredStamped
 
 from action_msgs.msg import GoalStatus
 from controller_manager_msgs.srv import SwitchController
@@ -25,15 +25,15 @@ from geometry_msgs.msg import TwistStamped, Pose, Point, Quaternion
 from moveit_msgs.action import MoveGroup
 
 # from moveit_msgs.srv import GetCartesianPath
-from moveit_msgs.msg import (
-    RobotState,
-    MotionPlanRequest,
-    JointConstraint,
-    OrientationConstraint,
-    PositionConstraint,
-    Constraints,
-    PlanningOptions,
-)
+# from moveit_msgs.msg import (
+#     RobotState,
+#     MotionPlanRequest,
+#     JointConstraint,
+#     OrientationConstraint,
+#     PositionConstraint,
+#     Constraints,
+#     PlanningOptions,
+# )
 from sensor_msgs.msg import JointState
 from std_srvs.srv import Trigger
 from trajectory_msgs.msg import JointTrajectory
@@ -42,10 +42,13 @@ import modern_robotics as mr
 import numpy as np
 import scipy.optimize as so
 from scipy.spatial.transform import Rotation
+import sklearn.linear_model as sklm
+import sklearn.preprocessing as skpp
+import sklearn.metrics as skm
 from threading import Event, Lock
 import traceback
 import plotly.graph_objects as go
-import copy
+# import copy
 
 
 class FindBranchRollWristController(TFNode):
@@ -124,6 +127,13 @@ class FindBranchRollWristController(TFNode):
         )
 
         # Subscribers
+        self._sub_tof_raw = self.create_subscription(
+            msg_type=Vl6180,
+            topic='/microROS/vl6180/data',
+            callback=self._sub_cb_tof_raw,
+            callback_group=self._reentrant_cb_group,
+            qos_profile=1
+        )
         self._sub_tof_filtered = self.create_subscription(
             msg_type=Vl6180FilteredStamped,
             topic="/vl6180/filtered",
@@ -179,9 +189,10 @@ class FindBranchRollWristController(TFNode):
         if _param_use_mock_hardware:
             self.max_angular_vel = np.pi / 16
         else:
-            self.max_angular_vel = np.pi / 2 # For some reason the UR5e scales down servoing movement very hard?
+            self.max_angular_vel = np.pi / 16 * 10 # For some reason the UR5e scales down servoing movement very hard?
 
-        self.max_angular_vel = np.pi / 2
+        # self.max_angular_vel = np.pi / 2
+
         self.debug_plot = True
         self.eef_weight = 0.355  # TODO: measure again. Measured IRL
 
@@ -191,6 +202,8 @@ class FindBranchRollWristController(TFNode):
 
         self.d_tof0 = 0.255
         self.d_tof1 = 0.255
+        self.d_tof0_raw = 0.255
+        self.d_tof1_raw = 0.255
 
         return
 
@@ -204,8 +217,8 @@ class FindBranchRollWristController(TFNode):
         with self._timer_lock:
             if not self._timer_pub_servo.is_canceled():
                 self._timer_pub_servo.cancel()
-            if not self._timer_run_quadratic_fit.is_canceled():
-                self._timer_run_quadratic_fit.cancel()
+            # if not self._timer_run_quadratic_fit.is_canceled():
+            #     self._timer_run_quadratic_fit.cancel()
         goal_handle.abort()
         self.reset_controller()
         return CancelResponse.ACCEPT
@@ -213,8 +226,9 @@ class FindBranchRollWristController(TFNode):
     async def _action_exe_cb_run_find_branch_roll_wrist(self, goal_handle: ServerGoalHandle):
         self.controller_running = True
 
-        start_servo_resp: Trigger.Response = self._srv_client_start_servo.call(request=Trigger.Request())
-        if start_servo_resp.success:
+        start_servo_future: Future = self._srv_client_start_servo.call_async(request=Trigger.Request())
+        await start_servo_future
+        if start_servo_future.result().success:
             self.info(f"Servo started")
         else:
             self.error(f"Servo failed to start")
@@ -223,14 +237,14 @@ class FindBranchRollWristController(TFNode):
             target_frame="cart__base", source_frame="mock_pruner__tool0", sync=True, as_matrix=True
         )
         with self._timer_lock:
-            if self._timer_run_quadratic_fit is None:
-                self._timer_run_quadratic_fit = self.create_timer(
-                    timer_period_sec=4.0,
-                    callback=self._timer_cb_run_quadratic_fit,
-                    callback_group=self._parabola_fitting_cb_group,
-                )
-            else:
-                self._timer_run_quadratic_fit.reset()
+            # if self._timer_run_quadratic_fit is None:
+            #     self._timer_run_quadratic_fit = self.create_timer(
+            #         timer_period_sec=4.0,
+            #         callback=self._timer_cb_run_quadratic_fit,
+            #         callback_group=self._parabola_fitting_cb_group,
+            #     )
+            # else:
+            #     self._timer_run_quadratic_fit.reset()
             if self._timer_pub_servo is None:
                 self._timer_pub_servo = self.create_timer(
                     timer_period_sec=1 / 250,
@@ -254,8 +268,8 @@ class FindBranchRollWristController(TFNode):
                 if goal_handle.status == GoalStatus.STATUS_CANCELED:
                     # self._timer_run_controller.cancel()
                     with self._timer_lock:
-                        if not self._timer_run_quadratic_fit.is_canceled():
-                            self._timer_run_quadratic_fit.cancel()
+                        # if not self._timer_run_quadratic_fit.is_canceled():
+                        #     self._timer_run_quadratic_fit.cancel()
                         if not self._timer_pub_servo.is_canceled():
                             self._timer_pub_servo.cancel()
                     result.success = False
@@ -263,8 +277,8 @@ class FindBranchRollWristController(TFNode):
 
                 if goal_handle.status == GoalStatus.STATUS_ABORTED:
                     with self._timer_lock:
-                        if not self._timer_run_quadratic_fit.is_canceled():
-                            self._timer_run_quadratic_fit.cancel()
+                        # if not self._timer_run_quadratic_fit.is_canceled():
+                        #     self._timer_run_quadratic_fit.cancel()
                         if not self._timer_pub_servo.is_canceled():
                             self._timer_pub_servo.cancel()
                     result.success = False
@@ -311,9 +325,9 @@ class FindBranchRollWristController(TFNode):
                         self.pos_rot_complete = True
                         self.rotations_complete = True
 
-                        with self._timer_lock:
-                            if not self._timer_run_quadratic_fit.is_canceled():
-                                self._timer_run_quadratic_fit.cancel()
+                        # with self._timer_lock:
+                            # if not self._timer_run_quadratic_fit.is_canceled():
+                            #     self._timer_run_quadratic_fit.cancel()
                         self.publish_zero_twist()
                         self.info("Branch readings found for both ToFs!")
 
@@ -325,21 +339,27 @@ class FindBranchRollWristController(TFNode):
                             angular_z = -1 * self.max_angular_vel
                             if np.isclose(self.joint_states[2], -np.pi / 2, atol=0.05):
                                 # TODO: (long term) make sure wrist mount config is standard
+                                self.run_quadratic_fit()
                                 self.neg_rot_complete = True
                                 self.publish_zero_twist()
                                 # self.get_clock().sleep_for(Duration(seconds=3))
                                 if not tof0_branch_found:
+                                    self.d_tof0_raw_readings = []
                                     self.d_tof0_readings = []
                                     self.timestamp_readings_tof0 = []
+                                    self.timestamp_readings_tof0_raw = []
                                 if not tof1_branch_found:
+                                    self.d_tof0_raw_readings = []
                                     self.d_tof1_readings = []
                                     self.timestamp_readings_tof1 = []
+                                    self.timestamp_readings_tof0_raw = []
 
                         elif not self.pos_rot_complete:
                             # if self.joint_states[-1] > 0 and self.joint_states[-1] < np.pi:
                             # positive angular rotation
                             angular_z = self.max_angular_vel
                             if np.isclose(self.joint_states[2], np.pi / 2, atol=0.05):
+                                self.run_quadratic_fit()
                                 self.pos_rot_complete = True
                                 self.publish_zero_twist()
 
@@ -363,9 +383,9 @@ class FindBranchRollWristController(TFNode):
                         ):  # TODO: Check and/or logic here
                             if not goal_handle.status == GoalStatus.STATUS_ABORTED:
                                 self.warn("Could not find the branch. Aborting FindBranchRollWristController.")
-                                with self._timer_lock:
-                                    if not self._timer_run_quadratic_fit.is_canceled():
-                                        self._timer_run_quadratic_fit.cancel()
+                                # with self._timer_lock:
+                                #     if not self._timer_run_quadratic_fit.is_canceled():
+                                #         self._timer_run_quadratic_fit.cancel()
                                 goal_handle.abort()
                                 # self.reset_controller() # Done in 'finally'
 
@@ -391,23 +411,24 @@ class FindBranchRollWristController(TFNode):
                             self.info(
                                 f"Switching controllers, deactivating {self._servo_controller}, activating {self._move_group_controller}"
                             )
-                            switch_ctrlr_req = SwitchController.Request(
-                                activate_controllers=[self._move_group_controller],
-                                deactivate_controllers=[self._servo_controller],
-                                strictness=SwitchController.Request.STRICT,
-                                # timeout=5.0
-                                # timeout=Duration(seconds=5)
-                            )
-                            switch_ctrlr_resp: SwitchController.Response = self._srv_switch_ctrls.call(
-                                request=switch_ctrlr_req
-                            )
-                            if switch_ctrlr_resp.ok:
-                                self.info("Successfully switched controllers")
-                            else:
-                                self.error("Failed to switch controllers")
-                                goal_handle.abort()
-                                result.success = False
-                                return result
+                            while True:
+                                switch_ctrlr_req = SwitchController.Request(
+                                    activate_controllers=[self._move_group_controller],
+                                    deactivate_controllers=[self._servo_controller],
+                                    strictness=SwitchController.Request.STRICT,
+                                    # timeout=5.0
+                                    # timeout=Duration(seconds=5)
+                                )
+                                switch_ctrlr_future: Future = self._srv_switch_ctrls.call_async(
+                                    request=switch_ctrlr_req
+                                )
+                                await switch_ctrlr_future
+                                if switch_ctrlr_future.result().ok:
+                                    self.info("Successfully switched controllers")
+                                    break
+                                else:
+                                    self.error("Failed to switch controllers,")
+                                    self.get_clock().sleep_for(Duration(seconds=2.0))
 
                             # If the eef is moving, we need a common frame, which should be world or cart__base
                             # Get tof poses at calculated signal minimum times
@@ -496,6 +517,7 @@ class FindBranchRollWristController(TFNode):
                             desired_orientation_rot = Rotation.from_matrix(matrix=rot_mat)
                             desired_orientation_quat = desired_orientation_rot.as_quat()
 
+                            ######################################################################################
                             if self.debug_plot:
                                 fig = go.Figure()
                                 fig.add_trace(go.Scatter3d(x=[0], y=[0], z=[0], name="cart__base"))
@@ -614,19 +636,35 @@ class FindBranchRollWristController(TFNode):
         finally:
             # self._timer_run_controller.cancel()
             self.publish_zero_twist()
-            with self._timer_lock:
-                if self._timer_run_quadratic_fit is not None:
-                    if not self._timer_run_quadratic_fit.is_canceled():
-                        self._timer_run_quadratic_fit.cancel()
+            # with self._timer_lock:
+                # if self._timer_run_quadratic_fit is not None:
+                #     if not self._timer_run_quadratic_fit.is_canceled():
+                #         self._timer_run_quadratic_fit.cancel()
 
             self.reset_controller()
             self.info("FindBranchRollWristController has terminated.")
 
-            stop_servo_resp: Trigger.Response = self._srv_client_stop_servo.call(request=Trigger.Request())
-            if stop_servo_resp.success:
+            stop_servo_future: Future = self._srv_client_stop_servo.call_async(request=Trigger.Request())
+            await stop_servo_future
+            if stop_servo_future.result().success:
                 self.info(f"Servo stopped.")
             else:
                 self.error(f"Servo failed to stop.")
+
+            
+            switch_ctrlr_req = SwitchController.Request(
+                activate_controllers=[self._servo_controller],
+                deactivate_controllers=[self._move_group_controller],
+                strictness=SwitchController.Request.STRICT
+            )
+            switch_ctrlr_future: Future = self._srv_switch_ctrls.call_async(
+                request=switch_ctrlr_req
+            )
+            await switch_ctrlr_future
+            if switch_ctrlr_future.result().ok:
+                self.info("Successfully switched controllers")
+            else:
+                self.error("Failed to switch controllers,")
                 
         return result
 
@@ -695,18 +733,25 @@ class FindBranchRollWristController(TFNode):
 
     def _timer_cb_run_quadratic_fit(self):
         """Periodically run a fit on the data"""
-        self.error("FIT TIMER TRIGGERED")
+        self.run_quadratic_fit()
+        return
+
+    def run_quadratic_fit(self):
         with self._branch_found_lock:
             tof0_branch_found = self.tof0_branch_found
 
         if not tof0_branch_found:
             # Make a copy of the recorded data so that the subscriber may continue to append
             with self._data_lock:
+                timestamp_readings_tof0_raw_copy = list(self.timestamp_readings_tof0_raw)
                 timestamp_readings_tof0_copy = list(self.timestamp_readings_tof0)
+                d_tof0_readings_raw_copy = list(self.d_tof0_raw_readings)
                 d_tof0_readings_copy = list(self.d_tof0_readings)
             tof0_time_and_dist = self.get_branch_center_time_and_distance(
-                timestamps=timestamp_readings_tof0_copy,
-                readings=d_tof0_readings_copy,
+                raw_timestamps=timestamp_readings_tof0_raw_copy,
+                filtered_timestamps=timestamp_readings_tof0_copy,
+                raw_readings=d_tof0_readings_raw_copy,
+                filtered_readings=d_tof0_readings_copy,
                 sensor_name="tof0",
                 debug_plot=self.debug_plot,
             )
@@ -721,11 +766,15 @@ class FindBranchRollWristController(TFNode):
             tof1_branch_found = self.tof1_branch_found
         if not tof1_branch_found:
             with self._data_lock:
+                timestamp_readings_tof1_raw_copy = list(self.timestamp_readings_tof1_raw)
                 timestamp_readings_tof1_copy = list(self.timestamp_readings_tof1)
+                d_tof1_readings_raw_copy = list(self.d_tof1_raw_readings)
                 d_tof1_readings_copy = list(self.d_tof1_readings)
             tof1_time_and_dist = self.get_branch_center_time_and_distance(
-                timestamps=timestamp_readings_tof1_copy,
-                readings=d_tof1_readings_copy,
+                raw_timestamps=timestamp_readings_tof1_raw_copy,
+                filtered_timestamps=timestamp_readings_tof1_copy,
+                raw_readings=d_tof1_readings_raw_copy,
+                filtered_readings=d_tof1_readings_copy,
                 sensor_name="tof1",
                 debug_plot=self.debug_plot,
             )
@@ -737,12 +786,31 @@ class FindBranchRollWristController(TFNode):
             self.info("Branch already detected by tof1. Skipping.")
         return
 
+
     def _timer_cb_debug(self):
         return
 
     # ===============================
     #     Subscription callbacks
     # ===============================
+
+    def _sub_cb_tof_raw(self, msg: Vl6180):
+        self.d_tof0_raw = msg.data[0] / 1000
+        self.d_tof1_raw = msg.data[1] / 1000
+
+        if self.controller_running:
+            timestamp_tuple = self.get_clock().now().seconds_nanoseconds()
+            timestamp_float = timestamp_tuple[0] + timestamp_tuple[1] * 1e-9
+            # with self._branch_found_lock:
+            with self._data_lock:
+                if not self.tof0_branch_found:
+                    self.d_tof0_raw_readings.append(self.d_tof0_raw)
+                    self.timestamp_readings_tof0_raw.append(timestamp_float)
+                if not self.tof1_branch_found:
+                    self.d_tof1_raw_readings.append(self.d_tof1_raw)
+                    self.timestamp_readings_tof1_raw.append(timestamp_float)
+
+        return
 
     def _sub_cb_tof_filtered(self, msg: Vl6180FilteredStamped):
         # Do some checks, make sure that the readings make sense in intuitive way.
@@ -784,16 +852,20 @@ class FindBranchRollWristController(TFNode):
         with self._data_lock:
             self.d_tof0_readings = []
             self.d_tof1_readings = []
+            self.d_tof0_raw_readings = []
+            self.d_tof1_raw_readings = []
             # self.d_tof0_readings_filtered = []
             # self.d_tof1_readings_filtered = []
             self.timestamp_readings_tof0 = []
             self.timestamp_readings_tof1 = []
+            self.timestamp_readings_tof0_raw = []
+            self.timestamp_readings_tof1_raw = []
             # self.timestamps_tof0_filtered = []
             # self.timestamps_tof1_filtered = []
 
-        with self._timer_lock:
-            if self._timer_run_quadratic_fit is not None:
-                self._timer_run_quadratic_fit.cancel()
+        # with self._timer_lock:
+        #     if self._timer_run_quadratic_fit is not None:
+        #         self._timer_run_quadratic_fit.cancel()
         # self._action_client_move_group_done_event.clear()
 
         self.info("Controller parameters have been reset")
@@ -812,100 +884,84 @@ class FindBranchRollWristController(TFNode):
             self._pub_servo.publish(self.msg_twist)
         return
 
-    # def execute_trajectory(self, trajectory):
-    #     traj_goal = ExecuteTrajectory.Goal()
-    #     traj_goal.trajectory = trajectory
-
-    #     execute_traj_future = self._action_client_execute_trajectory.send_goal_async(
-    #         goal=traj_goal,
-    #     )
-    #     execute_traj_future.add_done_callback(callback=self._action_client_execute_trajectory_done_cb)
-
-    #     return
-
     def get_branch_center_time_and_distance(
-        self, timestamps, readings, sensor_name: str, debug_plot: bool = False
-    ) -> Time | None:
+        self, raw_timestamps, filtered_timestamps, raw_readings, filtered_readings, sensor_name: str, debug_plot: bool = False
+    ):
+        # Clean data
         try:
-            readings_filtered = np.where(np.asarray(readings) < self.vl6180_far_plane, readings, np.nan)
-            timestamps_filtered = np.where(np.isnan(readings_filtered), np.nan, np.asarray(timestamps))
-            readings_filtered = readings_filtered[~np.isnan(readings_filtered)]
+            readings_plane_filtered = np.where(np.asarray(filtered_readings) < self.vl6180_far_plane, filtered_readings, np.nan)
+            timestamps_filtered = np.where(np.isnan(readings_plane_filtered), np.nan, np.asarray(filtered_timestamps))
+            readings_plane_filtered = readings_plane_filtered[~np.isnan(readings_plane_filtered)]
             timestamps_filtered = timestamps_filtered[~np.isnan(timestamps_filtered)]
             normalized_timestamps_filtered = timestamps_filtered - timestamps_filtered[0]
         except IndexError:
             self.info(f"No branch found for {sensor_name}")
             return None
-        except ValueError as e:
-            self.warn(traceback.format_exc())
-            self.info(f"{e}: Sensor {sensor_name} did not find branch")
-            self.error(f"readings: {np.asarray(readings).shape}")
-            self.error(f"timestamps: {np.asarray(readings).shape}")
-            self.error(f"readings filtered: {np.asarray(readings_filtered).shape}")
-            # self.error(len(timestamps_filtered))
-            # self.error(len(normalized_timestamps_filtered))
-            return None
-
-        fit_params, fit_covs = so.curve_fit(
-            f=cf.parabola,
-            xdata=normalized_timestamps_filtered,
-            ydata=readings_filtered,
-            nan_policy="omit",
-            maxfev=5000,
-            sigma=self.vl6180_precision,
-            absolute_sigma=True,
+        
+        # Define RANSAC regressor
+        ransac = sklm.RANSACRegressor(
+            estimator=sklm.LinearRegression(),
+            max_trials=100,
+            min_samples=50,
+            residual_threshold=0.004
         )
-        # If the parabola is negative, reject fit.
-        # if fit_params[0] < 0:
-        #     return None
 
+        # Fit RANSAC model to data
+        quadratic = skpp.PolynomialFeatures(degree=2)
+        x_quad = quadratic.fit_transform(X=normalized_timestamps_filtered[:,np.newaxis])
+        ransac = ransac.fit(X=x_quad, y=readings_plane_filtered)
+
+        # Get fitted curve
         t_fit = np.linspace(
             min(normalized_timestamps_filtered),
             max(normalized_timestamps_filtered),
             len(normalized_timestamps_filtered),
         )
-        fit_data = cf.parabola(t_fit, *fit_params)
-        if fit_params[0] > 0:
-            idx_min = np.argmin(fit_data)
-        else:
-            idx_min = np.argmax(fit_data)
+        y_fit = ransac.predict(quadratic.fit_transform(t_fit[:,np.newaxis]))
+
+        # Get r**2 value
+        fit_r2 = skm.r2_score(
+            y_true=readings_plane_filtered,
+            y_pred=ransac.predict(x_quad)
+        )
+
+        self.warn(f"{sensor_name} r^2: {fit_r2}")
+
+        idx_min = np.argmin(y_fit)
         timestamp_min = timestamps_filtered[idx_min]
-        fit_min = float(fit_data[idx_min])
+        fit_min = float(y_fit[idx_min])
         split_time = np.modf(timestamp_min)
         time_center = Time(seconds=int(split_time[1]), nanoseconds=split_time[0] * 1e9)
+
+        
 
         if debug_plot:
             fig = go.Figure()
             fig.add_trace(
                 go.Scatter(
                     x=normalized_timestamps_filtered,
-                    y=readings_filtered,
+                    y=readings_plane_filtered,
                     name="filtered_data",
                 )
             )
-            fig.add_trace(go.Scatter(x=t_fit, y=fit_data, name="fit_data"))
-            fig.add_trace(go.Scatter(x=np.asarray(timestamps) - timestamps[0], y=readings, name="raw_data"))
+            fig.add_trace(go.Scatter(x=t_fit, y=y_fit, name="RANSAC fit"))
+            fig.add_trace(go.Scatter(x=np.asarray(raw_timestamps) - raw_timestamps[0], y=raw_readings, name='raw_sensor_data'))
+            fig.add_trace(go.Scatter(x=np.asarray(filtered_timestamps) - filtered_timestamps[0], y=filtered_readings, name="MAF_data"))
+
+            # Plot ransac masked data
+            inlier_mask = ransac.inlier_mask_
+            outlier_mask = np.logical_not(inlier_mask)
+            fig.add_trace(go.Scatter(x=normalized_timestamps_filtered[inlier_mask], y=readings_plane_filtered[inlier_mask], name="inliers"))
+            fig.add_trace(go.Scatter(x=normalized_timestamps_filtered[outlier_mask], y=readings_plane_filtered[outlier_mask], name="outliers"))
             fig.update_layout(title=dict(text=sensor_name))
             fig.show()
 
-        # TODO: reinstate publisher
-        # self.msg_tof_branch_fit.timestamps = list(timestamps_filtered)
-        # self.msg_tof_branch_fit.tof_data = list(readings_filtered)
-        # self.msg_tof_branch_fit.fit_data = list(fit_data)
-        # self.msg_tof_branch_fit.sensor_name = sensor_name
-        # self.msg_tof_branch_fit.header.stamp = self.get_clock().now().to_msg()
-
-        # self._pub_fit.publish(self.msg_tof_branch_fit)
-
-        self.info(f"{sensor_name}: {time_center}")
 
         if time_center:
             self.info(f"Branch found at distance {fit_min} at time {timestamp_min} for {sensor_name}")
 
         return time_center, fit_min
 
-    def send_move_group_goal(self):
-
-        return
 
 
 def main():
