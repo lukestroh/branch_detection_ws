@@ -123,11 +123,14 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         "reverse_port": "50001",
         "script_sender_port": "50002",
         "trajectory_port": "50003",
+        "warehouse_port": "33829"
         # "use_tool_communication": "false",
 
 
     }
     _mappings.update(parent_child_mappings)
+
+    logger.warn(f"{parent_child_mappings}")
 
     mcb = MoveItConfigsBuilder(
         robot_name="branch_detection_system", package_name="branch_detection_system_moveit_config"
@@ -307,6 +310,7 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
     warehouse_ros_config = {
         "warehouse_plugin": "warehouse_ros_sqlite::DatabaseConnection",
         "warehouse_host": warehouse_sqlite_path,
+        "warehouse_port": 33829
     }
 
     warehouse_server_node = Node(
