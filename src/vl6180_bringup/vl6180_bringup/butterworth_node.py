@@ -86,7 +86,6 @@ class VL6180FilterNode(Node):
         # Subscriptions
         self._sub_vl6180_distance_raw = self.create_subscription(
             msg_type=Vl6180,
-            # msg_type=ToFData,
             topic="/microROS/vl6180/data",
             callback=self._sub_cb_vl6180_distance_raw,
             qos_profile=1,
@@ -109,10 +108,26 @@ class VL6180FilterNode(Node):
         self.vl6180_msg_filtered.data = [0.0, 0.0]
        
 
-        self.deque_size = 25
+        sample_freq = 30.3 # sampling frequency of the digital system. 
+        nyquist = 0.5 * sample_freq
+        cutoff = 20.0 # cutoff frequency
+        normal_cutoff = cutoff / nyquist
+
+        self.warn(normal_cutoff)
+        self.warn(f"Cutoff Hz: {1/normal_cutoff}")
+
+        self.deque_size = 10
         self.deques = [deque([self.RANGING_MAX] * self.deque_size), deque([self.RANGING_MAX] * self.deque_size)]
 
 
+        self.sos = si.butter(
+            N=2,
+            Wn=normal_cutoff,
+            fs=30.3,
+            btype='low',
+            analog=False,
+            output='sos'
+        )
 
         # self.info(self.kalmans)
         return
@@ -132,11 +147,17 @@ class VL6180FilterNode(Node):
                     # TODO: This is bad logic, need an and...
                     pass
                 else:
-                    # self.warn(msg.data[0])
 
                     self.deques[i].popleft()
                     self.deques[i].append(self.vl6180_msg_raw.data[i])
-                    self.vl6180_msg_filtered.data[i] = np.mean(self.deques[i])
+
+                    y = si.sosfilt(
+                        sos=self.sos,
+                        x=self.deques[i]
+                    )
+                    self.vl6180_msg_filtered.data[i] = np.mean(y)
+
+                    # self.vl6180_msg_filtered.data[i] = np.mean(self.deques[i])
 
             # self.vl6180_msg_filtered.header.frame_id = "vl6180_0" # TODO: need two nodes or publishers for two separate frames
             self.vl6180_msg_filtered.header.stamp = self.get_clock().now().to_msg()

@@ -5,6 +5,6 @@ vl6180_filtered_node:
     depth:
       dfov: 25.0
       near_plane: 0.002
-      far_plane: 0.160
+      far_plane: 0.190
       width: 1
       height: 1
