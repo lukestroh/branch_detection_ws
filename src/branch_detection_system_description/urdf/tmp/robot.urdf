@@ -192,7 +192,7 @@
       <command_interface name="position" />
       <command_interface name="velocity" />
       <state_interface name="position">
-        <param name="initial_value">-1.83259571459</param>
+        <param name="initial_value">-1.353</param>
       </state_interface>
       <state_interface name="velocity" />
       <state_interface name="effort" />
@@ -201,7 +201,7 @@
       <command_interface name="position" />
       <command_interface name="velocity" />
       <state_interface name="position">
-        <param name="initial_value">2.09439510239</param>
+        <param name="initial_value">1.158</param>
       </state_interface>
       <state_interface name="velocity" />
       <state_interface name="effort" />
@@ -210,7 +210,7 @@
       <command_interface name="position" />
       <command_interface name="velocity" />
       <state_interface name="position">
-        <param name="initial_value">2.87979326579</param>
+        <param name="initial_value">-1.912</param>
       </state_interface>
       <state_interface name="velocity" />
       <state_interface name="effort" />
@@ -219,7 +219,7 @@
       <command_interface name="position" />
       <command_interface name="velocity" />
       <state_interface name="position">
-        <param name="initial_value">-1.57079632679</param>
+        <param name="initial_value">-1.765</param>
       </state_interface>
       <state_interface name="velocity" />
       <state_interface name="effort" />
@@ -632,7 +632,7 @@
     <child link="cart__cart" />
   </joint>
   <joint name="cart__cart--cart__tool0" type="fixed">
-    <origin rpy="0 0 0" xyz="0 0 0.75711" />
+    <origin rpy="0.0 0.0 -0.7853981633974483" xyz="0 0 0.75711" />
     <parent link="cart__cart" />
     <child link="cart__tool0" />
   </joint>

@@ -48,6 +48,7 @@ def launch_setup(context, *args, **kwargs) -> list:
     # system_moveit_config_pkg = LaunchConfiguration("system_moveit_config_pkg")
     # system_description_file = LaunchConfiguration("system_description_file")
     # system_semantic_description_file = LaunchConfiguration("robot_semantic_description_file")
+    ur_prefix = LaunchConfiguration("ur_prefix")
     ur_type = LaunchConfiguration("ur_type")
     ur_robot_ip = LaunchConfiguration("ur_robot_ip")
     headless_mode = LaunchConfiguration("headless_mode")
@@ -66,6 +67,7 @@ def launch_setup(context, *args, **kwargs) -> list:
             # ("system_description_package", system_description_pkg),
             # ("system_description_file", system_description_file),
             # ("system_semantic_description_file", system_semantic_description_file),
+            ("ur_prefix", ur_prefix),
             ("ur_type", ur_type),
             ("ur_robot_ip", ur_robot_ip),
             ("use_mock_hardware", use_mock_hardware),
@@ -193,6 +195,7 @@ def generate_launch_description():
         # dict(name="system_semantic_description_file", default_value="robot.srdf", description="srdf/xacro file"),
         # dict(name="system_description_pkg", default_value="branch_detection_system_description"),
         # dict(name="system_moveit_config_pkg", default_value="branch_detection_system_moveit_config"),
+        dict(name="ur_prefix", default_value="ur5e__"),
         dict(name="ur_type", default_value="ur5e", description="Robot description name (required for URDF parsing)."),
         dict(name="ur_robot_ip", default_value="169.254.177.230", description="UR robot IP"),
     ]
