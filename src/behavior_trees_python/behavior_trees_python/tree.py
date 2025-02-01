@@ -156,7 +156,7 @@ class FinalApproachTreeNode(Node):
 
         for visitor in behavior_tree.visitors:
             # if visitor.visited.
-            self.info(visitor.visited.values())
+            self.info(visitor.visited.items())
 
         # self.warn(self.tree.snapshot_visitor.visited)
 

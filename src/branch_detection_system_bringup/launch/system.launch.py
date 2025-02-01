@@ -33,6 +33,10 @@ def launch_setup(context, *args, **kwargs) -> list:
     # Launch configuration settings
     # ===============================
 
+    # Robot parts
+    robot_base_part = LaunchConfiguration("robot_base_part")
+    robot_eef_part = LaunchConfiguration("robot_eef_part")
+
     # Hardware
     microros_serial_port = LaunchConfiguration("microros_serial_port")
     tof_sensor_type = LaunchConfiguration("tof_sensor_type")
@@ -110,6 +114,8 @@ def launch_setup(context, *args, **kwargs) -> list:
             )
         ),
         launch_arguments=[
+            ("robot_base_part", robot_base_part),
+            ("robot_eef_part", robot_eef_part),
             ("use_mock_hardware", use_mock_hardware),
         ],
         condition=IfCondition(use_final_approach_controller)

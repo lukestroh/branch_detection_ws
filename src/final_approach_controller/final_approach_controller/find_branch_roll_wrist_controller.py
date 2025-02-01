@@ -68,6 +68,18 @@ class FindBranchRollWristController(TFNode):
             self._move_group_controller = "scaled_joint_trajectory_controller"
         self._servo_controller = "forward_position_controller"
 
+        self._param_robot_base_part: str = (
+            self.declare_parameter(name='robot_base_part', value=Parameter.Type.STRING).get_parameter_value().string_value
+        )
+
+        self._param_robot_eef_part: str = (
+            self.declare_parameter(name='robot_eef_part', value=Parameter.Type.STRING).get_parameter_value().string_value
+        )
+
+        # self.error(f"{self._param_robot_base_part}")
+        # self.error(f"{self._param_robot_eef_part}")
+
+
         # Threading locks
         self._data_lock = Lock()
         self._timer_lock = Lock()
@@ -234,7 +246,7 @@ class FindBranchRollWristController(TFNode):
             self.error(f"Servo failed to start")
 
         self.start_controller_tf = self.lookup_transform(
-            target_frame="cart__base", source_frame="mock_pruner__tool0", sync=True, as_matrix=True
+            target_frame=f"{self._param_robot_base_part}__base", source_frame=f"{self._param_robot_eef_part}__tool0", sync=True, as_matrix=True
         )
         with self._timer_lock:
             # if self._timer_run_quadratic_fit is None:
@@ -370,7 +382,7 @@ class FindBranchRollWristController(TFNode):
                             self.msg_twist.twist.angular.x = 0.0
                             self.msg_twist.twist.angular.y = 0.0
                             self.msg_twist.twist.angular.z = angular_z
-                            self.msg_twist.header.frame_id = "mock_pruner__tool0"  # TODO: Get name dynamically
+                            self.msg_twist.header.frame_id = f"{self._param_robot_eef_part}__tool0"
                             self.msg_twist.header.stamp = self.get_clock().now().to_msg()
 
                         if self.neg_rot_complete and self.pos_rot_complete:
@@ -430,26 +442,26 @@ class FindBranchRollWristController(TFNode):
                                     self.error("Failed to switch controllers,")
                                     self.get_clock().sleep_for(Duration(seconds=2.0))
 
-                            # If the eef is moving, we need a common frame, which should be world or cart__base
+                            # If the eef is moving, we need a common frame, which should be world or <robot-part>__base
                             # Get tof poses at calculated signal minimum times
                             tf_tof0_to_base__time_center_pose = self.lookup_transform(
-                                target_frame="cart__base",  # TODO: probably best to dynamically get robot base, whatever it is.
-                                source_frame="mock_pruner__tof0",
+                                target_frame=f"{self._param_robot_base_part}__base",  # TODO: probably best to dynamically get robot base, whatever it is.
+                                source_frame=f"{self._param_robot_eef_part}__tof0",
                                 time=self.tof0_time_center,
                                 sync=True,
                                 as_matrix=True,
                             )
                             tf_tof1_to_base__time_center_pose = self.lookup_transform(
-                                target_frame="cart__base",
-                                source_frame="mock_pruner__tof1",
+                                target_frame=f"{self._param_robot_base_part}__base",
+                                source_frame=f"{self._param_robot_eef_part}__tof1",
                                 time=self.tof1_time_center,
                                 sync=True,
                                 as_matrix=True,
                             )
                             # Get the current eef pose
                             tf_cut_point_to_base = self.lookup_transform(
-                                target_frame="cart__base",
-                                source_frame="mock_pruner__tool0",
+                                target_frame=f"{self._param_robot_base_part}__base",
+                                source_frame=f"{self._param_robot_eef_part}__tool0",
                                 sync=True,
                                 as_matrix=True,
                                 time=self.get_clock().now(),
@@ -520,7 +532,7 @@ class FindBranchRollWristController(TFNode):
                             ######################################################################################
                             if self.debug_plot:
                                 fig = go.Figure()
-                                fig.add_trace(go.Scatter3d(x=[0], y=[0], z=[0], name="cart__base"))
+                                fig.add_trace(go.Scatter3d(x=[0], y=[0], z=[0], name=f"{self._param_robot_base_part}__base"))
                                 fig.add_trace(
                                     go.Scatter3d(
                                         x=[tof0_vec_base_frame[0]],
@@ -688,9 +700,9 @@ class FindBranchRollWristController(TFNode):
     # ===============================
     def _timer_cb_setup_tf_frames(self):
         frame_sets = [
-            {"parent": "mock_pruner__base", "child": "mock_pruner__tof0"},
-            {"parent": "mock_pruner__base", "child": "mock_pruner__tof1"},
-            {"parent": "mock_pruner__base", "child": "mock_pruner__tool0"},
+            {"parent": f"{self._param_robot_eef_part}__base", "child": f"{self._param_robot_eef_part}__tof0"},
+            {"parent": f"{self._param_robot_eef_part}__base", "child": f"{self._param_robot_eef_part}__tof1"},
+            {"parent": f"{self._param_robot_eef_part}__base", "child": f"{self._param_robot_eef_part}__tool0"},
         ]
 
         transforms = []
@@ -879,7 +891,7 @@ class FindBranchRollWristController(TFNode):
             self.msg_twist.twist.angular.x = 0.0
             self.msg_twist.twist.angular.y = 0.0
             self.msg_twist.twist.angular.z = 0.0
-            self.msg_twist.header.frame_id = "mock_pruner__tool0"  # TODO: if changing to EEF, change ur_servo.yaml
+            self.msg_twist.header.frame_id = f"{self._param_robot_eef_part}__tool0"  # TODO: if changing to EEF, change ur_servo.yaml
             self.msg_twist.header.stamp = self.get_clock().now().to_msg()
             self._pub_servo.publish(self.msg_twist)
         return

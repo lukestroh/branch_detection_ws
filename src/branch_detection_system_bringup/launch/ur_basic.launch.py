@@ -78,6 +78,7 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
     robot_conf = load_yaml(
         package_name="branch_detection_system_description", file_path=os.path.join("config", "robot_conf.yaml")
     )
+    robot_stack_size = len(robot_conf["robot_stack"]) # seems a lil hacky...
 
     parent_child_mappings = {}
 
@@ -87,6 +88,8 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         # Assign parent frames
         if i == 0:
             parent_child_mappings.update({f"parent{i}": "world"})
+            # Set the robot's base part as a launch config to pass to nodes
+            robot_base_part = SetLaunchConfiguration(name="robot_base_part", value=robot_part)
         else:
             parent_child_mappings.update({f"parent{i}": robot_conf["robot_stack"][i - 1]})
         # Assign part frame ids
@@ -99,6 +102,11 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
             parent_child_mappings.update(part_conf)
         else:
             raise ValueError(f"Robot part {robot_part} not found in 'branch_detection_system_description'")
+        
+    # Set the robot's end-effector part as a launch config to pass to the nodes
+    else:
+        robot_eef_part = SetLaunchConfiguration(name="robot_eef_part", value=robot_part)
+
     
     """Dynamically evaluate parameter files with their prefix names"""
     # Kinematics
@@ -131,7 +139,7 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
     )
     _parameterfile_moveit_controllers.evaluate(context=context)
 
-    logger.error(f"{ur_prefix.perform(context)}")
+    # logger.error(f"{ur_prefix.perform(context)}")
     _mappings = {
         "name": "pruning_robot",
         "ur_type": ur_type.perform(context),
@@ -207,19 +215,19 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
     # logger.error(f"{moveit_configs.robot_description_semantic}")
     
     # ##############################################################
-    # SAVE HARD-CODED URDF
-    import xml.etree.ElementTree as ET
+    # # SAVE HARD-CODED URDF
+    # import xml.etree.ElementTree as ET
     
-    et = ET.XML(moveit_configs.robot_description['robot_description'].value[0].perform(context))
-    tree = ET.ElementTree(et)
-    ET.indent(tree)
-    tree.write("/home/luke/branch_detection_ws/src/branch_detection_system_description/urdf/tmp/robot.urdf", encoding='utf-8', xml_declaration=True)
+    # et = ET.XML(moveit_configs.robot_description['robot_description'].value[0].perform(context))
+    # tree = ET.ElementTree(et)
+    # ET.indent(tree)
+    # tree.write("/home/luke/branch_detection_ws/src/branch_detection_system_description/urdf/tmp/robot.urdf", encoding='utf-8', xml_declaration=True)
 
-    # Save HARD-CODED SRDF
-    et = ET.XML(moveit_configs.robot_description_semantic['robot_description_semantic'].value[0].perform(context))
-    tree = ET.ElementTree(et)
-    ET.indent(tree)
-    tree.write("/home/luke/branch_detection_ws/src/branch_detection_system_moveit_config/srdf/tmp/robot.srdf", encoding='utf-8', xml_declaration=True)
+    # # Save HARD-CODED SRDF
+    # et = ET.XML(moveit_configs.robot_description_semantic['robot_description_semantic'].value[0].perform(context))
+    # tree = ET.ElementTree(et)
+    # ET.indent(tree)
+    # tree.write("/home/luke/branch_detection_ws/src/branch_detection_system_moveit_config/srdf/tmp/robot.srdf", encoding='utf-8', xml_declaration=True)
 
 
     # ##############################################################
@@ -508,6 +516,8 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
 
     _to_start = [
         tf_prefix,
+        robot_base_part,
+        robot_eef_part,
         node_robot_state_publisher,
         node_joint_state_broadcaster_spawner,
         node_ros2_control,
