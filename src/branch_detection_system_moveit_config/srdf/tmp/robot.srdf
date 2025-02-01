@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <robot name="pruning_robot">
   <group name="ur5e__pruning_robot_manipulator">
-    <chain base_link="cart__base" tip_link="mock_pruner__tool0" />
+    <chain base_link="amiga__base" tip_link="mock_pruner__tool0" />
     <end_effector group="ur5e__pruning_robot_manipulator" name="mock_pruner__eef" parent_link="mock_pruner__tool0" />
   </group>
   <group_state group="ur5e__pruning_robot_manipulator" name="ur5e__home">
@@ -28,10 +28,10 @@
     <joint name="ur5e__wrist_2_joint" value="-1.6" />
     <joint name="ur5e__wrist_3_joint" value="-0.11" />
   </group_state>
-  <disable_collisions link1="cart__cart" link2="ur5e__base_link_inertia" reason="Never" />
-  <disable_collisions link1="cart__cart" link2="ur5e__base_link" reason="Never" />
-  <disable_collisions link1="cart__tool0" link2="ur5e__base_link_inertia" reason="Never" />
-  <disable_collisions link1="cart__tool0" link2="ur5e__base_link" reason="Never" />
+  <disable_collisions link1="amiga__body" link2="ur5e__base_link_inertia" reason="Never" />
+  <disable_collisions link1="amiga__body" link2="ur5e__base_link" reason="Never" />
+  <disable_collisions link1="amiga__tool0" link2="ur5e__base_link_inertia" reason="Never" />
+  <disable_collisions link1="amiga__tool0" link2="ur5e__base_link" reason="Never" />
   <disable_collisions link1="ur5e__base_link" link2="ur5e__base_link_inertia" reason="Adjacent" />
   <disable_collisions link1="ur5e__base_link_inertia" link2="ur5e__shoulder_link" reason="Adjacent" />
   <disable_collisions link1="ur5e__tool0" link2="ur5e__wrist_1_link" reason="Never" />

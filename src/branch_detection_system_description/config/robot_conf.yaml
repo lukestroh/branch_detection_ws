@@ -1,4 +1,5 @@
 robot_stack:
-  - cart
+  # - cart
+  - amiga
   - ur5e
   - mock_pruner

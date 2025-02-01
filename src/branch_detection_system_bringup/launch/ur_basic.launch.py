@@ -165,7 +165,7 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
     }
     _mappings.update(parent_child_mappings)
 
-    logger.warn(f"{_mappings}")
+    # logger.warn(f"{_mappings}")
 
     mcb = MoveItConfigsBuilder(
         robot_name="branch_detection_system", package_name="branch_detection_system_moveit_config"

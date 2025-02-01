@@ -14,8 +14,9 @@ urdf_relative_base_path = "urdf"
 urdf_files = glob.glob("urdf/**/*.xacro", recursive=True)
 mesh_relative_base_path = "meshes"
 obj_files = glob.glob("meshes/**/*.obj", recursive=True)
-stl_files = glob.glob("meshes/**/*.STL", recursive=True)
-mesh_files = obj_files + stl_files
+STL_files = glob.glob("meshes/**/*.STL", recursive=True)
+stl_files = glob.glob("meshes/**/*.stl", recursive=True)
+mesh_files = obj_files + STL_files + stl_files
 
 _data_files = [
     ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
