@@ -407,14 +407,10 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
     )
     _parameterfile_servo_config = ParameterFile(_filepath_servo_config, allow_substs=True)
     _parameterfile_servo_config.evaluate(context=context)
-    # yamlcontent_servo_config = load_yaml(
-    #     package_name="branch_detection_system_moveit_config",
-    #     file_path=os.path.join("config", str(parameterfile_servo_config.param_file)),
-    # )
     with open(_parameterfile_servo_config.param_file) as f:
         _yamlcontent_servo_config = yaml.safe_load(f)
-    logger.warn(f"{_yamlcontent_servo_config}")
     servo_params = dict(moveit_servo=_yamlcontent_servo_config)
+
     node_servo = Node(
         package="moveit_servo",
         executable="servo_node_main",
@@ -429,6 +425,7 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         condition=IfCondition(launch_servo),
     )
 
+    # RViz
     node_rviz = Node(
         package="rviz2",
         condition=IfCondition(launch_rviz),
@@ -462,12 +459,9 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         )
     
     controllers_active = [
-        # "joint_state_broadcaster",
-        
         "io_and_status_controller",
         "speed_scaling_state_broadcaster",
         "force_torque_sensor_broadcaster",
-        # "tcp_pose_broadcaster",
         "ur_configuration_controller",
     ]
     controllers_inactive = [
@@ -476,7 +470,6 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         "joint_trajectory_controller",
         "forward_velocity_controller",
         "forward_position_controller",
-        # "passthrough_trajectory_controller",
     ]
     
     if start_servo_mode.perform(context) == "true":
@@ -500,15 +493,6 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         event_handler=OnProcessExit(target_action=node_joint_state_broadcaster_spawner, on_exit=[node_rviz])
     )
 
-    # robot_controllers = ["scaled_joint_trajectory_controller"]
-    # robot_controller_spawners = []
-    # for controller in robot_controllers:
-    #     robot_controller_spawners.append(
-    #         Node(
-    #             package="controller_manager", executable="spawner", arguments=[controller, "-c", "/controller_manager"]
-    #         )
-    #     )
-
     # Delay loading and activation of robot_controller after 'joint_state_broadcaster'
     register_events_delay_robot_controller_spawners_after_JSB_spawner = []
     for controller in controller_spawners:
@@ -518,8 +502,6 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
             )
         )
 
-    ####################################################################################################################
-    ####################################################################################################################
 
     _to_start = [
         tf_prefix,

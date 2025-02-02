@@ -78,11 +78,12 @@ class FindBranchRollWristControllerBehavior(pt.behaviour.Behaviour):
                 return pt.common.Status.FAILURE
         return pt.common.Status.RUNNING
     
-    def terminate(self,  new_status: pt.common.Status):
+    async def terminate(self,  new_status: pt.common.Status):
         if self._goal_handle.status == GoalStatus.STATUS_EXECUTING:
             _goal_canceled_future: Future = self._goal_handle.cancel_goal_async()
             _goal_canceled_future.add_done_callback(self._on_cancel_cb)
-
+        await _goal_canceled_future
+        
         self.logger.info(f"Terminated with status {new_status}")
         self.client = None
         return

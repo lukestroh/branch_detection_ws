@@ -197,6 +197,8 @@ def main():
         # TODO: Need to find a way to send cancel goal to running action from here.
         # fa_tree_node.
         fa_tree_node.info("Shutting down")
+        # fa_tree_node.info(f"{fa_tree_node.tree.visitors[0].}")
+        # fa_tree_node.tree.visitors[0][1].terminate(new_status=py_trees.common.Status.FAILURE)
     except ExternalShutdownException:
         sys.exit(0)
     finally:
