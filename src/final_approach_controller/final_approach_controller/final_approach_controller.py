@@ -96,7 +96,7 @@ class FinalApproachControllerNode(TFNode):
         self._goal_handle = None
         self.d_tof0 = 0.0
         self.d_tof1 = 0.0
-        self.max_linear_speed = 0.05
+        self.max_linear_speed = 0.01 * 10  # UR servo is slow??
         # TODO::::: need to read raw data to make sure that the reading is valid??
 
         self.tf_mp_tof0_to_base = np.identity(4)
@@ -126,7 +126,7 @@ class FinalApproachControllerNode(TFNode):
             self.info(f"Servo started")
         else:
             self.error(f"Servo failed to start")
-            
+
         if self._timer_run_controller is None:
             self._timer_run_controller = self.create_timer(
                 timer_period_sec=1 / 30,

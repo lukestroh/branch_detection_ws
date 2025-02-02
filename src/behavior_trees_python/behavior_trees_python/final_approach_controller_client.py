@@ -43,6 +43,7 @@ class FinalApproachControllerBehavior(pt.behaviour.Behaviour):
     
     def initialise(self):
         """Send a goal to the RunFinalApproach action server"""
+        self.goal_status = None
         self.goal = RunFinalApproach.Goal()
         self._send_goal_future: Future = self.client.send_goal_async(
             goal=self.goal,

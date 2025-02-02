@@ -44,6 +44,7 @@ class FindBranchRollWristControllerBehavior(pt.behaviour.Behaviour):
 
     def initialise(self):
         """Send the action server a goal at the first tick."""
+        self.goal_status = None
         self.goal = RunFindBranchRollWrist.Goal()
         self._send_goal_future: Future = self.client.send_goal_async(
             goal=self.goal,

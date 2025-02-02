@@ -41,6 +41,7 @@ class CutPointRotateAxisControllerBehavior(pt.behaviour.Behaviour):
     
     def initialise(self):
         """Send the CutPointRotate Action server a goal"""
+        self.goal_status = None
         self.goal = RunCutPointRotateAxis.Goal()
         self._send_goal_future: Future = self.client.send_goal_async(
             goal=self.goal,

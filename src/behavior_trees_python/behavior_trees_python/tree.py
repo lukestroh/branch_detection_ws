@@ -98,17 +98,31 @@ class FinalApproachTreeNode(Node):
             name="final_approach_behavior_client",
         )
         
-        find_branch_rotate_wrist_behavior = FindBranchRollWristControllerBehavior(
-            name="find_branch_rotate_wrist_client",
+
+        # Find branch roll wrist
+        find_branch_roll_wrist_behavior = FindBranchRollWristControllerBehavior(
+            name="find_branch_roll_wrist_client",
         )
+        find_branch_roll_wrist_retry = py_trees.decorators.Retry(
+            name='find_branch_roll_wrist_retry',
+            child=find_branch_roll_wrist_behavior,
+            num_failures=3,
+        )
+        # find_branch_roll_wrist_blackboard = py_trees.decorators.StatusToBlackboard(
+        #     name='find_branch_roll_wrist_blackboard',
+        #     child=find_branch_roll_wrist_retry,
+        #     variable_name='find_branch_roll_wrist'
+        # )
 
         find_branch_selector = py_trees.composites.Selector( 
             name="find_branch_controller_selector",
             memory=True,
         )
 
+        # Find branch selector
         find_branch_selector.add_children([
-            find_branch_rotate_wrist_behavior
+            find_branch_roll_wrist_retry
+            # find_branch_roll_wrist_blackboard
         ])
 
         align_and_approach_sequence = py_trees.composites.Sequence(
@@ -160,11 +174,16 @@ class FinalApproachTreeNode(Node):
 
         # self.warn(self.tree.snapshot_visitor.visited)
 
-
         if behavior_tree.root.status == py_trees.common.Status.SUCCESS:
+            self.info(f"Exiting with status {behavior_tree.root.status}")
+            behavior_tree.shutdown()
+            sys.exit(0)
+        elif behavior_tree.root.status == py_trees.common.Status.FAILURE:
+            self.error(f"Exiting with status {behavior_tree.root.status}")
             behavior_tree.shutdown()
             sys.exit(0)
         
+            
         return
         
     def cli_arg_parser(self) -> argparse.ArgumentParser:

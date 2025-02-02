@@ -42,18 +42,17 @@ import modern_robotics as mr
 import numpy as np
 import scipy.optimize as so
 from scipy.spatial.transform import Rotation
-import sklearn.linear_model as sklm
-import sklearn.preprocessing as skpp
-import sklearn.metrics as skm
+
 from threading import Event, Lock
 import traceback
 import plotly.graph_objects as go
+
 # import copy
 
 
 class FindBranchRollWristController(TFNode):
     def __init__(self):
-        super().__init__(node_name="find_branch_roll_wrist_controller", cache_time=Duration(seconds=20))
+        super().__init__(node_name="find_branch_roll_wrist_controller", cache_time=Duration(seconds=30))
         self.info = lambda x: self.get_logger().info(f"\n{x}")
         self.warn = lambda x: self.get_logger().warn(f"\n{x}")
         self.error = lambda x: self.get_logger().error(f"\n{x}")
@@ -69,16 +68,19 @@ class FindBranchRollWristController(TFNode):
         self._servo_controller = "forward_position_controller"
 
         self._param_robot_base_part: str = (
-            self.declare_parameter(name='robot_base_part', value=Parameter.Type.STRING).get_parameter_value().string_value
+            self.declare_parameter(name="robot_base_part", value=Parameter.Type.STRING)
+            .get_parameter_value()
+            .string_value
         )
 
         self._param_robot_eef_part: str = (
-            self.declare_parameter(name='robot_eef_part', value=Parameter.Type.STRING).get_parameter_value().string_value
+            self.declare_parameter(name="robot_eef_part", value=Parameter.Type.STRING)
+            .get_parameter_value()
+            .string_value
         )
 
         # self.error(f"{self._param_robot_base_part}")
         # self.error(f"{self._param_robot_eef_part}")
-
 
         # Threading locks
         self._data_lock = Lock()
@@ -141,10 +143,10 @@ class FindBranchRollWristController(TFNode):
         # Subscribers
         self._sub_tof_raw = self.create_subscription(
             msg_type=Vl6180,
-            topic='/microROS/vl6180/data',
+            topic="/microROS/vl6180/data",
             callback=self._sub_cb_tof_raw,
             callback_group=self._reentrant_cb_group,
-            qos_profile=1
+            qos_profile=1,
         )
         self._sub_tof_filtered = self.create_subscription(
             msg_type=Vl6180FilteredStamped,
@@ -201,7 +203,7 @@ class FindBranchRollWristController(TFNode):
         if _param_use_mock_hardware:
             self.max_angular_vel = np.pi / 16
         else:
-            self.max_angular_vel = np.pi / 16 * 10 # For some reason the UR5e scales down servoing movement very hard?
+            self.max_angular_vel = np.pi / 16 * 10  # For some reason the UR5e scales down servoing movement very hard?
 
         # self.max_angular_vel = np.pi / 2
 
@@ -246,7 +248,10 @@ class FindBranchRollWristController(TFNode):
             self.error(f"Servo failed to start")
 
         self.start_controller_tf = self.lookup_transform(
-            target_frame=f"{self._param_robot_base_part}__base", source_frame=f"{self._param_robot_eef_part}__tool0", sync=True, as_matrix=True
+            target_frame=f"{self._param_robot_base_part}__base",
+            source_frame=f"{self._param_robot_eef_part}__tool0",
+            sync=True,
+            as_matrix=True,
         )
         with self._timer_lock:
             # if self._timer_run_quadratic_fit is None:
@@ -338,8 +343,8 @@ class FindBranchRollWristController(TFNode):
                         self.rotations_complete = True
 
                         # with self._timer_lock:
-                            # if not self._timer_run_quadratic_fit.is_canceled():
-                            #     self._timer_run_quadratic_fit.cancel()
+                        # if not self._timer_run_quadratic_fit.is_canceled():
+                        #     self._timer_run_quadratic_fit.cancel()
                         self.publish_zero_twist()
                         self.info("Branch readings found for both ToFs!")
 
@@ -375,7 +380,7 @@ class FindBranchRollWristController(TFNode):
                                 self.pos_rot_complete = True
                                 self.publish_zero_twist()
 
-                        with self._servo_msg_lock: # TODO: Fill out once
+                        with self._servo_msg_lock:  # TODO: Fill out once
                             self.msg_twist.twist.linear.x = 0.0
                             self.msg_twist.twist.linear.y = 0.0
                             self.msg_twist.twist.linear.z = 0.0
@@ -482,7 +487,7 @@ class FindBranchRollWristController(TFNode):
                             # self.warn(f"VEC:\n{tof1_vec_base_frame}")
                             tof0_vec_base_frame = tof0_vec_base_frame.flatten()[0:3]
                             tof1_vec_base_frame = tof1_vec_base_frame.flatten()[0:3]
-                            self.warn(tof0_vec_base_frame)
+                            # self.warn(tof0_vec_base_frame)
 
                             # Get the centerpoint of these two points.
                             branch_center_point = np.mean([tof0_vec_base_frame, tof1_vec_base_frame], axis=0)  # C
@@ -491,7 +496,6 @@ class FindBranchRollWristController(TFNode):
                             # Get closest point on a circle from point, given circle center,
                             # point, plane normal
                             # https://www.geometrictools.com/Documentation/DistanceToCircle3.pdf
-                            world_z = [0, 0, 1]
 
                             branch_vec = tof0_vec_base_frame - tof1_vec_base_frame
                             branch_vec_normalized = branch_vec / np.linalg.norm(branch_vec)  # N
@@ -532,7 +536,9 @@ class FindBranchRollWristController(TFNode):
                             ######################################################################################
                             if self.debug_plot:
                                 fig = go.Figure()
-                                fig.add_trace(go.Scatter3d(x=[0], y=[0], z=[0], name=f"{self._param_robot_base_part}__base"))
+                                fig.add_trace(
+                                    go.Scatter3d(x=[0], y=[0], z=[0], name=f"{self._param_robot_base_part}__base")
+                                )
                                 fig.add_trace(
                                     go.Scatter3d(
                                         x=[tof0_vec_base_frame[0]],
@@ -621,22 +627,6 @@ class FindBranchRollWristController(TFNode):
                                     result.success = False
                                     self.error("Failed to navigate to pose where both sensors can read the branch.")
 
-                            # if move_group_response.result:
-                            #     goal_handle.succeed()
-                            #     result.success = True
-                            # else:
-                            #     goal_handle.abort()
-                            #     result.success = False
-
-                            ####################################################################################
-                            # future.add_done_callback(self._action_client_move_group_done_cb)
-                            # get angle between the two to determine direction
-                            # np.dot()
-                            # self.warn(dir_vec)
-                            # TODO: need initial edge case where a ToF is reading at the start of the controller so that we save it's position and don't need to fit (also avoid poor parabola fit)
-
-                            # self.warn(branch_center_point)
-
                             self.controller_running = False
                             return result
             ############################################################################################################
@@ -649,9 +639,9 @@ class FindBranchRollWristController(TFNode):
             # self._timer_run_controller.cancel()
             self.publish_zero_twist()
             # with self._timer_lock:
-                # if self._timer_run_quadratic_fit is not None:
-                #     if not self._timer_run_quadratic_fit.is_canceled():
-                #         self._timer_run_quadratic_fit.cancel()
+            # if self._timer_run_quadratic_fit is not None:
+            #     if not self._timer_run_quadratic_fit.is_canceled():
+            #         self._timer_run_quadratic_fit.cancel()
 
             self.reset_controller()
             self.info("FindBranchRollWristController has terminated.")
@@ -663,21 +653,18 @@ class FindBranchRollWristController(TFNode):
             else:
                 self.error(f"Servo failed to stop.")
 
-            
             switch_ctrlr_req = SwitchController.Request(
                 activate_controllers=[self._servo_controller],
                 deactivate_controllers=[self._move_group_controller],
-                strictness=SwitchController.Request.STRICT
+                strictness=SwitchController.Request.STRICT,
             )
-            switch_ctrlr_future: Future = self._srv_switch_ctrls.call_async(
-                request=switch_ctrlr_req
-            )
+            switch_ctrlr_future: Future = self._srv_switch_ctrls.call_async(request=switch_ctrlr_req)
             await switch_ctrlr_future
             if switch_ctrlr_future.result().ok:
                 self.info("Successfully switched controllers")
             else:
                 self.error("Failed to switch controllers,")
-                
+
         return result
 
     def _action_goal_cb_run_find_branch_roll_wrist(self, goal_handle: ServerGoalHandle):
@@ -759,7 +746,8 @@ class FindBranchRollWristController(TFNode):
                 timestamp_readings_tof0_copy = list(self.timestamp_readings_tof0)
                 d_tof0_readings_raw_copy = list(self.d_tof0_raw_readings)
                 d_tof0_readings_copy = list(self.d_tof0_readings)
-            tof0_time_and_dist = self.get_branch_center_time_and_distance(
+            tof0_time_and_dist = cf.get_branch_center_time_and_distance(
+                node=self,
                 raw_timestamps=timestamp_readings_tof0_raw_copy,
                 filtered_timestamps=timestamp_readings_tof0_copy,
                 raw_readings=d_tof0_readings_raw_copy,
@@ -782,7 +770,8 @@ class FindBranchRollWristController(TFNode):
                 timestamp_readings_tof1_copy = list(self.timestamp_readings_tof1)
                 d_tof1_readings_raw_copy = list(self.d_tof1_raw_readings)
                 d_tof1_readings_copy = list(self.d_tof1_readings)
-            tof1_time_and_dist = self.get_branch_center_time_and_distance(
+            tof1_time_and_dist = cf.get_branch_center_time_and_distance(
+                node=self,
                 raw_timestamps=timestamp_readings_tof1_raw_copy,
                 filtered_timestamps=timestamp_readings_tof1_copy,
                 raw_readings=d_tof1_readings_raw_copy,
@@ -797,7 +786,6 @@ class FindBranchRollWristController(TFNode):
         else:
             self.info("Branch already detected by tof1. Skipping.")
         return
-
 
     def _timer_cb_debug(self):
         return
@@ -891,89 +879,12 @@ class FindBranchRollWristController(TFNode):
             self.msg_twist.twist.angular.x = 0.0
             self.msg_twist.twist.angular.y = 0.0
             self.msg_twist.twist.angular.z = 0.0
-            self.msg_twist.header.frame_id = f"{self._param_robot_eef_part}__tool0"  # TODO: if changing to EEF, change ur_servo.yaml
+            self.msg_twist.header.frame_id = (
+                f"{self._param_robot_eef_part}__tool0"  # TODO: if changing to EEF, change ur_servo.yaml
+            )
             self.msg_twist.header.stamp = self.get_clock().now().to_msg()
             self._pub_servo.publish(self.msg_twist)
         return
-
-    def get_branch_center_time_and_distance(
-        self, raw_timestamps, filtered_timestamps, raw_readings, filtered_readings, sensor_name: str, debug_plot: bool = False
-    ):
-        # Clean data
-        try:
-            readings_plane_filtered = np.where(np.asarray(filtered_readings) < self.vl6180_far_plane, filtered_readings, np.nan)
-            timestamps_filtered = np.where(np.isnan(readings_plane_filtered), np.nan, np.asarray(filtered_timestamps))
-            readings_plane_filtered = readings_plane_filtered[~np.isnan(readings_plane_filtered)]
-            timestamps_filtered = timestamps_filtered[~np.isnan(timestamps_filtered)]
-            normalized_timestamps_filtered = timestamps_filtered - timestamps_filtered[0]
-        except IndexError:
-            self.info(f"No branch found for {sensor_name}")
-            return None
-        
-        # Define RANSAC regressor
-        ransac = sklm.RANSACRegressor(
-            estimator=sklm.LinearRegression(),
-            max_trials=100,
-            min_samples=50,
-            residual_threshold=0.004
-        )
-
-        # Fit RANSAC model to data
-        quadratic = skpp.PolynomialFeatures(degree=2)
-        x_quad = quadratic.fit_transform(X=normalized_timestamps_filtered[:,np.newaxis])
-        ransac = ransac.fit(X=x_quad, y=readings_plane_filtered)
-
-        # Get fitted curve
-        t_fit = np.linspace(
-            min(normalized_timestamps_filtered),
-            max(normalized_timestamps_filtered),
-            len(normalized_timestamps_filtered),
-        )
-        y_fit = ransac.predict(quadratic.fit_transform(t_fit[:,np.newaxis]))
-
-        # Get r**2 value
-        fit_r2 = skm.r2_score(
-            y_true=readings_plane_filtered,
-            y_pred=ransac.predict(x_quad)
-        )
-
-        self.warn(f"{sensor_name} r^2: {fit_r2}")
-
-        idx_min = np.argmin(y_fit)
-        timestamp_min = timestamps_filtered[idx_min]
-        fit_min = float(y_fit[idx_min])
-        split_time = np.modf(timestamp_min)
-        time_center = Time(seconds=int(split_time[1]), nanoseconds=split_time[0] * 1e9)
-
-        
-
-        if debug_plot:
-            fig = go.Figure()
-            fig.add_trace(
-                go.Scatter(
-                    x=normalized_timestamps_filtered,
-                    y=readings_plane_filtered,
-                    name="filtered_data",
-                )
-            )
-            fig.add_trace(go.Scatter(x=t_fit, y=y_fit, name="RANSAC fit"))
-            fig.add_trace(go.Scatter(x=np.asarray(raw_timestamps) - raw_timestamps[0], y=raw_readings, name='raw_sensor_data'))
-            fig.add_trace(go.Scatter(x=np.asarray(filtered_timestamps) - filtered_timestamps[0], y=filtered_readings, name="MAF_data"))
-
-            # Plot ransac masked data
-            inlier_mask = ransac.inlier_mask_
-            outlier_mask = np.logical_not(inlier_mask)
-            fig.add_trace(go.Scatter(x=normalized_timestamps_filtered[inlier_mask], y=readings_plane_filtered[inlier_mask], name="inliers"))
-            fig.add_trace(go.Scatter(x=normalized_timestamps_filtered[outlier_mask], y=readings_plane_filtered[outlier_mask], name="outliers"))
-            fig.update_layout(title=dict(text=sensor_name))
-            fig.show()
-
-
-        if time_center:
-            self.info(f"Branch found at distance {fit_min} at time {timestamp_min} for {sensor_name}")
-
-        return time_center, fit_min
-
 
 
 def main():
