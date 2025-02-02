@@ -11,6 +11,7 @@ from final_approach_controller.tf_node import TFNode
 
 from final_approach_controller_msgs.action import RunCutPointRotateAxis
 from geometry_msgs.msg import TwistStamped
+from std_srvs.srv import Trigger
 from vl6180_msgs.msg import Vl6180FilteredStamped
 
 import modern_robotics as mr
@@ -41,6 +42,16 @@ class CutPointRotateAxisController(TFNode):
             # handle_accepted_callback=self._action_handle_accepted_cb_run_final_approach,
             callback_group=self.callback_group,
         )
+
+        # Service clients
+        self._srv_client_start_servo = self.create_client(
+            srv_type=Trigger, srv_name="/servo_node/start_servo", callback_group=self.callback_group
+        )
+        self._srv_client_start_servo.wait_for_service()
+        self._srv_client_stop_servo = self.create_client(
+            srv_type=Trigger, srv_name="/servo_node/stop_servo", callback_group=self.callback_group
+        )
+        self._srv_client_stop_servo.wait_for_service()
 
         # Subscribers
         self._sub_tof_filtered = self.create_subscription(
@@ -94,6 +105,12 @@ class CutPointRotateAxisController(TFNode):
     def _action_exe_cb_run_cut_point_rotate_axis(self, goal_handle: ServerGoalHandle):
         """TODO: This is the same as final_approach_controller, let the high level controller do this in the future"""
         self.controller_running = True
+        start_servo_resp: Trigger.Response = self._srv_client_start_servo.call(request=Trigger.Request())
+        if start_servo_resp.success:
+            self.info(f"Servo started")
+        else:
+            self.error(f"Servo failed to start")
+            
         if self._timer_run_controller is None:
             self._timer_run_controller = self.create_timer(
                 timer_period_sec=1 / 30, callback=self._timer_cb_run_controller, callback_group=self.callback_group
@@ -127,6 +144,11 @@ class CutPointRotateAxisController(TFNode):
         except Exception as e:
             self.get_logger().fatal(f"{e}")
         finally:
+            stop_servo_resp: Trigger.Response = self._srv_client_stop_servo.call(request=Trigger.Request())
+            if stop_servo_resp.success:
+                self.info(f"Servo stopped.")
+            else:
+                self.error(f"Servo failed to stop.")
             self._timer_run_controller.cancel()
         return result
 
@@ -171,6 +193,7 @@ class CutPointRotateAxisController(TFNode):
         self._tof_linear_distance = np.linalg.norm(tof0_to_tof1_pos_vec)
         if not np.all(np.isclose(self.tf_tof0_to_tof1[:3, :3], np.identity(3), atol=1e-3)):
             raise ValueError("The two ToF frames are not aligned with each other.")
+        self.warn(f"\n{mr.TransInv(self.tf_mp_cut_point_to_base)}")
         return
 
     def _timer_cb_run_controller(self):

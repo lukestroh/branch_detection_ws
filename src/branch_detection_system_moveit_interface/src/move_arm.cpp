@@ -90,7 +90,7 @@ void MoveArmNode::cartesian_move_to_pose(
 
     RCLCPP_INFO(this->get_logger(), "Cartesian path plan percentage: %.2f", fraction_planned);
 
-    if (fraction_planned > 0.95) {
+    if (fraction_planned > 0.90) {
         moveit::planning_interface::MoveGroupInterface::Plan goal;
         goal.trajectory_ = trajectory;
         this->move_group_.execute(goal);

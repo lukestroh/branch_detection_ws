@@ -2,7 +2,7 @@
 import rclpy
 from rclpy.action import ActionServer, CancelResponse, GoalResponse
 from rclpy.action.server import ServerGoalHandle
-from rclpy.callback_groups import ReentrantCallbackGroup
+from rclpy.callback_groups import ReentrantCallbackGroup, MutuallyExclusiveCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.duration import Duration
 from rclpy.time import Time
@@ -14,6 +14,7 @@ from final_approach_controller.tf_node import TFNode
 from final_approach_controller_msgs.action import RunFinalApproach
 from final_approach_controller_msgs.srv import StartFinalApproach
 from geometry_msgs.msg import TwistStamped
+from std_srvs.srv import Trigger
 from vl6180_msgs.msg import Vl6180FilteredStamped
 
 
@@ -35,8 +36,9 @@ class FinalApproachControllerNode(TFNode):
 
         # Callback group
         self.callback_group = ReentrantCallbackGroup()  # allows for subscriber to persist in service, action
+        self._cb_group_servo_controller = MutuallyExclusiveCallbackGroup()
 
-        # Actions
+        # Action servers
         self._action_svr_run_final_appoach = ActionServer(
             node=self,
             action_type=RunFinalApproach,
@@ -48,13 +50,23 @@ class FinalApproachControllerNode(TFNode):
             callback_group=self.callback_group,
         )
 
-        # Services
+        # Service servers
         self._srv_start_final_approach = self.create_service(
             srv_name="final_approach_controller/start_final_approach",
             srv_type=StartFinalApproach,
             callback=self._srv_cb_start_final_approach,
             callback_group=self.callback_group,
         )
+
+        # Service clients
+        self._srv_client_start_servo = self.create_client(
+            srv_type=Trigger, srv_name="/servo_node/start_servo", callback_group=self.callback_group
+        )
+        self._srv_client_start_servo.wait_for_service()
+        self._srv_client_stop_servo = self.create_client(
+            srv_type=Trigger, srv_name="/servo_node/stop_servo", callback_group=self.callback_group
+        )
+        self._srv_client_stop_servo.wait_for_service()
 
         # Subscribers
         self._sub_tof_filtered = self.create_subscription(
@@ -109,18 +121,25 @@ class FinalApproachControllerNode(TFNode):
 
     def _action_exe_cb_run_final_approach(self, goal_handle: ServerGoalHandle):
         self.controller_running = True
+        start_servo_resp: Trigger.Response = self._srv_client_start_servo.call(request=Trigger.Request())
+        if start_servo_resp.success:
+            self.info(f"Servo started")
+        else:
+            self.error(f"Servo failed to start")
+            
         if self._timer_run_controller is None:
             self._timer_run_controller = self.create_timer(
-                timer_period_sec=1 / 30, callback=self._timer_cb_run_controller, callback_group=self.callback_group
+                timer_period_sec=1 / 30,
+                callback=self._timer_cb_run_controller,
+                callback_group=self._cb_group_servo_controller,
             )
         else:
             self._timer_run_controller.reset()
 
+        feedback_msg = RunFinalApproach.Feedback()
+        result = RunFinalApproach.Result()
+
         try:
-
-            feedback_msg = RunFinalApproach.Feedback()
-            result = RunFinalApproach.Result()
-
             while self.controller_running:
                 if goal_handle.is_cancel_requested:
                     goal_handle.canceled()
@@ -143,9 +162,16 @@ class FinalApproachControllerNode(TFNode):
 
         except Exception as e:
             self.get_logger().fatal(f"{e}")
+            goal_handle.abort()
+            result.success = False
         finally:
             self._timer_run_controller.cancel()
-        return result
+            stop_servo_resp: Trigger.Response = self._srv_client_stop_servo.call(request=Trigger.Request())
+            if stop_servo_resp.success:
+                self.info(f"Servo stopped.")
+            else:
+                self.error(f"Servo failed to stop.")
+            return result
 
     def _action_goal_cb_run_final_approach(self, goal_handle: ServerGoalHandle):
         self.info("Received goal request")
@@ -200,7 +226,7 @@ class FinalApproachControllerNode(TFNode):
             or (dist_cut_point_to_branch) < 0
         ):
             self.publish_zero_twist()
-            
+
             self.info(f"Reached terminating point at dist:{dist}, theta: {theta}")
             self._timer_run_controller.cancel()
             self.controller_running = False

@@ -4,10 +4,10 @@
   <!-- robot name parameter -->
   <xacro:arg name="name" default="ur"/>
   <!-- parameters -->
-  <xacro:arg name="prefix" default="ur5e__" />
+  <xacro:arg name="ur_prefix" default="ur5e__" />
 
-  <xacro:include filename="$(find branch_detection_system_moveit_config)/srdf/robot_macro.srdf.xacro"/>
+  <xacro:include filename="$(find branch_detection_system_moveit_config)/srdf/robot_amiga_macro.srdf.xacro"/>
 
-  <xacro:ur_srdf name="$(arg name)" prefix="$(arg prefix)"/>
+  <xacro:ur_srdf name="$(arg name)" arm_prefix="$(arg ur_prefix)"/>
 
 </robot>

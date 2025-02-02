@@ -20,9 +20,11 @@ from filterpy.kalman import KalmanFilter
 from filterpy.common import Q_discrete_white_noise
 
 from array import array
+from collections import deque
 import numpy as np
 import json
 import os
+import scipy.signal as si
 from typing import List, Sequence
 from numpy.typing import NDArray
 
@@ -66,6 +68,7 @@ class VL6180FilterNode(Node):
             .get_parameter_value()
             .double_value
         )
+        
         self.depth_width = (
             self.declare_parameter(name="depth.width", value=Parameter.Type.INTEGER).get_parameter_value().integer_value
         )
@@ -104,23 +107,12 @@ class VL6180FilterNode(Node):
         self.vl6180_msg_raw.data = [0,0]
         self.vl6180_msg_filtered = Vl6180FilteredStamped()
         self.vl6180_msg_filtered.data = [0.0, 0.0]
-        # self.frame_size = (self.vl6180_msg_raw.config.col.size, self.vl6180_msg_raw.config.row.size)
-        # self.frame_size = (1,1)
-        # self.ranging_mode = 8 # 8x8 ranging mode.
-        self.kalmans = np.empty(self.depth_width * self.depth_height * 2, dtype=KalmanFilter)
-        self.covariance = float(json_covariances["black"])
-        self.measurement_noise = 15.0
-        self.initial_err = 1000.0
+       
 
-        for i, val in enumerate(self.vl6180_msg_raw.data):
-            kalman = KalmanFilter(dim_x=2, dim_z=1)
-            kalman.x = np.array([[val, 0]]).transpose()
-            kalman.F = np.array([[1, 1], [0, 1]])
-            kalman.H = np.array([[1, 0]])
-            kalman.P = np.identity(kalman.dim_x) * self.initial_err
-            kalman.R = self.measurement_noise
-            kalman.Q = Q_discrete_white_noise(dim=2, dt=0.1, var=self.covariance)
-            self.kalmans[i] = kalman
+        self.deque_size = 20
+        self.deques = [deque([self.RANGING_MAX] * self.deque_size), deque([self.RANGING_MAX] * self.deque_size)]
+
+
 
         # self.info(self.kalmans)
         return
@@ -131,12 +123,20 @@ class VL6180FilterNode(Node):
         """
         self.vl6180_msg_raw = msg
 
+        # self.info(self.deques)
+        # self.warn(self.depth_near_plane)
+
         try:
-            for i in range(self.depth_width * self.depth_height * 2): # TODO: hacky, this represents two sensors. Fix.
-                if msg.data[i] != self.RANGING_ERR or msg.data[i] < self.RANGING_MAX:
-                    self.kalmans[i].predict()
-                    self.kalmans[i].update(self.vl6180_msg_raw.data[i])
-                    self.vl6180_msg_filtered.data[i] = self.kalmans[i].x[0, 0]
+            for i in range(2): # TODO: hacky, this represents two sensors. Fix.
+                if (msg.data[i] == self.RANGING_ERR) or (msg.data[i] == 0): 
+                    # TODO: This is bad logic, need an and...
+                    pass
+                else:
+                    # self.warn(msg.data[0])
+
+                    self.deques[i].popleft()
+                    self.deques[i].append(self.vl6180_msg_raw.data[i])
+                    self.vl6180_msg_filtered.data[i] = np.mean(self.deques[i])
 
             # self.vl6180_msg_filtered.header.frame_id = "vl6180_0" # TODO: need two nodes or publishers for two separate frames
             self.vl6180_msg_filtered.header.stamp = self.get_clock().now().to_msg()

@@ -8,12 +8,12 @@ scaled_joint_trajectory_controller:
   type: FollowJointTrajectory
   default: true
   joints:
-    - ur5e__shoulder_pan_joint
-    - ur5e__shoulder_lift_joint
-    - ur5e__elbow_joint
-    - ur5e__wrist_1_joint
-    - ur5e__wrist_2_joint
-    - ur5e__wrist_3_joint
+    - $(var ur_prefix)shoulder_pan_joint
+    - $(var ur_prefix)shoulder_lift_joint
+    - $(var ur_prefix)elbow_joint
+    - $(var ur_prefix)wrist_1_joint
+    - $(var ur_prefix)wrist_2_joint
+    - $(var ur_prefix)wrist_3_joint
 
 
 joint_trajectory_controller:
@@ -21,9 +21,9 @@ joint_trajectory_controller:
   type: FollowJointTrajectory
   default: false
   joints:
-    - ur5e__shoulder_pan_joint
-    - ur5e__shoulder_lift_joint
-    - ur5e__elbow_joint
-    - ur5e__wrist_1_joint
-    - ur5e__wrist_2_joint
-    - ur5e__wrist_3_joint
+    - $(var ur_prefix)shoulder_pan_joint
+    - $(var ur_prefix)shoulder_lift_joint
+    - $(var ur_prefix)elbow_joint
+    - $(var ur_prefix)wrist_1_joint
+    - $(var ur_prefix)wrist_2_joint
+    - $(var ur_prefix)wrist_3_joint

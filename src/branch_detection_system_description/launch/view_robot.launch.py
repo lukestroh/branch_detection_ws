@@ -10,12 +10,26 @@ from launch.substitutions import (
     PathJoinSubstitution,
 )
 from launch_ros.actions import Node
-
+from moveit_configs_utils import MoveItConfigsBuilder, MoveItConfigs
 import os
 
 import rclpy.logging
 
 logger = rclpy.logging.get_logger("view_robot.launch")
+
+
+def launch_setup(context: LaunchContext, *args, **kwargs):
+    mcb = MoveItConfigsBuilder(
+        robot_name="branch_detection_system", package_name="branch_detection_system_moveit_config"
+    )
+    mcb.robot_description(
+        file_path=os.path.join(
+            get_package_share_directory("branch_detection_system_description"), "urdf/robot/robot.urdf.xacro"
+        ),
+        mappings=_mappings,
+    )
+
+    return
 
 
 def generate_launch_description():

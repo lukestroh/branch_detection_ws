@@ -1,0 +1,69 @@
+<?xml version='1.0' encoding='utf-8'?>
+<robot name="pruning_robot">
+  <group name="ur5e__pruning_robot_manipulator">
+    <chain base_link="amiga__base" tip_link="mock_pruner__tool0" />
+    <end_effector group="ur5e__pruning_robot_manipulator" name="mock_pruner__eef" parent_link="mock_pruner__tool0" />
+  </group>
+  <group_state group="ur5e__pruning_robot_manipulator" name="ur5e__home">
+    <joint name="ur5e__elbow_joint" value="0" />
+    <joint name="ur5e__shoulder_lift_joint" value="-1.5707" />
+    <joint name="ur5e__shoulder_pan_joint" value="0" />
+    <joint name="ur5e__wrist_1_joint" value="0" />
+    <joint name="ur5e__wrist_2_joint" value="0" />
+    <joint name="ur5e__wrist_3_joint" value="0" />
+  </group_state>
+  <group_state group="ur5e__pruning_robot_manipulator" name="ur5e__up">
+    <joint name="ur5e__elbow_joint" value="0" />
+    <joint name="ur5e__shoulder_lift_joint" value="-1.5707" />
+    <joint name="ur5e__shoulder_pan_joint" value="0" />
+    <joint name="ur5e__wrist_1_joint" value="-1.5707" />
+    <joint name="ur5e__wrist_2_joint" value="0" />
+    <joint name="ur5e__wrist_3_joint" value="0" />
+  </group_state>
+  <group_state group="ur5e__pruning_robot_manipulator" name="ur5e__test_configuration">
+    <joint name="ur5e__elbow_joint" value="1.4" />
+    <joint name="ur5e__shoulder_lift_joint" value="-1.62" />
+    <joint name="ur5e__shoulder_pan_joint" value="1.54" />
+    <joint name="ur5e__wrist_1_joint" value="-1.2" />
+    <joint name="ur5e__wrist_2_joint" value="-1.6" />
+    <joint name="ur5e__wrist_3_joint" value="-0.11" />
+  </group_state>
+  <disable_collisions link1="amiga__body" link2="ur5e__base_link_inertia" reason="Never" />
+  <disable_collisions link1="amiga__body" link2="ur5e__base_link" reason="Never" />
+  <disable_collisions link1="amiga__tool0" link2="ur5e__base_link_inertia" reason="Never" />
+  <disable_collisions link1="amiga__tool0" link2="ur5e__base_link" reason="Never" />
+  <disable_collisions link1="ur5e__base_link" link2="ur5e__base_link_inertia" reason="Adjacent" />
+  <disable_collisions link1="ur5e__base_link_inertia" link2="ur5e__shoulder_link" reason="Adjacent" />
+  <disable_collisions link1="ur5e__tool0" link2="ur5e__wrist_1_link" reason="Never" />
+  <disable_collisions link1="ur5e__tool0" link2="ur5e__wrist_2_link" reason="Never" />
+  <disable_collisions link1="ur5e__tool0" link2="ur5e__wrist_3_link" reason="Adjacent" />
+  <disable_collisions link1="ur5e__forearm_link" link2="ur5e__upper_arm_link" reason="Adjacent" />
+  <disable_collisions link1="ur5e__forearm_link" link2="ur5e__wrist_1_link" reason="Adjacent" />
+  <disable_collisions link1="ur5e__shoulder_link" link2="ur5e__upper_arm_link" reason="Adjacent" />
+  <disable_collisions link1="ur5e__wrist_1_link" link2="ur5e__wrist_2_link" reason="Adjacent" />
+  <disable_collisions link1="ur5e__wrist_1_link" link2="ur5e__wrist_3_link" reason="Never" />
+  <disable_collisions link1="ur5e__wrist_2_link" link2="ur5e__wrist_3_link" reason="Adjacent" />
+  <disable_collisions link1="rotation_correction_plate__base" link2="ur5e__tool0" reason="Adjacent" />
+  <disable_collisions link1="rotation_correction_plate__base" link2="ur5e__wrist_3_link" reason="Never" />
+  <disable_collisions link1="rotation_correction_plate__body" link2="ur5e__tool0" reason="Adjacent" />
+  <disable_collisions link1="rotation_correction_plate__body" link2="ur5e__wrist_3_link" reason="Never" />
+  <disable_collisions link1="rotation_correction_plate__body" link2="dovetail_male_mount__base" reason="Adjacent" />
+  <disable_collisions link1="rotation_correction_plate__body" link2="dovetail_male_mount__body" reason="Never" />
+  <disable_collisions link1="rotation_correction_plate__tool0" link2="dovetail_male_mount__base" reason="Adjacent" />
+  <disable_collisions link1="rotation_correction_plate__tool0" link2="dovetail_male_mount__body" reason="Never" />
+  <disable_collisions link1="dovetail_male_mount__base" link2="ur5e__tool0" reason="Never" />
+  <disable_collisions link1="dovetail_male_mount__base" link2="dovetail_male_mount__body" reason="Never" />
+  <disable_collisions link1="dovetail_male_mount__base" link2="dovetail_male_mount__tool0" reason="Never" />
+  <disable_collisions link1="dovetail_male_mount__body" link2="ur5e__tool0" reason="Never" />
+  <disable_collisions link1="dovetail_male_mount__body" link2="ur5e__wrist_3_link" reason="Never" />
+  <disable_collisions link1="dovetail_female_mount__base" link2="dovetail_male_mount__tool0" reason="Adjacent" />
+  <disable_collisions link1="dovetail_female_mount__base" link2="dovetail_male_mount__body" reason="Adjacent" />
+  <disable_collisions link1="dovetail_female_mount__body" link2="dovetail_male_mount__body" reason="Never" />
+  <disable_collisions link1="dovetail_female_mount__body" link2="dovetail_male_mount__tool0" reason="Never" />
+  <disable_collisions link1="dovetail_female_mount__body" link2="ur5e__wrist_3_link" reason="Never" />
+  <disable_collisions link1="dovetail_female_mount__body" link2="ur5e__tool0" reason="Never" />
+  <disable_collisions link1="mock_pruner__base" link2="dovetail_female_mount__tool0" reason="Adjacent" />
+  <disable_collisions link1="mock_pruner__base" link2="dovetail_female_mount__body" reason="Never" />
+  <disable_collisions link1="mock_pruner__base" link2="dovetail_male_mount__body" reason="Never" />
+  <disable_collisions link1="mock_pruner__base" link2="dovetail_male_mount__tool0" reason="Never" />
+</robot>
