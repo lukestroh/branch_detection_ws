@@ -27,6 +27,9 @@ logger = rclpy.logging.get_logger("ur_basic.launch")
 
 
 def launch_setup(context: LaunchContext, *args, **kwargs):
+    robot_base_part = LaunchConfiguration("robot_base_part")
+    robot_eef_part = LaunchConfiguration("robot_eef_part")
+
     activate_joint_controller = LaunchConfiguration("activate_joint_controller")
     launch_dashboard_client = LaunchConfiguration("launch_dashboard_client")
     launch_rviz = LaunchConfiguration("launch_rviz")
@@ -90,6 +93,7 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
             parent_child_mappings.update({f"parent{i}": "world"})
             # Set the robot's base part as a launch config to pass to nodes
             robot_base_part = SetLaunchConfiguration(name="robot_base_part", value=robot_part)
+            robot_base_part.execute(context=context)
         else:
             parent_child_mappings.update({f"parent{i}": robot_conf["robot_stack"][i - 1]})
         # Assign part frame ids
@@ -106,6 +110,7 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
     # Set the robot's end-effector part as a launch config to pass to the nodes
     else:
         robot_eef_part = SetLaunchConfiguration(name="robot_eef_part", value=robot_part)
+        robot_eef_part.execute(context=context)
 
     
     """Dynamically evaluate parameter files with their prefix names"""
@@ -393,21 +398,23 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
     )
 
     # MoveIt Servo
-    filepath_servo_config = PathJoinSubstitution(
+    _filepath_servo_config = PathJoinSubstitution(
         [
             get_package_share_directory("branch_detection_system_moveit_config"),
             "config",
             "ur_servo.yaml",
         ]
     )
-    parameterfile_servo_config = ParameterFile(filepath_servo_config, allow_substs=True)
-    parameterfile_servo_config.evaluate(context=context)
-    yamlcontent_servo_config = load_yaml(
-        package_name="branch_detection_system_moveit_config",
-        file_path=os.path.join("config", str(parameterfile_servo_config.param_file)),
-    )
-    # logger.warn(f"{servo_yaml_content}")
-    servo_params = dict(moveit_servo=yamlcontent_servo_config)
+    _parameterfile_servo_config = ParameterFile(_filepath_servo_config, allow_substs=True)
+    _parameterfile_servo_config.evaluate(context=context)
+    # yamlcontent_servo_config = load_yaml(
+    #     package_name="branch_detection_system_moveit_config",
+    #     file_path=os.path.join("config", str(parameterfile_servo_config.param_file)),
+    # )
+    with open(_parameterfile_servo_config.param_file) as f:
+        _yamlcontent_servo_config = yaml.safe_load(f)
+    logger.warn(f"{_yamlcontent_servo_config}")
+    servo_params = dict(moveit_servo=_yamlcontent_servo_config)
     node_servo = Node(
         package="moveit_servo",
         executable="servo_node_main",
