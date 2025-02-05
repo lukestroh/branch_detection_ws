@@ -1,9 +1,0 @@
-<root main_tree_to_execute="MainTree">
-    <BehaviorTree ID="MainTree">
-        <Sequence>
-            <SetBlackboard output_key="first_goal" value="" />
-            <ActionROS2 name="RunFinalApproachController" action_name="run_final_approach_controller_action" goal="{first_goal}"/>
-
-        </Sequence>
-    </BehaviorTree>
-</root>
