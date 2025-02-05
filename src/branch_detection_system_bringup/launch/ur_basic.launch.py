@@ -220,19 +220,19 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
     # logger.error(f"{moveit_configs.robot_description_semantic}")
     
     # ##############################################################
-    # # SAVE HARD-CODED URDF
-    # import xml.etree.ElementTree as ET
+    # SAVE HARD-CODED URDF
+    import xml.etree.ElementTree as ET
     
-    # et = ET.XML(moveit_configs.robot_description['robot_description'].value[0].perform(context))
-    # tree = ET.ElementTree(et)
-    # ET.indent(tree)
-    # tree.write("/home/luke/branch_detection_ws/src/branch_detection_system_description/urdf/tmp/robot.urdf", encoding='utf-8', xml_declaration=True)
+    et = ET.XML(moveit_configs.robot_description['robot_description'].value[0].perform(context))
+    tree = ET.ElementTree(et)
+    ET.indent(tree)
+    tree.write("/home/luke/branch_detection_ws/src/branch_detection_system_description/urdf/tmp/robot.urdf", encoding='utf-8', xml_declaration=True)
 
-    # # Save HARD-CODED SRDF
-    # et = ET.XML(moveit_configs.robot_description_semantic['robot_description_semantic'].value[0].perform(context))
-    # tree = ET.ElementTree(et)
-    # ET.indent(tree)
-    # tree.write("/home/luke/branch_detection_ws/src/branch_detection_system_moveit_config/srdf/tmp/robot.srdf", encoding='utf-8', xml_declaration=True)
+    # Save HARD-CODED SRDF
+    et = ET.XML(moveit_configs.robot_description_semantic['robot_description_semantic'].value[0].perform(context))
+    tree = ET.ElementTree(et)
+    ET.indent(tree)
+    tree.write("/home/luke/branch_detection_ws/src/branch_detection_system_moveit_config/srdf/tmp/robot.srdf", encoding='utf-8', xml_declaration=True)
 
 
     # ##############################################################
