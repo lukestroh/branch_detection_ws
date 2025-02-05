@@ -602,6 +602,8 @@ class FindBranchRollWristController(TFNode):
                             move_to_pose_req.goal.orientation.z = desired_orientation_quat[2]
                             move_to_pose_req.goal.orientation.w = desired_orientation_quat[3]
 
+                            input("Hit enter to continue algorithm.")
+                            
                             self.info("Sending goal")
                             
 
@@ -615,6 +617,7 @@ class FindBranchRollWristController(TFNode):
                             # rclpy.spin_until_future_complete(node=self, future=move_group_future)
 
                             self.info("Received response")
+                            
 
                             if move_group_future.result() is None or not move_group_future.result().result:
                                 goal_handle.abort()

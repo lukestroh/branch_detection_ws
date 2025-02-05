@@ -353,7 +353,7 @@ class FindBranchPitchWristController(TFNode):
                             # # rotate to the closest side
                             # if self.joint_states[-1] < 0 and self.joint_states[-1] > -1 * np.pi:
                             # negative angular rotation
-                            angular_z = -1 * self.max_angular_vel
+                            angular_x = -1 * self.max_angular_vel
                             if np.isclose(self.joint_states[2], -np.pi / 2, atol=0.05):
                                 # TODO: (long term) make sure wrist mount config is standard
                                 self.run_quadratic_fit()
@@ -374,7 +374,7 @@ class FindBranchPitchWristController(TFNode):
                         elif not self.pos_rot_complete:
                             # if self.joint_states[-1] > 0 and self.joint_states[-1] < np.pi:
                             # positive angular rotation
-                            angular_z = self.max_angular_vel
+                            angular_x = self.max_angular_vel
                             if np.isclose(self.joint_states[2], np.pi / 2, atol=0.05):
                                 self.run_quadratic_fit()
                                 self.pos_rot_complete = True
@@ -386,7 +386,7 @@ class FindBranchPitchWristController(TFNode):
                             self.msg_twist.twist.linear.z = 0.0
                             self.msg_twist.twist.angular.x = 0.0
                             self.msg_twist.twist.angular.y = 0.0
-                            self.msg_twist.twist.angular.z = angular_z
+                            self.msg_twist.twist.angular.z = angular_x
                             self.msg_twist.header.frame_id = f"{self._param_robot_eef_part}__tool0"
                             self.msg_twist.header.stamp = self.get_clock().now().to_msg()
 

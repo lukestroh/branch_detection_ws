@@ -34,6 +34,8 @@ def launch_setup(context, *args, **kwargs) -> list:
 
     # High-level launch configs
     record_bag = LaunchConfiguration('record_bag')
+    record_loc = LaunchConfiguration('record_loc')
+
 
     # Robot parts
     robot_base_part = LaunchConfiguration("robot_base_part")
@@ -127,11 +129,16 @@ def launch_setup(context, *args, **kwargs) -> list:
 
 
     # Recording data
+    _record_loc_str = record_loc.perform(context=context)
+    if _record_loc_str != "":
+        _record_loc = _record_loc_str + "__"
+    else:
+        _record_loc = _record_loc_str
     _filepath_bags = os.path.join(
         os.path.expanduser('~'),
         'branch_detection_ws',
         'bags',
-        f"bds_{dt.datetime.strftime(dt.datetime.now(), format=r'%Y%m%d_%H-%M-%S')}"
+        f"bds__{_record_loc}{dt.datetime.strftime(dt.datetime.now(), format=r'%Y%m%d_%H-%M-%S')}"
     )
     logger.error(record_bag.perform(context))
     _execute_process_record_bag = ExecuteProcess(
@@ -174,6 +181,7 @@ def launch_setup(context, *args, **kwargs) -> list:
 def generate_launch_description():
 
     declared_configs = [
+        dict(name='record_loc', default_value="", description="Optional string parameter describing the location of recording the bag."),
         dict(name="record_bag", default_value="false", choices=['true', 'false'], description=r"Records a bag file with format bds_{datetime}.sq3"),
         dict(name="headless_mode", default_value="true"),
         dict(name="microros_serial_port", default_value="/dev/ttyACM0", description="Port name for serial device."),
