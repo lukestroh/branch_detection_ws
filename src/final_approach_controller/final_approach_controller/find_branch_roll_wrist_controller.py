@@ -530,7 +530,7 @@ class FindBranchRollWristController(TFNode):
                             rot_mat = np.column_stack(
                                 (branch_vec_normalized, desired_y_axis, desired_orientation_vec_to_branch_norm)
                             )
-                            desired_orientation_rot = Rotation.from_matrix(matrix=rot_mat)
+                            desired_orientation_rot = Rotation.from_matrix(rot_mat)
                             desired_orientation_quat = desired_orientation_rot.as_quat()
 
                             ######################################################################################
