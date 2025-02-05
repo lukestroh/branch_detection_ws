@@ -13,7 +13,7 @@ from rclpy.qos import QoSProfile
 import final_approach_controller.plotly_helpers as ph
 
 from branch_detection_system_moveit_msgs.srv import MoveToPose
-from final_approach_controller_msgs.action import RunFindBranchRollWrist
+from final_approach_controller_msgs.action import RunFindBranchPitchWrist
 from final_approach_controller_msgs.msg import ToFBranchFitStamped
 import final_approach_controller.curve_fitting as cf
 from final_approach_controller.tf_node import TFNode
@@ -50,9 +50,9 @@ import plotly.graph_objects as go
 # import copy
 
 
-class FindBranchRollWristController(TFNode):
+class FindBranchPitchWristController(TFNode):
     def __init__(self):
-        super().__init__(node_name="find_branch_roll_wrist_controller", cache_time=Duration(seconds=30))
+        super().__init__(node_name="find_branch_pitch_wrist_controller", cache_time=Duration(seconds=30))
         self.info = lambda x: self.get_logger().info(f"\n{x}")
         self.warn = lambda x: self.get_logger().warn(f"\n{x}")
         self.error = lambda x: self.get_logger().error(f"\n{x}")
@@ -94,13 +94,13 @@ class FindBranchRollWristController(TFNode):
         self._pub_servo_cb_group = MutuallyExclusiveCallbackGroup()
 
         # Action servers
-        self._action_svr_run_find_branch_roll_wrist = ActionServer(
+        self._action_svr_run_find_branch_pitch_wrist = ActionServer(
             node=self,
-            action_type=RunFindBranchRollWrist,
-            action_name="run_find_branch_roll_wrist",
-            goal_callback=self._action_goal_cb_run_find_branch_roll_wrist,
-            cancel_callback=self._action_cancel_cb_run_find_branch_roll_wrist,
-            execute_callback=self._action_exe_cb_run_find_branch_roll_wrist,
+            action_type=RunFindBranchPitchWrist,
+            action_name="run_find_branch_pitch_wrist",
+            goal_callback=self._action_goal_cb_run_find_branch_pitch_wrist,
+            cancel_callback=self._action_cancel_cb_run_find_branch_pitch_wrist,
+            execute_callback=self._action_exe_cb_run_find_branch_pitch_wrist,
             callback_group=self._reentrant_cb_group,
         )
 
@@ -175,7 +175,7 @@ class FindBranchRollWristController(TFNode):
         # Fit data publisher
         self._pub_fit = self.create_publisher(
             msg_type=ToFBranchFitStamped,
-            topic="find_branch_roll_wrist/tof_branch_fit",
+            topic="find_branch_pitch_wrist/tof_branch_fit",
             callback_group=self._reentrant_cb_group,
             qos_profile=5,
         )
@@ -224,7 +224,7 @@ class FindBranchRollWristController(TFNode):
     # ===============================
     #        Action callbacks
     # ===============================
-    def _action_cancel_cb_run_find_branch_roll_wrist(self, goal_handle: ServerGoalHandle):
+    def _action_cancel_cb_run_find_branch_pitch_wrist(self, goal_handle: ServerGoalHandle):
         self.info("Received cancel request")
         self.info("Canceling quadratic fit timer")
         self.publish_zero_twist()
@@ -237,7 +237,7 @@ class FindBranchRollWristController(TFNode):
         self.reset_controller()
         return CancelResponse.ACCEPT
 
-    async def _action_exe_cb_run_find_branch_roll_wrist(self, goal_handle: ServerGoalHandle):
+    async def _action_exe_cb_run_find_branch_pitch_wrist(self, goal_handle: ServerGoalHandle):
         self.controller_running = True
 
         start_servo_future: Future = self._srv_client_start_servo.call_async(request=Trigger.Request())
@@ -273,8 +273,8 @@ class FindBranchRollWristController(TFNode):
                 self._timer_pub_servo.reset()
 
         try:
-            feedback_msg = RunFindBranchRollWrist.Feedback()
-            result = RunFindBranchRollWrist.Result()
+            feedback_msg = RunFindBranchPitchWrist.Feedback()
+            result = RunFindBranchPitchWrist.Result()
 
             # TODO: check if initial reading of sensor. If so, set flag to data found and record tf pose time.
 
@@ -310,7 +310,7 @@ class FindBranchRollWristController(TFNode):
                     if goal_handle.is_cancel_requested:
                         self.publish_zero_twist()
                         goal_handle.canceled()
-                        self.info("FindBranchRollWristController canceled.")
+                        self.info("FindBranchPitchWristController canceled.")
                         self.reset_controller()
                         result.success = False
                         return result
@@ -399,7 +399,7 @@ class FindBranchRollWristController(TFNode):
                             self.tof0_time_center is None or self.tof1_time_center is None
                         ):  # TODO: Check and/or logic here
                             if not goal_handle.status == GoalStatus.STATUS_ABORTED:
-                                self.warn("Could not find the branch. Aborting FindBranchRollWristController.")
+                                self.warn("Could not find the branch. Aborting FindBranchPitchWristController.")
                                 # with self._timer_lock:
                                 #     if not self._timer_run_quadratic_fit.is_canceled():
                                 #         self._timer_run_quadratic_fit.cancel()
@@ -530,7 +530,7 @@ class FindBranchRollWristController(TFNode):
                             rot_mat = np.column_stack(
                                 (branch_vec_normalized, desired_y_axis, desired_orientation_vec_to_branch_norm)
                             )
-                            desired_orientation_rot = Rotation.from_matrix(rot_mat)
+                            desired_orientation_rot = Rotation.from_matrix(matrix=rot_mat)
                             desired_orientation_quat = desired_orientation_rot.as_quat()
 
                             ######################################################################################
@@ -645,7 +645,7 @@ class FindBranchRollWristController(TFNode):
             #         self._timer_run_quadratic_fit.cancel()
 
             self.reset_controller()
-            self.info("FindBranchRollWristController has terminated.")
+            self.info("FindBranchPitchWristController has terminated.")
 
             stop_servo_future: Future = self._srv_client_stop_servo.call_async(request=Trigger.Request())
             await stop_servo_future
@@ -668,7 +668,7 @@ class FindBranchRollWristController(TFNode):
 
         return result
 
-    def _action_goal_cb_run_find_branch_roll_wrist(self, goal_handle: ServerGoalHandle):
+    def _action_goal_cb_run_find_branch_pitch_wrist(self, goal_handle: ServerGoalHandle):
         self.info("Received goal request")
         return GoalResponse.ACCEPT
 
@@ -890,9 +890,9 @@ class FindBranchRollWristController(TFNode):
 
 def main():
     rclpy.init()
-    find_branch_roll_wrist_controller = FindBranchRollWristController()
+    find_branch_pitch_wrist_controller = FindBranchPitchWristController()
     executor = MultiThreadedExecutor()
-    rclpy.spin(find_branch_roll_wrist_controller, executor=executor)
-    find_branch_roll_wrist_controller.destroy_node()
+    rclpy.spin(find_branch_pitch_wrist_controller, executor=executor)
+    find_branch_pitch_wrist_controller.destroy_node()
     rclpy.shutdown()
     return

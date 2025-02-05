@@ -1,0 +1,4 @@
+string[] joint_names
+float64[] joint_angles
+---
+bool result
