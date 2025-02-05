@@ -51,7 +51,7 @@ void MoveArmNode::move_to_pose(
     _pose_msg.pose.orientation.y = request->goal.orientation.y;
     _pose_msg.pose.orientation.z = request->goal.orientation.z;
     _pose_msg.pose.orientation.w = request->goal.orientation.w;
-    _pose_msg.header.frame_id = "cart__base"; // TODO: Get from launch parameters in the future
+    _pose_msg.header.frame_id = "amiga__base"; // TODO: Get from launch parameters in the future
     _pose_msg.header.stamp = this->now();
 
     this->move_group_.setPoseTarget(_pose_msg, "mock_pruner__tool0");
@@ -59,8 +59,9 @@ void MoveArmNode::move_to_pose(
     this->move_group_.setPlannerId("RRTconnectkConfigDefault");
     this->move_group_.setPlanningTime(20.0);
     this->move_group_.setNumPlanningAttempts(10);
-    // this->move_group_.setMaxAccelerationScalingFactor();
+    this->move_group_.setMaxAccelerationScalingFactor(0.1);
     this->move_group_.setMaxVelocityScalingFactor(0.1);
+    
     // this->move_group_.setGoalJointTolerance(0.001);
 
     // Attempt to move to pose goal

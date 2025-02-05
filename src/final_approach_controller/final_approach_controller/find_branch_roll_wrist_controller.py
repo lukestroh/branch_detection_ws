@@ -56,6 +56,7 @@ class FindBranchRollWristController(TFNode):
         self.info = lambda x: self.get_logger().info(f"\n{x}")
         self.warn = lambda x: self.get_logger().warn(f"\n{x}")
         self.error = lambda x: self.get_logger().error(f"\n{x}")
+        self.fatal = lambda x: self.get_logger().fatal(f"\n{x}")
 
         # Launch arguments
         _param_use_mock_hardware: bool = (
@@ -200,6 +201,7 @@ class FindBranchRollWristController(TFNode):
         # Controller attributes
         self.reset_controller()
         self.feedback_pub_prev_time = self.get_clock().now()
+        self.start_states_recorded = False
         if _param_use_mock_hardware:
             self.max_angular_vel = np.pi / 16
         else:
@@ -247,12 +249,15 @@ class FindBranchRollWristController(TFNode):
         else:
             self.error(f"Servo failed to start")
 
-        self.start_controller_tf = self.lookup_transform(
-            target_frame=f"{self._param_robot_base_part}__base",
-            source_frame=f"{self._param_robot_eef_part}__tool0",
-            sync=True,
-            as_matrix=True,
-        )
+        if not self.start_states_recorded:
+            self.start_controller_tf = self.lookup_transform(
+                target_frame=f"{self._param_robot_base_part}__base",
+                source_frame=f"{self._param_robot_eef_part}__tool0",
+                sync=True,
+                as_matrix=True,
+            )
+            self.start_joint_states = self.joint_states
+
         with self._timer_lock:
             # if self._timer_run_quadratic_fit is None:
             #     self._timer_run_quadratic_fit = self.create_timer(
@@ -350,11 +355,12 @@ class FindBranchRollWristController(TFNode):
 
                     if not self.rotations_complete:
                         if not self.neg_rot_complete:
+                            # self.info(self.start_joint_states[2] - self.joint_states[2])         
                             # # rotate to the closest side
                             # if self.joint_states[-1] < 0 and self.joint_states[-1] > -1 * np.pi:
                             # negative angular rotation
                             angular_z = -1 * self.max_angular_vel
-                            if np.isclose(self.joint_states[2], -np.pi / 2, atol=0.05):
+                            if np.isclose(self.start_joint_states[2] - self.joint_states[2], np.pi / 2, atol=0.05):
                                 # TODO: (long term) make sure wrist mount config is standard
                                 self.run_quadratic_fit()
                                 self.neg_rot_complete = True
@@ -375,7 +381,7 @@ class FindBranchRollWristController(TFNode):
                             # if self.joint_states[-1] > 0 and self.joint_states[-1] < np.pi:
                             # positive angular rotation
                             angular_z = self.max_angular_vel
-                            if np.isclose(self.joint_states[2], np.pi / 2, atol=0.05):
+                            if np.isclose(self.start_joint_states[2] - self.joint_states[2], -np.pi / 2, atol=0.05):
                                 self.run_quadratic_fit()
                                 self.pos_rot_complete = True
                                 self.publish_zero_twist()
@@ -602,21 +608,19 @@ class FindBranchRollWristController(TFNode):
                             move_to_pose_req.goal.orientation.z = desired_orientation_quat[2]
                             move_to_pose_req.goal.orientation.w = desired_orientation_quat[3]
 
-                            input("Hit enter to continue algorithm.")
+                            # input("Hit enter to continue algorithm.")
+
                             
                             self.info("Sending goal")
                             
 
-                            move_group_future: MoveToPose.Response = self._srv_cartesian_move_to_pose.call_async(
+                            move_group_future: Future = self._srv_cartesian_move_to_pose.call_async(
                                 request=move_to_pose_req
                             )
-                            self.info("Called")
                             move_group_future.add_done_callback(callback=self._done_cb_srv_cartesian_move_to_pose)
-                            self.info("Callback added")
                             await move_group_future
                             # rclpy.spin_until_future_complete(node=self, future=move_group_future)
 
-                            self.info("Received response")
                             
 
                             if move_group_future.result() is None or not move_group_future.result().result:
@@ -630,6 +634,9 @@ class FindBranchRollWristController(TFNode):
                                     goal_handle.abort()
                                     result.success = False
                                     self.error("Failed to navigate to pose where both sensors can read the branch.")
+
+                            
+
 
                             self.controller_running = False
                             return result
@@ -647,15 +654,7 @@ class FindBranchRollWristController(TFNode):
             #     if not self._timer_run_quadratic_fit.is_canceled():
             #         self._timer_run_quadratic_fit.cancel()
 
-            self.reset_controller()
-            self.info("FindBranchRollWristController has terminated.")
-
-            stop_servo_future: Future = self._srv_client_stop_servo.call_async(request=Trigger.Request())
-            await stop_servo_future
-            if stop_servo_future.result().success:
-                self.info(f"Servo stopped.")
-            else:
-                self.error(f"Servo failed to stop.")
+            
 
             switch_ctrlr_req = SwitchController.Request(
                 activate_controllers=[self._servo_controller],
@@ -668,6 +667,40 @@ class FindBranchRollWristController(TFNode):
                 self.info("Successfully switched controllers")
             else:
                 self.error("Failed to switch controllers,")
+
+            if not result.success:
+                self.info(f"Failed to find branch. Returning to start position.")
+                while not np.isclose(self.start_joint_states[2], self.joint_states[2], atol=0.01):
+                    if self.joint_states[2] > self.start_joint_states[2]:
+                        angular_z = -1 * self.max_angular_vel
+                    
+                    else:
+                        angular_z = self.max_angular_vel
+
+                    self.msg_twist.twist.linear.x = 0.0
+                    self.msg_twist.twist.linear.y = 0.0
+                    self.msg_twist.twist.linear.z = 0.0
+                    self.msg_twist.twist.angular.x = 0.0
+                    self.msg_twist.twist.angular.y = 0.0
+                    self.msg_twist.twist.angular.z = angular_z
+                    self.msg_twist.header.frame_id = f"{self._param_robot_eef_part}__tool0"
+                    self.msg_twist.header.stamp = self.get_clock().now().to_msg()
+
+                self.info("Returned to start position")
+        
+            self.publish_zero_twist()
+            self.reset_controller()
+            self.info("FindBranchRollWristController has terminated.")
+
+            stop_servo_future: Future = self._srv_client_stop_servo.call_async(request=Trigger.Request())
+            await stop_servo_future
+            if stop_servo_future.result().success:
+                self.info(f"Servo stopped.")
+            else:
+                self.error(f"Servo failed to stop.")
+
+            self.get_clock().sleep_for(Duration(seconds=2.0))
+            
 
         return result
 
@@ -889,6 +922,7 @@ class FindBranchRollWristController(TFNode):
             self.msg_twist.header.stamp = self.get_clock().now().to_msg()
             self._pub_servo.publish(self.msg_twist)
         return
+    
 
 
 def main():

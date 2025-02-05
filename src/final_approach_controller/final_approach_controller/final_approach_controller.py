@@ -122,6 +122,7 @@ class FinalApproachControllerNode(TFNode):
     def _action_exe_cb_run_final_approach(self, goal_handle: ServerGoalHandle):
         self.controller_running = True
         start_servo_resp: Trigger.Response = self._srv_client_start_servo.call(request=Trigger.Request())
+        self.start_servo_time = self.get_clock().now()
         if start_servo_resp.success:
             self.info(f"Servo started")
         else:
@@ -154,6 +155,14 @@ class FinalApproachControllerNode(TFNode):
                     feedback_msg.theta = np.arctan(d_diff / self._tof_linear_distance)
                     goal_handle.publish_feedback(feedback_msg)
                     self.feedback_pub_prev_time = self.get_clock().now()
+
+                # For safety purposes...
+                if self.get_clock().now() - self.start_servo_time > Duration(seconds=10.0):
+                    goal_handle.canceled()
+                    result.success = False
+                    self.controller_running = False
+                    self.error("FinalApproachControllerAction timed out.")
+                    return result
 
             result.success = True
 
@@ -221,9 +230,13 @@ class FinalApproachControllerNode(TFNode):
         dist, theta = self.get_cut_point_info()
         dist_cut_point_to_branch = dist - self.tf_cut_point_to_tof0[2, 3]
 
+
+
         if (
             np.isclose(dist_cut_point_to_branch, 0, atol=self._dist_cut_point_to_branch_threshold)
             or (dist_cut_point_to_branch) < 0
+            or self.d_tof0 < self._dist_cut_point_to_branch_threshold
+            or self.d_tof1 < self._dist_cut_point_to_branch_threshold
         ):
             self.publish_zero_twist()
 
