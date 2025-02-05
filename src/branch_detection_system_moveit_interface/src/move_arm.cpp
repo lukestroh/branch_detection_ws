@@ -8,9 +8,14 @@ MoveArmNode::MoveArmNode() : Node(
     move_group_(std::shared_ptr<rclcpp::Node>(std::move(this)), "ur5e__pruning_robot_manipulator")
     
 {
+    // Parameters
+    this->declare_parameter("robot_base_part", "");
+    this->robot_base_part_ = this->get_parameter("robot_base_part").as_string();
+
     // callback groups
     this->move_to_pose_cb_group_ = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
     this->cartesian_move_to_pose_cb_group_ = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    this->move_to_joint_angles_cb_group_ = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
 
     // Services
     this->move_to_pose_service_ = this->create_service<branch_detection_system_moveit_msgs::srv::MoveToPose>(
@@ -25,6 +30,12 @@ MoveArmNode::MoveArmNode() : Node(
         rmw_qos_profile_services_default,
         this->cartesian_move_to_pose_cb_group_
     );
+    this->move_to_joint_angles_service_ = this->create_service<branch_detection_system_moveit_msgs::srv::MoveToJointAngles>(
+            "move_to_joint_angles",
+            std::bind(&MoveArmNode::move_to_joint_angles, this, std::placeholders::_1, std::placeholders::_2),
+            rmw_qos_profile_services_default,
+            this->move_to_joint_angles_cb_group_
+        );
 }
 
 void MoveArmNode::move_to_pose(
@@ -48,13 +59,15 @@ void MoveArmNode::move_to_pose(
     this->move_group_.setPlannerId("RRTconnectkConfigDefault");
     this->move_group_.setPlanningTime(20.0);
     this->move_group_.setNumPlanningAttempts(10);
+    // this->move_group_.setMaxAccelerationScalingFactor();
+    this->move_group_.setMaxVelocityScalingFactor(0.1);
     // this->move_group_.setGoalJointTolerance(0.001);
 
     // Attempt to move to pose goal
     moveit::planning_interface::MoveGroupInterface::Plan goal;
-    auto const ok = static_cast<bool>(this->move_group_.plan(goal));
+    auto const success = static_cast<bool>(this->move_group_.plan(goal));
     response->result = true;
-    if (ok) {
+    if (success) {
         this->move_group_.execute(goal);
     }
     else {
@@ -100,7 +113,27 @@ void MoveArmNode::cartesian_move_to_pose(
         RCLCPP_WARN(this->get_logger(), "Failed to plan a Cartesian path.");
         response->result = false;
     }
+}
 
+void MoveArmNode::move_to_joint_angles(
+    const std::shared_ptr<branch_detection_system_moveit_msgs::srv::MoveToJointAngles::Request> request,
+    const std::shared_ptr<branch_detection_system_moveit_msgs::srv::MoveToJointAngles::Response> response
+) {
+    
+    this->move_group_.setJointValueTarget(request->joint_names, request->joint_angles);
+
+    // Plan and execute move to target joint_angles
+    moveit::planning_interface::MoveGroupInterface::Plan plan;
+    bool success = static_cast<bool>(this->move_group_.plan(plan));
+    if (success) {
+        this->move_group_.execute(plan);
+        RCLCPP_INFO(this->get_logger(), "Move to joint angle goal a success");
+        response->result = true;
+    }
+    else {
+        RCLCPP_ERROR(this->get_logger(), "Failed to move to joint angle goal.");
+        response->result = false;
+    }
 }
 
 
