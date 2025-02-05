@@ -11,12 +11,12 @@ from final_approach_controller_msgs.action import RunFinalApproach
 
 class FinalApproachControllerBehavior(pt.behaviour.Behaviour):
     """Behavior wrapper for the final approach controller action client"""
+
     def __init__(self, name):
         super(FinalApproachControllerBehavior, self).__init__(name)
 
         # self.bb = pt.blackboard.Blackboard()
-        
-        
+
         return
 
     def setup(self, node):
@@ -28,11 +28,7 @@ class FinalApproachControllerBehavior(pt.behaviour.Behaviour):
         self.fatal = lambda x: self.node.get_logger().fatal(f"\n{x}")
 
         self.info("Setting up FinalApproachControllerBehavior")
-        self.client = ActionClient(
-            node=self.node,
-            action_type=RunFinalApproach,
-            action_name="run_final_approach"
-        )
+        self.client = ActionClient(node=self.node, action_type=RunFinalApproach, action_name="run_final_approach")
         self.client.wait_for_server()
 
         self.goal_status = None
@@ -40,7 +36,7 @@ class FinalApproachControllerBehavior(pt.behaviour.Behaviour):
         self._result_future = None
 
         return
-    
+
     def initialise(self):
         """Send a goal to the RunFinalApproach action server"""
         self.goal_status = None
@@ -72,7 +68,7 @@ class FinalApproachControllerBehavior(pt.behaviour.Behaviour):
         # self.goal_status = goal_handle.status
         # self.info((f"{self.goal_status}"))
         return
-        
+
     def _on_result_cb(self, future: Future):
         result: RunFinalApproach.Result = future.result().result
         self.info(f"{self.name}: Result: {result}")
@@ -88,7 +84,7 @@ class FinalApproachControllerBehavior(pt.behaviour.Behaviour):
                 return pt.common.Status.FAILURE
         return pt.common.Status.RUNNING
 
-    def terminate(self,  new_status: pt.common.Status):
+    def terminate(self, new_status: pt.common.Status):
         if self._goal_handle.status == GoalStatus.STATUS_EXECUTING:
             _goal_canceled_future: Future = self._goal_handle.cancel_goal_async()
             _goal_canceled_future.add_done_callback(self._on_cancel_cb)
@@ -98,7 +94,7 @@ class FinalApproachControllerBehavior(pt.behaviour.Behaviour):
         return
 
     def _on_cancel_cb(self, future: Future):
-        _cancel_result  = future.result().result
+        _cancel_result = future.result().result
         if _cancel_result:
             self.info("Action successfully canceled.")
         else:

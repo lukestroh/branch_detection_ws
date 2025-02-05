@@ -18,14 +18,21 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
 
     node_fa_tree = Node(
         package="behavior_trees_python",
-        executable="fa_tree_node",
-        name="fa_tree_node",
+        executable="teleop_node",
+        name="teleop_node",
         emulate_tty=True,
     )
 
+    node_io_processor = Node(
+        package="behavior_trees_python",
+        executable="io_tree",
+        name="io_tree",
+        emulate_tty=True
+    )
 
     _to_launch = [
         node_fa_tree,
+        node_io_processor
     ]
 
     return _to_launch
