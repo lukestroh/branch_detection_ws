@@ -105,7 +105,7 @@ class FinalApproachControllerNode(TFNode):
         self.tf_cut_point_to_tof0 = np.identity(4)
         self.tf_tof0_to_tof1 = np.identity(4)
         self._dist_cut_point_to_branch_threshold = (
-            0.04  # This is bad, get better sensors? How to calibrate? save yaml from test, load here
+            0.03  # This is bad, get better sensors? How to calibrate? save yaml from test, load here
         )
         self.controller_running = False
         self.feedback_pub_prev_time = self.get_clock().now()
