@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.8)
-project(final_approach_controller_msgs)
+project(vl53l4cd_msgs)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
@@ -8,19 +8,12 @@ endif()
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(std_msgs REQUIRED)
-find_package(action_msgs REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 
-rosidl_generate_interfaces(
-  ${PROJECT_NAME}
-  "msg/ToFBranchFit.msg"
-  "msg/ToFBranchFitStamped.msg"
-  "srv/StartFinalApproach.srv"
-  "action/RunCutPointRotateAxis.action"
-  "action/RunFinalApproach.action"
-  "action/RunFindBranchRollWrist.action"
-  "action/RunFindBranchPitchWrist.action"
-  DEPENDENCIES std_msgs action_msgs
+rosidl_generate_interfaces(${PROJECT_NAME}
+  "msg/Vl53l4cd.msg"
+  "msg/Vl53l4cdStamped.msg"
+  DEPENDENCIES std_msgs # Add packages that above messages depend on, in this case geometry_msgs for Sphere.msg
 )
 
 if(BUILD_TESTING)

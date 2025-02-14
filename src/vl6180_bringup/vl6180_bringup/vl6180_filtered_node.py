@@ -109,7 +109,7 @@ class VL6180FilterNode(Node):
         self.vl6180_msg_filtered.data = [0.0, 0.0]
        
 
-        self.deque_size = 20
+        self.deque_size = 15
         self.deques = [deque([self.RANGING_MAX] * self.deque_size), deque([self.RANGING_MAX] * self.deque_size)]
 
 

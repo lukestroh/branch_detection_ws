@@ -81,8 +81,8 @@ class CutPointRotateAxisController(TFNode):
         self._goal_handle = None
         self.d_tof0 = 0.0
         self.d_tof1 = 0.0
-        self.max_linear_speed = 0.05
-        self.max_angular_speed = np.pi / 2
+        self.max_linear_speed = 0.01 * 10  # UR servo is slow?
+        self.max_angular_speed = np.pi / 4 * 10
         self.K_p = 1 / self.max_angular_speed
 
         self.tf_mp_base_to_tof0 = np.identity(4)
@@ -110,7 +110,7 @@ class CutPointRotateAxisController(TFNode):
             self.info(f"Servo started")
         else:
             self.error(f"Servo failed to start")
-            
+
         if self._timer_run_controller is None:
             self._timer_run_controller = self.create_timer(
                 timer_period_sec=1 / 30, callback=self._timer_cb_run_controller, callback_group=self.callback_group

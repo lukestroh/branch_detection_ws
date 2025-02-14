@@ -16,9 +16,8 @@ from launch.launch_description_sources import AnyLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node, LifecycleNode
 
-
 from ament_index_python.packages import get_package_share_directory
-
+import datetime as dt
 import os
 
 import rclpy.logging
@@ -33,6 +32,11 @@ def launch_setup(context, *args, **kwargs) -> list:
     # Launch configuration settings
     # ===============================
 
+    # High-level launch configs
+    record_bag = LaunchConfiguration('record_bag')
+    record_loc = LaunchConfiguration('record_loc')
+
+
     # Robot parts
     robot_base_part = LaunchConfiguration("robot_base_part")
     robot_eef_part = LaunchConfiguration("robot_eef_part")
@@ -41,17 +45,13 @@ def launch_setup(context, *args, **kwargs) -> list:
     microros_serial_port = LaunchConfiguration("microros_serial_port")
     tof_sensor_type = LaunchConfiguration("tof_sensor_type")
 
+    # Custom controllers
     use_admittance_controller = LaunchConfiguration("use_admittance_controller")
     use_final_approach_controller = LaunchConfiguration("use_final_approach_controller")
     use_mock_hardware = LaunchConfiguration("use_mock_hardware")
     use_behavior_trees_python = LaunchConfiguration("use_behavior_trees_python")
 
-    #
-    # system_bringup_pkg = LaunchConfiguration("system_bringup_pkg")
-    # system_description_pkg = LaunchConfiguration("system_description_pkg")
-    # system_moveit_config_pkg = LaunchConfiguration("system_moveit_config_pkg")
-    # system_description_file = LaunchConfiguration("system_description_file")
-    # system_semantic_description_file = LaunchConfiguration("robot_semantic_description_file")
+    # UR Robot
     ur_prefix = LaunchConfiguration("ur_prefix")
     ur_type = LaunchConfiguration("ur_type")
     ur_robot_ip = LaunchConfiguration("ur_robot_ip")
@@ -121,40 +121,46 @@ def launch_setup(context, *args, **kwargs) -> list:
         condition=IfCondition(use_final_approach_controller)
     )
 
-    # delay_launch_final_approach_controller_after_timeout = RegisterEventHandler(
-    #     OnProcessStart(
-    #         target_action=launch_ur_basic,
-    #         on_start=[
-    #             TimerAction(period=5.0, actions=[launch_final_approach_controller])
-    #         ]
-    #     )
-    # )
-
     # launch_particle_filter = IncludeLaunchDescription(
     #     AnyLaunchDescriptionSource(
     #         os.path.join(get_package_share_directory("particle_filter_bringup"), "launch", "particle_filter.launch.py")
     #     )
     # )
 
-    launch_behavior_trees = IncludeLaunchDescription(
-        AnyLaunchDescriptionSource(
-            os.path.join(get_package_share_directory("behavior_trees_python"), "launch", "behavior_trees_python.launch.py")
-        ),
-        condition=IfCondition(use_behavior_trees_python)
+
+    # Recording data
+    _record_loc_str = record_loc.perform(context=context)
+    if _record_loc_str != "":
+        _record_loc = _record_loc_str + "__"
+    else:
+        _record_loc = _record_loc_str
+    _filepath_bags = os.path.join(
+        os.path.expanduser('~'),
+        'branch_detection_ws',
+        'bags',
+        f"bds__{_record_loc}{dt.datetime.strftime(dt.datetime.now(), format=r'%Y%m%d_%H-%M-%S')}"
     )
-    # delay_launch_behavior_trees_after_timeout = RegisterEventHandler(
-    #     OnProcessStart(
-    #         target_action=launch_ur_basic,
-    #         on_start=[
-    #             TimerAction(period=10.0, actions=[launch_behavior_trees])
-    #         ]
-    #     )
-    # )
-    # process = ExecuteProcess(cmd=["py-trees-tree-viewer", "--no-sandbox"])
-    delay_launch_behavior_trees_timer_action = TimerAction(
-        period=10.0,
-        actions=[launch_behavior_trees]
+    logger.error(record_bag.perform(context))
+    _execute_process_record_bag = ExecuteProcess(
+        cmd=[
+            'ros2 '
+            'bag',
+            'record ',
+            '--all ',
+            '--compression-mode file ' # other option is by `message`
+            '--compression-format zstd ',
+            '--output ',
+            _filepath_bags
+        ],
+        shell=True,
+        output='screen',
+        log_cmd=True,
+        condition=IfCondition(record_bag)
     )
+
+
+
+
 
     _to_run = [
         ENV_ROS_DOMAIN_ID,
@@ -165,7 +171,8 @@ def launch_setup(context, *args, **kwargs) -> list:
         launch_final_approach_controller,
         # process
         # delay_launch_final_approach_controller_after_timeout
-        delay_launch_behavior_trees_timer_action
+        # delay_launch_behavior_trees_timer_action
+        _execute_process_record_bag
     ]
 
     return _to_run
@@ -174,6 +181,8 @@ def launch_setup(context, *args, **kwargs) -> list:
 def generate_launch_description():
 
     declared_configs = [
+        dict(name='record_loc', default_value="", description="Optional string parameter describing the location of recording the bag."),
+        dict(name="record_bag", default_value="false", choices=['true', 'false'], description=r"Records a bag file with format bds_{datetime}.sq3"),
         dict(name="headless_mode", default_value="true"),
         dict(name="microros_serial_port", default_value="/dev/ttyACM0", description="Port name for serial device."),
         dict(name="mock_sensor_commands", default_value="false"),

@@ -96,7 +96,7 @@ class FinalApproachControllerNode(TFNode):
         self._goal_handle = None
         self.d_tof0 = 0.0
         self.d_tof1 = 0.0
-        self.max_linear_speed = 0.05
+        self.max_linear_speed = 0.01 * 10  # UR servo is slow??
         # TODO::::: need to read raw data to make sure that the reading is valid??
 
         self.tf_mp_tof0_to_base = np.identity(4)
@@ -105,7 +105,7 @@ class FinalApproachControllerNode(TFNode):
         self.tf_cut_point_to_tof0 = np.identity(4)
         self.tf_tof0_to_tof1 = np.identity(4)
         self._dist_cut_point_to_branch_threshold = (
-            0.04  # This is bad, get better sensors? How to calibrate? save yaml from test, load here
+            0.03  # This is bad, get better sensors? How to calibrate? save yaml from test, load here
         )
         self.controller_running = False
         self.feedback_pub_prev_time = self.get_clock().now()
@@ -122,11 +122,12 @@ class FinalApproachControllerNode(TFNode):
     def _action_exe_cb_run_final_approach(self, goal_handle: ServerGoalHandle):
         self.controller_running = True
         start_servo_resp: Trigger.Response = self._srv_client_start_servo.call(request=Trigger.Request())
+        self.start_servo_time = self.get_clock().now()
         if start_servo_resp.success:
             self.info(f"Servo started")
         else:
             self.error(f"Servo failed to start")
-            
+
         if self._timer_run_controller is None:
             self._timer_run_controller = self.create_timer(
                 timer_period_sec=1 / 30,
@@ -154,6 +155,14 @@ class FinalApproachControllerNode(TFNode):
                     feedback_msg.theta = np.arctan(d_diff / self._tof_linear_distance)
                     goal_handle.publish_feedback(feedback_msg)
                     self.feedback_pub_prev_time = self.get_clock().now()
+
+                # For safety purposes...
+                if self.get_clock().now() - self.start_servo_time > Duration(seconds=10.0):
+                    goal_handle.canceled()
+                    result.success = False
+                    self.controller_running = False
+                    self.error("FinalApproachControllerAction timed out.")
+                    return result
 
             result.success = True
 
@@ -221,9 +230,13 @@ class FinalApproachControllerNode(TFNode):
         dist, theta = self.get_cut_point_info()
         dist_cut_point_to_branch = dist - self.tf_cut_point_to_tof0[2, 3]
 
+
+
         if (
             np.isclose(dist_cut_point_to_branch, 0, atol=self._dist_cut_point_to_branch_threshold)
             or (dist_cut_point_to_branch) < 0
+            or self.d_tof0 < self._dist_cut_point_to_branch_threshold
+            or self.d_tof1 < self._dist_cut_point_to_branch_threshold
         ):
             self.publish_zero_twist()
 

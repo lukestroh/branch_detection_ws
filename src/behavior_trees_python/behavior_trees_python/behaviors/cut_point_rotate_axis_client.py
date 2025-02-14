@@ -12,13 +12,14 @@ from final_approach_controller_msgs.action import RunCutPointRotateAxis
 
 class CutPointRotateAxisControllerBehavior(pt.behaviour.Behaviour):
     """Behaviour wrapper for the cut point rotate axis action client"""
+
     def __init__(self, name):
         super(CutPointRotateAxisControllerBehavior, self).__init__(name)
 
         return
-    
+
     def setup(self, node):
-        
+
         self.node = node
         self.info = lambda x: self.node.get_logger().info(f"\n{x}")
         self.warn = lambda x: self.node.get_logger().warn(f"\n{x}")
@@ -28,9 +29,7 @@ class CutPointRotateAxisControllerBehavior(pt.behaviour.Behaviour):
         self.info("Setting up CutPointRotateAxisControllerBehavior")
 
         self.client = ActionClient(
-            node=self.node,
-            action_type=RunCutPointRotateAxis,
-            action_name="run_cut_point_rotate_axis"
+            node=self.node, action_type=RunCutPointRotateAxis, action_name="run_cut_point_rotate_axis"
         )
         self.client.wait_for_server()
 
@@ -38,9 +37,10 @@ class CutPointRotateAxisControllerBehavior(pt.behaviour.Behaviour):
         self._goal_handle = None
         self._result_future = None
         return
-    
+
     def initialise(self):
         """Send the CutPointRotate Action server a goal"""
+        self.goal_status = None
         self.goal = RunCutPointRotateAxis.Goal()
         self._send_goal_future: Future = self.client.send_goal_async(
             goal=self.goal,
@@ -64,7 +64,7 @@ class CutPointRotateAxisControllerBehavior(pt.behaviour.Behaviour):
         self.info(f"{self.name}: Result: {result}")
         self.goal_status = result.success
         return
-    
+
     def update(self):
         if self.goal_status is not None:
             if self.goal_status == True:
@@ -72,7 +72,7 @@ class CutPointRotateAxisControllerBehavior(pt.behaviour.Behaviour):
             else:
                 return pt.common.Status.FAILURE
         return pt.common.Status.RUNNING
-    
+
     def terminate(self, new_status: pt.common.Status):
         if self._goal_handle.status == GoalStatus.STATUS_EXECUTING:
             _goal_canceled_future: Future = self._goal_handle.cancel_goal_async()
@@ -83,7 +83,7 @@ class CutPointRotateAxisControllerBehavior(pt.behaviour.Behaviour):
         return
 
     def _on_cancel_cb(self, future: Future):
-        _cancel_result  = future.result().result
+        _cancel_result = future.result().result
         if _cancel_result:
             self.info("Action successfully canceled.")
         else:

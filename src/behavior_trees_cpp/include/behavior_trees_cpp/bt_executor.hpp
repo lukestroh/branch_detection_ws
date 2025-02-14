@@ -9,8 +9,17 @@
 class BranchDetectionActionServer : public BT::TreeExecutionServer{
     public:
         BranchDetectionActionServer(const rclcpp::NodeOptions& options);
+        ~BranchDetectionActionServer() override;
+
+    protected:
+        bool onGoalReceived(const std::string& tree_name, const std::string& payload) override;
 
         void onTreeCreated(BT::Tree& tree) override;
+
+        void registerNodesIntoFactory(BT::BehaviorTreeFactory& factory) override;
+
+        std::optional<BT::NodeStatus> onLoopAfterTick(BT::NodeStatus status) override;
+
         std::optional<std::string> onTreeExecutionCompleted(BT::NodeStatus status, bool was_canceled) override;
 
 

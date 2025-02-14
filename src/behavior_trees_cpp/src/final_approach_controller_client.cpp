@@ -1,9 +1,9 @@
-#include <behavior_tree/final_approach_controller_client.hpp>
+#include <behavior_trees_cpp/final_approach_controller_client.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp/executors.hpp>
 
 #ifndef USE_SLEEP_PLUGIN
-#include <behavior_tree/final_approach_controller_action.hpp>
+#include <behavior_trees_cpp/final_approach_controller_action.hpp>
 #endif
 
 FinalApproachControllerClient::FinalApproachControllerClient(const std::string& name, const BT::NodeConfig& config) : BT::CoroActionNode(name, config) {

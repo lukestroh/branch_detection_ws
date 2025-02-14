@@ -1,4 +1,4 @@
-#include <behavior_tree/bt_executor.hpp>
+#include <behavior_trees_cpp/bt_executor.hpp>
 
 #include <rclcpp/rclcpp.hpp>
 // BranchDetectionActionServer(const rclcpp::NodeOptions& options) : TreeExecutionServer(options) {
@@ -9,11 +9,28 @@ BranchDetectionActionServer::BranchDetectionActionServer(const rclcpp::NodeOptio
     
 }
 
+BranchDetectionActionServer::~BranchDetectionActionServer() {}
+
 void BranchDetectionActionServer::onTreeCreated(BT::Tree& tree) {
     bt_logger_ = std::make_shared<BT::StdCoutLogger>(tree);
 }
 
-std::optional<std::string> BranchDetectionActionServer::onTreeExecutionCompleted(BT::NodeStatus status, bool was_cancelled) {
+void BranchDetectionActionServer::onGoalReceived(const std::string& tree_name, const std::string& payload) {
+    return true;
+}
+
+void BranchDetectionActionServer::registerNodesIntoFactory(BT::BehaviorTreeFactory& factory) {
+
+}
+
+std::optional<BT::NodeStatus> BranchDetectionActionServer::onLoopAfterTick(BT::NodeStatus status) {
+
+}
+
+std::optional<std::string> BranchDetectionActionServer::onTreeExecutionCompleted(
+    BT::NodeStatus status,
+    bool was_cancelled
+) {
 
 }
 

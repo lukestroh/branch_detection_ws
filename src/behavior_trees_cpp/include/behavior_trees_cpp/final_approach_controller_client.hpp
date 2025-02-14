@@ -2,7 +2,7 @@
 #include <behaviortree_ros2/plugins.hpp>
 
 #ifndef USE_SLEEP_PLUGIN
-#include <behavior_tree/final_approach_controller_action.hpp>
+#include <behavior_trees_cpp/final_approach_controller_action.hpp>
 #endif
 
 

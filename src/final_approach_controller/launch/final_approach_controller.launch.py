@@ -26,6 +26,11 @@ def launch_setup(context, *args, **kwargs) -> list:
         executable="final_approach_controller",
         name="final_approach_controller",
         output="both",
+        parameters=[
+            {"robot_base_part": robot_base_part},
+            {"robot_eef_part": robot_eef_part},
+            {"use_mock_hardware": use_mock_hardware},
+        ],
     )
 
     node_cut_point_rotate_axis_controller = Node(
@@ -33,9 +38,14 @@ def launch_setup(context, *args, **kwargs) -> list:
         executable="cut_point_rotate_axis_controller",
         name="cut_point_rotate_axis_controller",
         output="both",
+        parameters=[
+            {"robot_base_part": robot_base_part},
+            {"robot_eef_part": robot_eef_part},
+            {"use_mock_hardware": use_mock_hardware},
+        ],
     )
 
-    logger.warn(f"{robot_base_part.perform(context)}")
+    # logger.warn(f"{robot_base_part.perform(context)}")
 
     node_find_branch_roll_wrist_controller = Node(
         package="final_approach_controller",
@@ -44,7 +54,7 @@ def launch_setup(context, *args, **kwargs) -> list:
         output="both",
         parameters=[
             {"robot_base_part": robot_base_part},
-            {'robot_eef_part': robot_eef_part},
+            {"robot_eef_part": robot_eef_part},
             {"use_mock_hardware": use_mock_hardware},
         ],
     )
@@ -61,8 +71,8 @@ def launch_setup(context, *args, **kwargs) -> list:
 def generate_launch_description():
 
     declared_configs = [
-        dict(name="robot_base_part", default_value=''),
-        dict(name="robot_eef_part", default_value=''),
+        dict(name="robot_base_part", default_value=""),
+        dict(name="robot_eef_part", default_value=""),
         dict(name="headless_mode", default_value="true"),
         dict(name="use_mock_hardware", default_value="false"),
     ]

@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>behavior_tree</name>
+  <name>behavior_trees_cpp</name>
   <version>0.0.0</version>
   <description>behavior tree package for branch detection system</description>
   <maintainer email="luke.strohbehn@gmail.com">lukestroh</maintainer>
