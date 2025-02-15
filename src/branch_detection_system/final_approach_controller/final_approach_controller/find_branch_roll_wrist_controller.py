@@ -885,9 +885,9 @@ class FindBranchRollWristController(TFNode):
         
 
         if msg.dev_id == 0:
-            self.d_tof0_raw = msg.distance # TODO: this isn't the 'raw' value, it's the
+            self.d_tof0_raw = msg.distance / 1000
         elif msg.dev_id == 1:
-            self.d_tof1_raw = msg.distance
+            self.d_tof1_raw = msg.distance / 1000
 
         if self.controller_running:
             # timestamp_tuple = self.get_clock().now().seconds_nanoseconds()
@@ -927,7 +927,6 @@ class FindBranchRollWristController(TFNode):
                     if not self.tof1_branch_found:
                         self.d_tof1_readings.append(self.d_tof1)
                         self.timestamp_readings_tof1.append(timestamp_float)
-
 
         return
 
