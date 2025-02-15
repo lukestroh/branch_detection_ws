@@ -30,7 +30,7 @@ def get_branch_center_time_and_distance(
     # Clean data
     try:
         readings_plane_filtered = np.where(
-            np.asarray(filtered_readings) < node.vl6180_far_plane, filtered_readings, np.nan
+            np.asarray(filtered_readings) < node.tof_far_plane, filtered_readings, np.nan
         )
         timestamps_filtered = np.where(np.isnan(readings_plane_filtered), np.nan, np.asarray(filtered_timestamps))
         readings_plane_filtered = readings_plane_filtered[~np.isnan(readings_plane_filtered)]

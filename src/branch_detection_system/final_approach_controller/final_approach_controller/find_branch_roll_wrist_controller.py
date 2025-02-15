@@ -229,13 +229,13 @@ class FindBranchRollWristController(TFNode):
         self.eef_weight = 0.355  # TODO: measure again. Measured IRL
 
         # Sensor attributes
-        self.vl6180_far_plane = 0.200  # 0.19 based on testing, but give it small window. TODO: Get from param file
-        self.vl6180_precision = 0.001
+        self.tof_far_plane = 0.200  # 0.19 based on testing, but give it small window. TODO: Get from param file
+        self.tof_precision = 0.001
 
-        self.d_tof0 = 0.255
-        self.d_tof1 = 0.255
-        self.d_tof0_raw = 0.255
-        self.d_tof1_raw = 0.255
+        self.d_tof0 = 0.0 # 0.255
+        self.d_tof1 = 0.0 # 0.255
+        self.d_tof0_raw = 0.0 # 0.255
+        self.d_tof1_raw = 0.0 # 0.255
 
         return
 
