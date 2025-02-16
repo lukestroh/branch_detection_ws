@@ -12,6 +12,7 @@ from final_approach_controller.tf_node import TFNode
 from final_approach_controller_msgs.action import RunCutPointRotateAxis
 from geometry_msgs.msg import TwistStamped
 from std_srvs.srv import Trigger
+from tof_msgs.msg import TofStamped
 from vl6180_msgs.msg import Vl6180FilteredStamped
 
 import modern_robotics as mr
@@ -55,8 +56,8 @@ class CutPointRotateAxisController(TFNode):
 
         # Subscribers
         self._sub_tof_filtered = self.create_subscription(
-            msg_type=Vl6180FilteredStamped,
-            topic="/vl6180/filtered",
+            msg_type=TofStamped,
+            topic="/vl53l4cd/filtered",
             callback=self._sub_cb_tof_filtered,
             callback_group=self.callback_group,
             qos_profile=1,
@@ -256,12 +257,11 @@ class CutPointRotateAxisController(TFNode):
     # ===============================
     #     Subscription callbacks
     # ===============================
-    def _sub_cb_tof_filtered(self, msg: Vl6180FilteredStamped):
-        # Do some checks, make sure that the readings make sense in intuitive way.
-        # Make sure readings do not exceed maximum. # TODO: Find a way to get sensor parameters in here
-        self.d_tof0 = msg.data[0] / 1000  # mm to m
-        self.d_tof1 = msg.data[1] / 1000
-        # self.warn(self.d_tof0)
+    def _sub_cb_tof_filtered(self, msg: TofStamped):
+        if msg.dev_id == 0:
+            self.d_tof0 = msg.data[0]
+        elif msg.dev_id == 1:
+            self.d_tof1 = msg.data[0]
         return
 
     # ===============================

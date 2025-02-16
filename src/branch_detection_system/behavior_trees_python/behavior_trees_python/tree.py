@@ -17,6 +17,7 @@ from rclpy.duration import Duration
 from rclpy.executors import SingleThreadedExecutor, ExternalShutdownException
 from rclpy.node import Node
 
+from tof_msgs.msg import TofStamped
 from vl6180_msgs.msg import Vl6180FilteredStamped
 
 from behavior_trees_python.behaviors.cut_point_rotate_axis_client import CutPointRotateAxisControllerBehavior
@@ -52,18 +53,18 @@ class FinalApproachTreeNode(Node):
 
         # Subscribers
         self._sub_tof_filtered = self.create_subscription(
-            Vl6180FilteredStamped, "/vl6180/filtered", self._sub_cb_tof_filtered, 10
+            TofStamped, "/vl53l4cd/filtered", self._sub_cb_tof_filtered, 10
         )
 
         self._last_log_time = self.get_clock().now()
-
+ 
         return
 
-    def _sub_cb_tof_filtered(self, msg: Vl6180FilteredStamped):
-        # self.d_tof0 = msg.data[0]
-        # self.d_tof1 = msg.data[1]
-        self.bb.d_tof0 = msg.data[0]
-        self.bb.d_tof1 = msg.data[1]
+    def _sub_cb_tof_filtered(self, msg: TofStamped):
+        if msg.dev_id == 0:
+            self.bb.d_tof0 = msg.data[0]
+        elif msg.dev_id == 1:
+            self.bb.d_tof1 = msg.data[0]
         return
 
     def description(self):
@@ -178,9 +179,9 @@ class FinalApproachTreeNode(Node):
         )
         # self._last_log_time = self.get_clock().now()
 
-        for visitor in behavior_tree.visitors:
-            # if visitor.visited.
-            self.info(visitor.visited.items())
+        # for visitor in behavior_tree.visitors:
+        #     # if visitor.visited.
+        #     self.info(visitor.visited.items())
 
         # self.warn(self.tree.snapshot_visitor.visited)
 

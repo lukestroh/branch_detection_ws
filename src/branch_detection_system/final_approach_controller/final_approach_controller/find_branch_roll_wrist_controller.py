@@ -17,7 +17,7 @@ from final_approach_controller_msgs.action import RunFindBranchRollWrist
 from final_approach_controller_msgs.msg import ToFBranchFitStamped
 import final_approach_controller.curve_fitting as cf
 from final_approach_controller.tf_node import TFNode
-from vl6180_msgs.msg import Vl6180, Vl6180FilteredStamped
+# from vl6180_msgs.msg import Vl6180, Vl6180FilteredStamped
 from vl53l4cd_msgs.msg import Vl53l4cdStamped
 from tof_msgs.msg import TofStamped
 
@@ -527,7 +527,7 @@ class FindBranchRollWristController(TFNode):
                             delta = curr_pose - branch_center_point
                             _Q_C = delta - np.dot(branch_vec_normalized, delta) * branch_vec_normalized
 
-                            desired_radius_from_branch = 0.08  # m
+                            desired_radius_from_branch = 0.10  # m
 
                             desired_eef_xyz = (
                                 branch_center_point + _Q_C / np.linalg.norm(_Q_C) * desired_radius_from_branch
@@ -637,19 +637,21 @@ class FindBranchRollWristController(TFNode):
                             await move_group_future
                             # rclpy.spin_until_future_complete(node=self, future=move_group_future)
 
-                            
+                            # Wait a second for moving average filter to settle.
+                            self.get_clock().sleep_for(Duration(seconds=1.0))
 
                             if move_group_future.result() is None or not move_group_future.result().result:
                                 goal_handle.abort()
                                 result.success = False
                             else:
-                                if self.d_tof0 < self.vl6180_far_plane and self.d_tof1 < self.vl6180_far_plane:
+                                if self.d_tof0 < self.tof_far_plane and self.d_tof1 < self.tof_far_plane:
                                     goal_handle.succeed()
                                     result.success = True
                                 else:
                                     goal_handle.abort()
                                     result.success = False
-                                    self.error("Failed to navigate to pose where both sensors can read the branch.")
+                                    
+                                    self.error(f"Failed to navigate to pose where both sensors can read the branch.\nd_tof0: {self.d_tof0}, d_tof1: {self.d_tof1}, far_plane: {self.tof_far_plane}")
 
                             self.controller_running = False
                             return result
@@ -705,7 +707,7 @@ class FindBranchRollWristController(TFNode):
             self.reset_controller()
             self.info("FindBranchRollWristController has terminated.")
 
-            self.stop_servo()
+            await self.stop_servo()
 
             # Stop forward pos con
             # switch_ctrlr_req = SwitchController.Request(
@@ -720,7 +722,7 @@ class FindBranchRollWristController(TFNode):
             # else:
             #     self.error("Failed to switch controllers,")
 
-            self.switch_controllers(activate_controllers=self._servo_controller, deactivate_controllers=self._move_group_controller)
+            await self.switch_controllers(activate_controllers=self._servo_controller, deactivate_controllers=self._move_group_controller)
 
             self.get_clock().sleep_for(Duration(seconds=2.0))
             

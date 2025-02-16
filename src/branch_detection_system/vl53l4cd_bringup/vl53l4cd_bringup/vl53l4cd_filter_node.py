@@ -131,7 +131,7 @@ class VL53L4CDFilterNode(Node):
         # self.vl53l4cd_msg_filtered = Vl53l4cdStamped()
        
 
-        self.deque_size = 15
+        self.deque_size = 10
         self.deques = [deque([self.RANGING_MAX] * self.deque_size), deque([self.RANGING_MAX] * self.deque_size)]
 
 
