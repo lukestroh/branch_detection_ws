@@ -31,7 +31,7 @@ def setup_launch(context: LaunchContext, *args, **kwargs):
     # logger.warn(f"{os.path.exists(filepath_vl53l4cd_config)}")
     # logger.warn(f"{params_vl53l4cd}")
 
-    use_plot_juggler = LaunchConfiguration("use_plot_juggler")
+    use_plotjuggler = LaunchConfiguration("use_plotjuggler")
 
     node_vl53l4cd_filtered = Node(
         package="vl53l4cd_bringup",
@@ -52,7 +52,7 @@ def setup_launch(context: LaunchContext, *args, **kwargs):
             '-l',
             os.path.join(get_package_share_directory('vl53l4cd_bringup'), 'plotjuggler/plotjuggler_config.xml')
         ],
-        condition=IfCondition(use_plot_juggler)
+        condition=IfCondition(use_plotjuggler)
     )
 
     nodes_to_launch = [
@@ -65,7 +65,7 @@ def setup_launch(context: LaunchContext, *args, **kwargs):
 
 def generate_launch_description():
     declared_args = []
-    declared_args.append(DeclareLaunchArgument("use_plot_juggler", default_value="false"))
+    declared_args.append(DeclareLaunchArgument("use_plotjuggler", default_value="false"))
     declared_args.append(DeclareLaunchArgument('robot_eef_part', default_value='mock_pruner'))
 
     ld = LaunchDescription(declared_args + [OpaqueFunction(function=setup_launch)])
