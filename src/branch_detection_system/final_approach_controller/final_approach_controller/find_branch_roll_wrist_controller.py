@@ -251,19 +251,14 @@ class FindBranchRollWristController(TFNode):
                 self._timer_pub_servo.cancel()
             # if not self._timer_run_quadratic_fit.is_canceled():
             #     self._timer_run_quadratic_fit.cancel()
-        goal_handle.abort()
+        goal_handle.canceled()
         self.reset_controller()
         return CancelResponse.ACCEPT
 
     async def _action_exe_cb_run_find_branch_roll_wrist(self, goal_handle: ServerGoalHandle):
         self.controller_running = True
 
-        start_servo_future: Future = self._srv_client_start_servo.call_async(request=Trigger.Request())
-        await start_servo_future
-        if start_servo_future.result().success:
-            self.info(f"Servo started")
-        else:
-            self.error(f"Servo failed to start")
+        await self.start_servo()
 
         if not self.start_states_recorded:
             self.start_controller_tf = self.lookup_transform(
@@ -287,7 +282,6 @@ class FindBranchRollWristController(TFNode):
                 self._timer_pub_servo = self.create_timer(
                     timer_period_sec=1 / 250,
                     callback=self._timer_cb_pub_servo,
-                    # callback_group=self._pub_servo_cb_group
                     callback_group=self._reentrant_cb_group,
                 )
             else:
@@ -748,7 +742,12 @@ class FindBranchRollWristController(TFNode):
         return
     
     async def start_servo(self) -> None:
-
+        start_servo_future: Future = self._srv_client_start_servo.call_async(request=Trigger.Request())
+        await start_servo_future
+        if start_servo_future.result().success:
+            self.info(f"Servo started.")
+        else:
+            self.error(f"Servo failed to start.")
         return
     
     async def stop_servo(self) -> None:

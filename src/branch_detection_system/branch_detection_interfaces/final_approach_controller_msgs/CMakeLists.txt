@@ -7,8 +7,9 @@ endif()
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
-find_package(std_msgs REQUIRED)
 find_package(action_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 
 rosidl_generate_interfaces(
@@ -16,11 +17,13 @@ rosidl_generate_interfaces(
   "msg/ToFBranchFit.msg"
   "msg/ToFBranchFitStamped.msg"
   "srv/StartFinalApproach.srv"
+  "action/GeneratePoses.action"
   "action/RunCutPointRotateAxis.action"
   "action/RunFinalApproach.action"
   "action/RunFindBranchRollWrist.action"
   "action/RunFindBranchPitchWrist.action"
-  DEPENDENCIES std_msgs action_msgs
+  "action/RunTestReset.action"
+  DEPENDENCIES action_msgs geometry_msgs std_msgs
 )
 
 if(BUILD_TESTING)
