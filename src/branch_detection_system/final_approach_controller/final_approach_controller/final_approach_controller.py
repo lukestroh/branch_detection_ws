@@ -159,7 +159,7 @@ class FinalApproachControllerNode(TFNode):
 
                 # For safety purposes...
                 if self.get_clock().now() - self.start_servo_time > Duration(seconds=10.0):
-                    goal_handle.canceled()
+                    goal_handle.abort()
                     result.success = False
                     self.controller_running = False
                     self.error("FinalApproachControllerAction timed out.")
@@ -175,7 +175,8 @@ class FinalApproachControllerNode(TFNode):
             goal_handle.abort()
             result.success = False
         finally:
-            self._timer_run_controller.cancel()
+            if not self._timer_run_controller.is_canceled:
+                self._timer_run_controller.cancel()
             stop_servo_resp: Trigger.Response = self._srv_client_stop_servo.call(request=Trigger.Request())
             if stop_servo_resp.success:
                 self.info(f"Servo stopped.")

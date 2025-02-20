@@ -43,7 +43,7 @@ def get_branch_center_time_and_distance(
     try:
         # Define RANSAC regressor
         ransac = sklm.RANSACRegressor(
-            estimator=sklm.LinearRegression(), max_trials=300, min_samples=20, residual_threshold=0.004
+            estimator=sklm.LinearRegression(), max_trials=300, min_samples=15, residual_threshold=0.004
         )
 
         # Fit RANSAC model to data

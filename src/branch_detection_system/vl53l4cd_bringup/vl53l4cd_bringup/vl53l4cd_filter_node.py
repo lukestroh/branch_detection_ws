@@ -132,7 +132,7 @@ class VL53L4CDFilterNode(Node):
        
 
         self.deque_size = 10
-        self.deques = [deque([self.RANGING_MAX] * self.deque_size), deque([self.RANGING_MAX] * self.deque_size)]
+        self.deques = [deque([1.0] * self.deque_size), deque([1.0] * self.deque_size)]
 
 
 
