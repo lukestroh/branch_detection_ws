@@ -13,7 +13,6 @@ class GeneratePosesBehavior(pt.behaviour.Behaviour):
     """Behavior wrapper for the final approach controller action client"""
     def __init__(self, name):
         super(GeneratePosesBehavior, self).__init__(name)
-
         return
 
     def setup(self, node):
@@ -24,7 +23,7 @@ class GeneratePosesBehavior(pt.behaviour.Behaviour):
         self.error = lambda x: self.node.get_logger().error(f"\n{x}")
         self.fatal = lambda x: self.node.get_logger().fatal(f"\n{x}")
 
-        self.info("Setting up FinalApproachControllerBehavior")
+        self.info("Setting up GeneratePosesBehavior")
         self.client = ActionClient(node=self.node, action_type=GeneratePoses, action_name="generate_poses")
         self.client.wait_for_server()
 
@@ -47,6 +46,15 @@ class GeneratePosesBehavior(pt.behaviour.Behaviour):
         )
         self._send_goal_future.add_done_callback(self._send_goal_cb)
         return
+    
+    def update(self):
+        if self.goal_status is not None:
+            if self.goal_status == True:
+                self.warn(f"GOAL STATUS: {self.goal_status}")
+                return pt.common.Status.SUCCESS
+            else:
+                return pt.common.Status.FAILURE
+        return pt.common.Status.RUNNING
 
     def _send_goal_cb(self, future: Future):
         # If there is a result, consider action complete and save result code to be checked in the `update()` method

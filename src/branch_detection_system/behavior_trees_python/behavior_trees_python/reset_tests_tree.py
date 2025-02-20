@@ -14,12 +14,15 @@ from rclpy.executors import SingleThreadedExecutor, ExternalShutdownException
 from rclpy.node import Node
 
 from tof_msgs.msg import TofStamped
+from geometry_msgs.msg import Pose
 from vl6180_msgs.msg import Vl6180FilteredStamped
 
 from behavior_trees_python.behaviors.cut_point_rotate_axis_client import CutPointRotateAxisControllerBehavior
 from behavior_trees_python.behaviors.final_approach_controller_client import FinalApproachControllerBehavior
 from behavior_trees_python.behaviors.find_branch_roll_wrist_client import FindBranchRollWristControllerBehavior
 from behavior_trees_python.behaviors.generate_poses_behavior import GeneratePosesBehavior
+from behavior_trees_python.behaviors.iterate_poses_behavior import IteratePosesBehavior
+from behavior_trees_python.behaviors.reset_test_behavior import ResetTestBehavior
 
 
 class ResetTestTreeNode(Node):
@@ -34,14 +37,14 @@ class ResetTestTreeNode(Node):
 
         super().__init__(node_name="reset_tests_tree_node")
 
-        # Sensor params # TODO: Get from param file
-        self.vl6180_far_plane = 0.200  # 0.19 based on testing, but give it small window
-        self.vl6180_precision = 0.001
-
         # Blackboard setup
         self.bb = py_trees.blackboard.Client(name="ResetTestTreeNode")
         self.bb.register_key(key="d_tof0", access=py_trees.common.Access.WRITE)
         self.bb.register_key(key="d_tof1", access=py_trees.common.Access.WRITE)
+        self.bb.register_key(key='current_pose_index', access=py_trees.common.Access.WRITE)
+        self.bb.current_pose_index = 0
+        self.bb.register_key(key="current_pose", access=py_trees.common.Access.WRITE)
+        self.bb.current_pose = Pose()
 
         # Behavior tree setup
         self.tree: py_trees_ros.trees.BehaviourTree = self.create_behavior_tree_ros()
@@ -57,6 +60,12 @@ class ResetTestTreeNode(Node):
  
         return
     
+    def _sub_cb_tof_filtered(self, msg: TofStamped):
+        if msg.dev_id == 0:
+            self.bb.d_tof0 = msg.data[0]
+        elif msg.dev_id == 1:
+            self.bb.d_tof1 = msg.data[0]
+        return
 
     def description(self):
         """Print description about the program"""
@@ -94,15 +103,11 @@ class ResetTestTreeNode(Node):
         """
 
         # Behaviors
-        generate_poses_behavior = GeneratePosesBehavior(
-            name='generate_poses_behavior'
-        )
-        cut_point_rotate_axis_behavior = CutPointRotateAxisControllerBehavior(
-            name="cut_point_rotate_axis_client",
-        )
-        final_approach_behavior = FinalApproachControllerBehavior(
-            name="final_approach_behavior_client",
-        )
+        generate_poses_behavior = GeneratePosesBehavior(name='generate_poses_behavior')
+        iterate_poses_behavior = IteratePosesBehavior(name='iterate_poses_behavior')
+        reset_test_behavior = ResetTestBehavior(name='reset_test_behavior')
+        cut_point_rotate_axis_behavior = CutPointRotateAxisControllerBehavior(name="cut_point_rotate_axis_client")
+        final_approach_behavior = FinalApproachControllerBehavior(name="final_approach_behavior_client")
 
         # Find branch roll wrist
         find_branch_roll_wrist_behavior = FindBranchRollWristControllerBehavior(
@@ -111,7 +116,7 @@ class ResetTestTreeNode(Node):
         find_branch_roll_wrist_retry = py_trees.decorators.Retry(
             name="find_branch_roll_wrist_retry",
             child=find_branch_roll_wrist_behavior,
-            num_failures=3,
+            num_failures=1,
         )
         # find_branch_roll_wrist_blackboard = py_trees.decorators.StatusToBlackboard(
         #     name='find_branch_roll_wrist_blackboard',
@@ -125,26 +130,29 @@ class ResetTestTreeNode(Node):
         )
 
         # Find branch selector
-        find_branch_selector.add_children(
-            [
-                find_branch_roll_wrist_retry
-                # find_branch_roll_wrist_blackboard
-            ]
-        )
-
+        find_branch_selector.add_children([find_branch_roll_wrist_retry])
+        # Align and approach sequence
         align_and_approach_sequence = py_trees.composites.Sequence(
             name="align_and_approach_sequence",
             memory=True,
             children=[cut_point_rotate_axis_behavior, final_approach_behavior],
         )
 
+        iterate_poses_sequence = py_trees.composites.Sequence(
+            name='iterate_poses_sequence',
+            memory=True,
+            children=[reset_test_behavior, find_branch_selector, align_and_approach_sequence, iterate_poses_behavior]
+        )
+
+        #####################
         # Root sequence
+        #####################
         # Run find_branch_selector until success, then run align_and_approach_sequence
         root_sequence = py_trees.composites.Sequence(
             name="root_sequence",
             memory=True,
             # children=[align_and_approach_sequence]
-            children=[find_branch_selector, align_and_approach_sequence],
+            children=[generate_poses_behavior, iterate_poses_sequence],
         )
         root = py_trees.decorators.OneShot(
             name="root", child=root_sequence, policy=py_trees.common.OneShotPolicy.ON_COMPLETION
@@ -170,16 +178,9 @@ class ResetTestTreeNode(Node):
                 previously_visited=snapshot_visitor.previously_visited,
                 show_status=True,
             )
-            + "\n"
-            + py_trees.display.unicode_blackboard()
+            # + "\n"
+            # + py_trees.display.unicode_blackboard()
         )
-        # self._last_log_time = self.get_clock().now()
-
-        # for visitor in behavior_tree.visitors:
-        #     # if visitor.visited.
-        #     self.info(visitor.visited.items())
-
-        # self.warn(self.tree.snapshot_visitor.visited)
 
         if behavior_tree.root.status == py_trees.common.Status.SUCCESS:
             self.info(f"Exiting with status {behavior_tree.root.status}")

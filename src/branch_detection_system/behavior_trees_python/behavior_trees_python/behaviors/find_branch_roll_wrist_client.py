@@ -72,7 +72,6 @@ class FindBranchRollWristControllerBehavior(pt.behaviour.Behaviour):
         if self.goal_status is not None:
             if self.goal_status == True:
                 self.warn(f"GOAL STATUS: {self.goal_status}")
-
                 return pt.common.Status.SUCCESS
             else:
                 return pt.common.Status.FAILURE

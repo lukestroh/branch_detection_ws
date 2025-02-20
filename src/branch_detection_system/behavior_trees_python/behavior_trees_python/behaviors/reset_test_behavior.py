@@ -18,11 +18,10 @@ class ResetTestBehavior(pt.behaviour.Behaviour):
     def __init__(self, name):
         super(ResetTestBehavior, self).__init__(name)
 
-
+        self.blackboard = pt.blackboard.Blackboard()
         return
 
     def setup(self, node):
-        """Sends the inital RunTestReset goal"""
         self.node = node
         self.info = lambda x: self.node.get_logger().info(f"\n{x}")
         self.warn = lambda x: self.node.get_logger().warn(f"\n{x}")
@@ -30,8 +29,8 @@ class ResetTestBehavior(pt.behaviour.Behaviour):
         self.fatal = lambda x: self.node.get_logger().fatal(f"\n{x}")
 
         self.info("Setting up ResetTestBehavior")
-        self.client = ActionClient(node=self.node, action_type=RunTestReset, action_name="run_test_reset")
-        self.client.wait_for_server()
+        self._action_client_run_test_reset = ActionClient(node=self.node, action_type=RunTestReset, action_name="run_test_reset")
+        self._action_client_run_test_reset.wait_for_server()
 
         self.goal_status = None
         self._goal_handle = None
@@ -44,8 +43,9 @@ class ResetTestBehavior(pt.behaviour.Behaviour):
         """Send a goal to the RunFinalApproach action server"""
         self.goal_status = None
         self.goal = RunTestReset.Goal()
-        self.goal.pose = Pose()
-        self.goal.pose.position = ...
+        poses = self.blackboard.get('poses')
+        self.goal.pose_idx = self.blackboard.get('current_pose_index')
+        self.goal.pose = poses[self.goal.pose_idx]
 
         """
         position:
@@ -58,10 +58,28 @@ class ResetTestBehavior(pt.behaviour.Behaviour):
             z: 0.653281482371788
             w: 0.2705980500437208
         """
-        self._send_goal_future: Future = self.client.send_goal_async(
-            goal=self.goal,
-        )
+        self._send_goal_future: Future = self._action_client_run_test_reset.send_goal_async(goal=self.goal)
         self._send_goal_future.add_done_callback(self._send_goal_cb)
+        return
+    
+    def _send_goal_cb(self, future: Future):
+        # If there is a result, consider action complete and save result code to be checked in the `update()` method
+        self._goal_handle: ClientGoalHandle = future.result()
+        if not self._goal_handle.accepted:
+            self.warn(f"{self.name}: Action server not available.")
+            # self.feedback_message = "Action server not available."
+        else:
+            self.info(f"{self.name}: Goal accepted.")
+            self._result_future: Future = self._goal_handle.get_result_async()
+            self._result_future.add_done_callback(callback=self._on_result_cb)
+        # self.goal_status = goal_handle.status
+        # self.info((f"{self.goal_status}"))
+        return
+
+    def _on_result_cb(self, future: Future):
+        result: RunTestReset.Result = future.result().result
+        self.info(f"{self.name}: Result: {result}")
+        self.goal_status = result.success
         return
     
     def update(self):
@@ -72,3 +90,19 @@ class ResetTestBehavior(pt.behaviour.Behaviour):
             else:
                 return pt.common.Status.FAILURE
         return pt.common.Status.RUNNING
+    
+    def terminate(self, new_status: pt.common.Status):
+        if self._goal_handle.status == GoalStatus.STATUS_EXECUTING:
+            _goal_canceled_future: Future = self._goal_handle.cancel_goal_async()
+            _goal_canceled_future.add_done_callback(self._on_cancel_cb)
+
+        self.logger.info(f"Terminated with status {new_status}")
+        return
+
+    def _on_cancel_cb(self, future: Future):
+        _cancel_result = future.result().result
+        if _cancel_result:
+            self.info("Action successfully canceled.")
+        else:
+            self.error("ACTION NOT CANCELED. ROBOT MAY STILL BE IN OPERATION.")
+        return

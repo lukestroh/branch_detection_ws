@@ -26,10 +26,11 @@ class GeneratePosesServiceNode(TFNode):
         self.info = lambda x: self.get_logger().info(f"\n{x}")
         self.warn = lambda x: self.get_logger().warn(f"\n{x}")
         self.error = lambda x: self.get_logger().error(f"\n{x}")
+        self.fatal = lambda x: self.get_logger().fatal(f"\n{x}")
         
         # Parameters
         self._param_robot_eef_part = self.declare_parameter('robot_eef_part', value=Parameter.Type.STRING)
-        self.warn(self._param_robot_eef_part.get_parameter_value().string_value)
+        # self.warn(self._param_robot_eef_part.get_parameter_value().string_value)
 
         # Callback groups
         self._reentrant_cb_group = ReentrantCallbackGroup()
@@ -97,10 +98,13 @@ class GeneratePosesServiceNode(TFNode):
             source_frame='mock_pruner__tool0',
             target_frame="amiga__base",
             time=self.get_clock().now(),
-            sync=True
+            sync=True,
+            as_matrix=True
         )
 
-        self.start_pose = self.transform_to_pose(tf_msg=self.tf_start__tool0_to_base)
+        # self.start_pose = self.transform_to_pose(tf_msg=self.tf_start__tool0_to_base)
+
+        self.start_pose = Pose()
 
         x_poses = self.generate_position_poses('x', self.start_pose, self.x_range, num_poses=self.num_poses_per_dof)
         for pose in x_poses:
@@ -120,11 +124,31 @@ class GeneratePosesServiceNode(TFNode):
         for pose in orientation_poses:
             generate_poses_result.poses.append(pose)
 
+        for i, pose in enumerate(generate_poses_result.poses):
+            pose_xyz = [pose.position.x, pose.position.y, pose.position.z, 1]
+            pose_quat = [pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w]
+            pose_mat = Rotation.from_quat(pose_quat).as_matrix()
+
+            world_pose_xyz = self.tf_start__tool0_to_base @ pose_xyz
+            world_pose_orientation_mat = self.tf_start__tool0_to_base[:3, :3] @ pose_mat
+            world_pose_quat = Rotation.from_matrix(world_pose_orientation_mat).as_quat()
+
+            generate_poses_result.poses[i].position.x = world_pose_xyz[0]
+            generate_poses_result.poses[i].position.y = world_pose_xyz[1]
+            generate_poses_result.poses[i].position.z = world_pose_xyz[2]
+
+            generate_poses_result.poses[i].orientation.x = world_pose_quat[0]
+            generate_poses_result.poses[i].orientation.y = world_pose_quat[1]
+            generate_poses_result.poses[i].orientation.z = world_pose_quat[2]
+            generate_poses_result.poses[i].orientation.w = world_pose_quat[3]
+            # generate_poses_result.poses[i] = 
+
         goal_handle.succeed()
         generate_poses_result.success = True
         return generate_poses_result
     
     def generate_position_poses(self, direction: str, start_pose: Pose | PoseStamped, _range: float, num_poses: int):
+        """TODO: Gross, refactor majorly"""
         poses = []
 
         if direction == 'x':
@@ -139,7 +163,12 @@ class GeneratePosesServiceNode(TFNode):
         linspace = np.linspace(start=pos - _range/2, stop=pos + _range/2, num=num_poses)
         for _x in linspace:
             pose = deepcopy(start_pose)
-            pose.position.x = _x
+            if direction == 'x':
+                pose.position.x = _x
+            elif direction == 'y':
+                pose.position.y = _x
+            elif direction == 'z':
+                pose.position.z = _x
             poses.append(pose)
         return poses
     

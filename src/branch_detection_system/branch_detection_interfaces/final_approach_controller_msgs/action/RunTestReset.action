@@ -1,4 +1,5 @@
 geometry_msgs/Pose pose
+int64 pose_idx
 ---
 bool success
 ---
