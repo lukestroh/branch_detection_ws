@@ -76,6 +76,7 @@ class GeneratePosesBehavior(pt.behaviour.Behaviour):
         self.goal_status = result.success
         self.poses = result.poses
         self.blackboard.set('poses', value=self.poses)
+        self.blackboard.set('current_pose', value=self.blackboard.get('poses')[self.blackboard.get('current_pose_index')])
         return
     
     def terminate(self, new_status: pt.common.Status):

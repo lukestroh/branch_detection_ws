@@ -51,12 +51,12 @@ class GeneratePosesServiceNode(TFNode):
         self.start_pose: Pose | PoseStamped
 
         # Class vars
-        self.num_poses_per_dof = 5
-        self.x_range = 0.1
-        self.y_range = 0.1
-        self.z_range = 0.1
-        self.roll_range = 3 * np.pi / 4
-        self.pitch_range = 3 * np.pi / 4
+        self.num_poses_per_dof = 4
+        self.x_range = 0.05
+        self.y_range = 0.05
+        self.z_range = 0.05
+        self.roll_range = 2 * np.pi / 3
+        self.pitch_range = 2 * np.pi / 3
         self.yaw_range = np.pi
         self.pose_list = []
         return
@@ -106,6 +106,8 @@ class GeneratePosesServiceNode(TFNode):
 
         self.start_pose = Pose()
 
+        generate_poses_result.poses.append(self.start_pose)
+
         x_poses = self.generate_position_poses('x', self.start_pose, self.x_range, num_poses=self.num_poses_per_dof)
         for pose in x_poses:
             generate_poses_result.poses.append(pose) 
@@ -124,6 +126,7 @@ class GeneratePosesServiceNode(TFNode):
         for pose in orientation_poses:
             generate_poses_result.poses.append(pose)
 
+        # Rotate the pose to the base frame for planning
         for i, pose in enumerate(generate_poses_result.poses):
             pose_xyz = [pose.position.x, pose.position.y, pose.position.z, 1]
             pose_quat = [pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w]

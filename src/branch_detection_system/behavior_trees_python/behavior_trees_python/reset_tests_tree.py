@@ -44,6 +44,7 @@ class ResetTestTreeNode(Node):
         self.bb.register_key(key='current_pose_index', access=py_trees.common.Access.WRITE)
         self.bb.current_pose_index = 0
         self.bb.register_key(key="current_pose", access=py_trees.common.Access.WRITE)
+        self.bb.register_key(key='poses', access=py_trees.common.Access.WRITE)
         self.bb.current_pose = Pose()
 
         # Behavior tree setup
@@ -104,7 +105,7 @@ class ResetTestTreeNode(Node):
 
         # Behaviors
         generate_poses_behavior = GeneratePosesBehavior(name='generate_poses_behavior')
-        iterate_poses_behavior = IteratePosesBehavior(name='iterate_poses_behavior')
+        # iterate_poses_behavior = IteratePosesBehavior(name='iterate_poses_behavior')
         reset_test_behavior = ResetTestBehavior(name='reset_test_behavior')
         cut_point_rotate_axis_behavior = CutPointRotateAxisControllerBehavior(name="cut_point_rotate_axis_client")
         final_approach_behavior = FinalApproachControllerBehavior(name="final_approach_behavior_client")
@@ -138,11 +139,47 @@ class ResetTestTreeNode(Node):
             children=[cut_point_rotate_axis_behavior, final_approach_behavior],
         )
 
+        grouped_controller_sequence = py_trees.composites.Sequence(
+            name='grouped_controller_sequence',
+            memory=True,
+            children=[find_branch_selector, align_and_approach_sequence]
+        )
+
+        # grouped_controller_failure_is_running = py_trees.decorators.FailureIsRunning(
+        #     name='grouped_controller_failure_is_running',
+        #     child=grouped_controller_sequence
+        # )
+
+        # grouped_controller_everything_is_running = py_trees.decorators.SuccessIsRunning(
+        #     name='grouped_controller_everything_is_running',
+        #     child=grouped_controller_failure_is_running
+        # )
+
+        # iterate_poses_success_is_running = py_trees.decorators.SuccessIsRunning(
+        #     name='iterate_poses_success_is_running',
+        #     child=iterate_poses_behavior
+        # )
+
+        
+
         iterate_poses_sequence = py_trees.composites.Sequence(
             name='iterate_poses_sequence',
             memory=True,
-            children=[reset_test_behavior, find_branch_selector, align_and_approach_sequence, iterate_poses_behavior]
+            children=[reset_test_behavior, grouped_controller_sequence]
         )
+        iterate_poses_failure_is_running = py_trees.decorators.FailureIsRunning(
+            name='iterate_poses_failure_is_running',
+            child=iterate_poses_sequence
+        )
+        iterate_poses_everything_is_running = py_trees.decorators.SuccessIsRunning(
+            name='iterate_poses_success_is_running',
+            child=iterate_poses_failure_is_running
+        )
+        # iterate_poses_retry = py_trees.decorators.Retry(
+        #     name='iterate_poses_retry',
+        #     child=iterate_poses_success_is_running,
+        #     num_failures=31
+        # )
 
         #####################
         # Root sequence
@@ -152,7 +189,7 @@ class ResetTestTreeNode(Node):
             name="root_sequence",
             memory=True,
             # children=[align_and_approach_sequence]
-            children=[generate_poses_behavior, iterate_poses_sequence],
+            children=[generate_poses_behavior, iterate_poses_everything_is_running],
         )
         root = py_trees.decorators.OneShot(
             name="root", child=root_sequence, policy=py_trees.common.OneShotPolicy.ON_COMPLETION
@@ -178,8 +215,8 @@ class ResetTestTreeNode(Node):
                 previously_visited=snapshot_visitor.previously_visited,
                 show_status=True,
             )
-            # + "\n"
-            # + py_trees.display.unicode_blackboard()
+            + "\n"
+            + py_trees.display.unicode_blackboard()
         )
 
         if behavior_tree.root.status == py_trees.common.Status.SUCCESS:

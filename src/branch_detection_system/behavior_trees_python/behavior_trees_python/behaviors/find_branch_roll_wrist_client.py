@@ -39,6 +39,7 @@ class FindBranchRollWristControllerBehavior(pt.behaviour.Behaviour):
         self._goal_handle = None
 
         self.node.get_logger().info("Finished FindBranchRollWristControllerBehavior setup.")
+        self.blackboard = pt.blackboard.Blackboard()
         return
 
     def initialise(self):
@@ -70,6 +71,8 @@ class FindBranchRollWristControllerBehavior(pt.behaviour.Behaviour):
 
     def update(self):
         if self.goal_status is not None:
+            current_pose_index = self.blackboard.get('current_pose_index')
+            self.blackboard.set('current_pose_index', value=current_pose_index + 1)
             if self.goal_status == True:
                 self.warn(f"GOAL STATUS: {self.goal_status}")
                 return pt.common.Status.SUCCESS

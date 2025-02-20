@@ -219,7 +219,7 @@ class FindBranchRollWristController(TFNode):
         self.feedback_pub_prev_time = self.get_clock().now()
         self.start_states_recorded = False
         if _param_use_mock_hardware:
-            self.max_angular_vel = np.pi / 16
+            self.max_angular_vel = np.pi / 2
         else:
             self.max_angular_vel = np.pi / 16 * 10  # For some reason the UR5e scales down servoing movement very hard?
 
