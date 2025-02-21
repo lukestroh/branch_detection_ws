@@ -50,7 +50,6 @@ def get_branch_center_time_and_distance(
         quadratic = skpp.PolynomialFeatures(degree=2)
         x_quad = quadratic.fit_transform(X=normalized_timestamps_filtered[:, np.newaxis])
         ransac = ransac.fit(X=x_quad, y=readings_plane_filtered)
-
         # Get fitted curve
         t_fit = np.linspace(
             min(normalized_timestamps_filtered),
@@ -58,8 +57,13 @@ def get_branch_center_time_and_distance(
             len(normalized_timestamps_filtered),
         )
         y_fit = ransac.predict(quadratic.fit_transform(t_fit[:, np.newaxis]))
+        
+        # Abort the fitting if the parabolic fit is negative
+        coefficients = ransac.estimator_.coef_
+        if coefficients[2] < 0:
+            node.warn(f"Calculated parabolic fit is negative: {coefficients[2]}x^2 + {coefficients[1]}x + {coefficients[0]}. Aborting fit.")
+            return None
     except Exception as e:
-
         node.error(traceback.format_exc())
         return None
 

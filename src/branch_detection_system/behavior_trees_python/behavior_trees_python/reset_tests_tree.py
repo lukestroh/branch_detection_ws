@@ -208,16 +208,18 @@ class ResetTestTreeNode(Node):
         # snapshot_visitor.
         # if self.get_clock().now() - self._last_log_time > Duration(seconds=0.005):
         #     self.info("\n")
-        self.info(
-            py_trees.display.unicode_tree(
-                root=behavior_tree.root,
-                visited=snapshot_visitor.visited,
-                previously_visited=snapshot_visitor.previously_visited,
-                show_status=True,
+        if self.get_clock().now() - self._last_log_time > Duration(seconds=1.0):
+            self.info(
+                py_trees.display.unicode_tree(
+                    root=behavior_tree.root,
+                    visited=snapshot_visitor.visited,
+                    previously_visited=snapshot_visitor.previously_visited,
+                    show_status=True,
+                )
+                + "\n"
+                + py_trees.display.unicode_blackboard()
             )
-            + "\n"
-            + py_trees.display.unicode_blackboard()
-        )
+            self._last_log_time = self.get_clock().now()
 
         if behavior_tree.root.status == py_trees.common.Status.SUCCESS:
             self.info(f"Exiting with status {behavior_tree.root.status}")

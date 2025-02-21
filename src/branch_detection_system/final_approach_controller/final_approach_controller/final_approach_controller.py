@@ -33,8 +33,6 @@ class FinalApproachControllerNode(TFNode):
         self.warn = lambda x: self.get_logger().warn(f"{pp.pformat(x)}")
         self.error = lambda x: self.get_logger().error(f"{pp.pformat(x)}")
 
-        self.create_timer(timer_period_sec=0.1, callback=self.print_stuff)
-
         # Callback group
         self.callback_group = ReentrantCallbackGroup()  # allows for subscriber to persist in service, action
         self._cb_group_servo_controller = MutuallyExclusiveCallbackGroup()
@@ -52,10 +50,10 @@ class FinalApproachControllerNode(TFNode):
         )
 
         # Service servers
-        self._srv_start_final_approach = self.create_service(
+        self._srv_server_start_final_approach = self.create_service(
             srv_name="final_approach_controller/start_final_approach",
             srv_type=StartFinalApproach,
-            callback=self._srv_cb_start_final_approach,
+            callback=self._srv_server_cb_start_final_approach,
             callback_group=self.callback_group,
         )
 
@@ -231,8 +229,6 @@ class FinalApproachControllerNode(TFNode):
         dist, theta = self.get_cut_point_info()
         dist_cut_point_to_branch = dist - self.tf_cut_point_to_tof0[2, 3]
 
-
-
         if (
             np.isclose(dist_cut_point_to_branch, 0, atol=self._dist_cut_point_to_branch_threshold)
             or (dist_cut_point_to_branch) < 0
@@ -292,7 +288,7 @@ class FinalApproachControllerNode(TFNode):
     #        Service callbacks
     # ===============================
 
-    def _srv_cb_start_final_approach(self, request, response):
+    def _srv_server_cb_start_final_approach(self, request, response):
         self.controller_running = True
         self._timer_run_controller = self.create_timer(
             timer_period_sec=1 / 30, callback=self._timer_cb_run_controller, callback_group=self.callback_group
@@ -304,12 +300,6 @@ class FinalApproachControllerNode(TFNode):
     # ===============================
     #       Controller methods
     # ===============================
-
-    def print_stuff(self):
-        # self.warn(self.get_cut_point_info())
-        # self.get_cut_point_info()
-        return
-
     def get_cut_point_info(self) -> tuple:
         dist = (self.d_tof0 + self.d_tof1) / 2
         d_diff = self.d_tof0 - self.d_tof1

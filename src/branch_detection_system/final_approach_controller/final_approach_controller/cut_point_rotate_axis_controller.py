@@ -29,6 +29,10 @@ class CutPointRotateAxisController(TFNode):
         self.warn = lambda x: self.get_logger().warn(f"{pp.pformat(x)}")
         self.error = lambda x: self.get_logger().error(f"{pp.pformat(x)}")
 
+        # Parameters
+        self.tof_ranging_max = 1.2 # TODO: Get from params
+        self.tof_name = "VL53L4CD"
+
         # Callback group
         self.callback_group = ReentrantCallbackGroup()  # allows for subscriber to persist in service, action
 
@@ -82,6 +86,7 @@ class CutPointRotateAxisController(TFNode):
         self._goal_handle = None
         self.d_tof0 = 0.0
         self.d_tof1 = 0.0
+        
         self.max_linear_speed = 0.01 * 10  # UR servo is slow?
         self.max_angular_speed = np.pi / 4 * 10
         self.K_p = 1 / self.max_angular_speed
@@ -194,18 +199,22 @@ class CutPointRotateAxisController(TFNode):
         self._tof_linear_distance = np.linalg.norm(tof0_to_tof1_pos_vec)
         if not np.all(np.isclose(self.tf_tof0_to_tof1[:3, :3], np.identity(3), atol=1e-3)):
             raise ValueError("The two ToF frames are not aligned with each other.")
-        self.warn(f"\n{mr.TransInv(self.tf_mp_cut_point_to_base)}")
+        # self.warn(f"\n{mr.TransInv(self.tf_mp_cut_point_to_base)}")
+        self.info(f"Received static tf frames.")
         return
 
     def _timer_cb_run_controller(self):
-        if np.isclose(self.d_tof0, 255.0, atol=5.0) or np.isclose(self.d_tof1, 255.0, atol=5.0):
-            self.info(
-                f"VL6180 sensor(s) are returning unreliable data, aborting controller. Data: {self.d_tof0}, {self.d_tof1}"
+        if np.isclose(self.d_tof0, self.tof_ranging_max, atol=0.05) or np.isclose(self.d_tof1, self.tof_ranging_max, atol=0.05):
+            self.error(
+                f"{self.tof_name} sensor(s) are returning unreliable data, aborting controller. Data: {self.d_tof0}, {self.d_tof1}"
             )
             self._timer_run_controller.cancel()
             self.controller_running = False
             self.publish_zero_twist()
             return
+        
+        if self.d_tof0 > 0.4 or self.d_tof1 > 0.4: # TODO: This is arbitrary, fix with better value (maybe based on calculated distance?)
+            self.error(f"{self.tof_name} sensor(s) are returning data beyond the calculated distance, aborting. Data: {self.d_tof0}, {self.d_tof1}")
 
         dist, theta = self.get_cut_point_info()
         dist_cut_point_to_branch = dist - self.tf_cut_point_to_tof0[2, 3]

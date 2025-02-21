@@ -14,7 +14,7 @@ from branch_detection_system_moveit_msgs.srv import MoveToPose
 from final_approach_controller_msgs.action import RunTestReset
 from geometry_msgs.msg import Twist, TwistStamped
 from std_srvs.srv import Trigger
-from controller_manager_msgs.srv import SwitchController
+from controller_manager_msgs.srv import SwitchController, ListControllers
 
 from final_approach_controller.tf_node import TFNode
 import modern_robotics as mr
@@ -93,10 +93,16 @@ class ResetTestNode(TFNode):
         )
         self._srv_client_stop_servo.wait_for_service()
 
-        self._srv_switch_ctrls = self.create_client(
+        self._srv_switch_ctrlrs = self.create_client(
             srv_type=SwitchController,
             srv_name="/controller_manager/switch_controller",
             callback_group=self._reentrant_cb_group,
+        )
+
+        self._srv_list_ctrlrs = self.create_client(
+            srv_type=ListControllers,
+            srv_name='/controller_manager/list_controllers',
+            callback_group=self._reentrant_cb_group
         )
 
         # Publishers
@@ -119,7 +125,7 @@ class ResetTestNode(TFNode):
 
         # Class params
         if _param_use_mock_hardware:
-            self.max_linear_speed = 0.01
+            self.max_linear_speed = 0.1
         else:
             self.max_linear_speed = 0.01 * 10
 
@@ -144,18 +150,28 @@ class ResetTestNode(TFNode):
         return
     
     async def switch_controllers(self, activate_controllers: list[str], deactivate_controllers: list[str]) -> None:
+        # await self.list_controllers()
+
         switch_ctrlr_req = SwitchController.Request(
             activate_controllers=[activate_controllers],
             deactivate_controllers=[deactivate_controllers],
             strictness=SwitchController.Request.STRICT,
         )
-        switch_ctrlr_future: Future = self._srv_switch_ctrls.call_async(request=switch_ctrlr_req)
+        switch_ctrlr_future: Future = self._srv_switch_ctrlrs.call_async(request=switch_ctrlr_req)
         await switch_ctrlr_future
         if switch_ctrlr_future.result().ok:
             self.info(f"Successfully deactivated {deactivate_controllers}, activated {activate_controllers}")
         else:
             self.error("Failed to switch controllers,")
         return
+    
+    async def list_controllers(self) -> None:
+        list_ctrlrs_req = ListControllers.Request()
+        list_ctrlrs_future: Future = self._srv_list_ctrlrs.call_async(request=list_ctrlrs_req)
+        await list_ctrlrs_future
+        if list_ctrlrs_future.result().controller:
+            self.warn(list_ctrlrs_future.result().controller)
+
 
     def publish_zero_twist(self):
         with self._servo_msg_lock:
@@ -222,14 +238,17 @@ class ResetTestNode(TFNode):
                     self.msg_twist.twist.angular.y = 0.0
                     self.msg_twist.twist.angular.z = 0.0
                     self.msg_twist.header.frame_id = f"{self._param_robot_eef_part}__tool0"
-                    self.msg_twist.header.stamp = self.get_clock().now().to_msg()
+                    self.msg_twist.header.stamp = self.get_clock().now().to_msg()            
 
                 self.get_clock().sleep_for(Duration(seconds=1.0))
                 self.publish_zero_twist()
-                with self._timer_lock:
-                    if not self._timer_pub_servo.is_canceled:
-                        self._timer_pub_servo.cancel()
+                
                 await self.stop_servo()
+
+            with self._timer_lock:
+                if not self._timer_pub_servo.is_canceled():
+                    self._timer_pub_servo.cancel()
+                    self.info("Canceling servo publisher...")
 
             # Move to new pose
             await self.switch_controllers(
@@ -262,28 +281,25 @@ class ResetTestNode(TFNode):
             run_test_reset_result.success = False
             goal_handle.abort()
             with self._timer_lock:
-                if not self._timer_pub_servo.is_canceled:
+                if not self._timer_pub_servo.is_canceled():
                     self._timer_pub_servo.cancel()
             self.fatal(traceback.format_exc())
 
         finally:
-            if run_test_reset_req.pose_idx != 0:
-                await self.switch_controllers(activate_controllers=self._servo_controller, deactivate_controllers=self._move_group_controller)
+            # if run_test_reset_req.pose_idx != 0:
+            #     await self.switch_controllers(activate_controllers=self._servo_controller, deactivate_controllers=self._move_group_controller)
             with self._timer_lock:
-                if not self._timer_pub_servo.is_canceled:
+                if not self._timer_pub_servo.is_canceled():
                     self._timer_pub_servo.cancel()
-            
             
         return run_test_reset_result
     
     # ===============================
     #        Future callbacks
     # ===============================
-
     def _done_cb_srv_cartesian_move_to_pose(self, future: Future):
         self.info("Move plan/execute finished.")
         return
-    
 
     # ===============================
     #         Timer callbacks
@@ -326,9 +342,8 @@ class ResetTestNode(TFNode):
         return
 
     def _timer_cb_pub_servo(self):
+        # self.info("hllo wrld")
         with self._servo_msg_lock:
-            # self.warn("SERVOING BACK")
-
             self._pub_servo.publish(self.msg_twist)
         return
     

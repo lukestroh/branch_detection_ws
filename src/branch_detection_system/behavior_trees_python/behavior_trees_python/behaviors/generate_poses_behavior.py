@@ -72,7 +72,7 @@ class GeneratePosesBehavior(pt.behaviour.Behaviour):
 
     def _on_result_cb(self, future: Future):
         result: GeneratePoses.Result = future.result().result
-        self.info(f"{self.name}: Result: {result}")
+        # self.info(f"{self.name}: Result: {result}")
         self.goal_status = result.success
         self.poses = result.poses
         self.blackboard.set('poses', value=self.poses)
