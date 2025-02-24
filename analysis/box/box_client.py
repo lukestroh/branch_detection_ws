@@ -102,7 +102,6 @@ class BoxClient():
                 store_tokens = self.store_tokens # uses store_tokens method above
             )
 
-            # auth_url, csrf_token = oauth.get_authorization_url(f"https://oregonstate.box.com/api/oauth2/authorize")
             auth_url, csrf_token = oauth.get_authorization_url(f"http://localhost:5000")
 
             webbrowser.open(auth_url)
@@ -111,19 +110,11 @@ class BoxClient():
             query_components = parse_qs(urlparse(user_input).query)
             auth_code = query_components.get('code')[0]
             url_csrf_token = query_components.get('state')[0]
-            # Redo this with 'requests' or flask, see: https://developer.box.com/guides/authentication/oauth2/without-sdk/
-            # auth_code = user_input.split("code=")[1] # this is a terrible workaround, but hey it works
-            # url_csrf_token = user_input.split("state=")[1].split("&code=")[0] # this is even worse
-            """
-            maybe use html.unescapegit
 
-
-            """
             assert url_csrf_token == csrf_token
             access_token, refresh_token = oauth.authenticate(auth_code)
             print("Authentication successful")
 
-            print("Error: %s" % (e,))
             pass
 
         client = box.Client(oauth)
