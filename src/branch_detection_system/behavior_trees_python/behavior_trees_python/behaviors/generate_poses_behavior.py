@@ -85,7 +85,7 @@ class GeneratePosesBehavior(pt.behaviour.Behaviour):
             _goal_canceled_future.add_done_callback(self._on_cancel_cb)
 
         self.logger.info(f"Terminated with status {new_status}")
-        self.client = None
+        # self.client = None
         return
 
     def _on_cancel_cb(self, future: Future):

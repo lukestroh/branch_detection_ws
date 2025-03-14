@@ -17,6 +17,7 @@ from final_approach_controller_msgs.action import RunFindBranchRollWrist
 from final_approach_controller_msgs.msg import ToFBranchFitStamped
 import final_approach_controller.curve_fitting as cf
 from final_approach_controller.tf_node import TFNode
+
 # from vl6180_msgs.msg import Vl6180, Vl6180FilteredStamped
 from vl53l4cd_msgs.msg import Vl53l4cdStamped
 from tof_msgs.msg import TofStamped
@@ -232,10 +233,10 @@ class FindBranchRollWristController(TFNode):
         self.tof_far_plane = 0.200  # 0.19 based on testing, but give it small window. TODO: Get from param file
         self.tof_precision = 0.001
 
-        self.d_tof0 = 0.0 # 0.255
-        self.d_tof1 = 0.0 # 0.255
-        self.d_tof0_raw = 0.0 # 0.255
-        self.d_tof1_raw = 0.0 # 0.255
+        self.d_tof0 = 0.0  # 0.255
+        self.d_tof1 = 0.0  # 0.255
+        self.d_tof0_raw = 0.0  # 0.255
+        self.d_tof1_raw = 0.0  # 0.255
 
         return
 
@@ -365,7 +366,7 @@ class FindBranchRollWristController(TFNode):
 
                     if not self.rotations_complete:
                         if not self.neg_rot_complete:
-                            # self.info(self.start_joint_states[2] - self.joint_states[2])         
+                            # self.info(self.start_joint_states[2] - self.joint_states[2])
                             # # rotate to the closest side
                             # if self.joint_states[-1] < 0 and self.joint_states[-1] > -1 * np.pi:
                             # negative angular rotation
@@ -431,13 +432,12 @@ class FindBranchRollWristController(TFNode):
                             with self._timer_lock:
                                 if not self._timer_pub_servo.is_canceled():
                                     self._timer_pub_servo.cancel()
-                            self.stop_servo()
-                                                        
-                            self.switch_controllers(
-                                activate_controllers=[self._move_group_controller],
-                                deactivate_controllers=[self._servo_controller]
+                            await self.stop_servo()
+
+                            await self.switch_controllers(
+                                activate_controllers=self._move_group_controller,
+                                deactivate_controllers=self._servo_controller,
                             )
-                        
 
                             # If the eef is moving, we need a common frame, which should be world or <robot-part>__base
                             # Get tof poses at calculated signal minimum times
@@ -596,9 +596,7 @@ class FindBranchRollWristController(TFNode):
 
                             # input("Hit enter to continue algorithm.")
 
-                            
                             self.info("Sending goal")
-                            
 
                             move_group_future: Future = self._srv_cartesian_move_to_pose.call_async(
                                 request=move_to_pose_req
@@ -620,10 +618,16 @@ class FindBranchRollWristController(TFNode):
                                 else:
                                     goal_handle.abort()
                                     result.success = False
-                                    
-                                    self.error(f"Failed to navigate to pose where both sensors can read the branch.\nd_tof0: {self.d_tof0}, d_tof1: {self.d_tof1}, far_plane: {self.tof_far_plane}")
+
+                                    self.error(
+                                        f"Failed to navigate to pose where both sensors can read the branch.\nd_tof0: {self.d_tof0}, d_tof1: {self.d_tof1}, far_plane: {self.tof_far_plane}"
+                                    )
 
                             self.controller_running = False
+                            await self.switch_controllers(
+                                activate_controllers=self._servo_controller,
+                                deactivate_controllers=self._move_group_controller,
+                            )
                             return result
             ############################################################################################################
 
@@ -631,7 +635,7 @@ class FindBranchRollWristController(TFNode):
             self.get_logger().fatal(f"{traceback.format_exc()}")
             result.success = False
             goal_handle.abort()
-        finally:        
+        finally:
             self.publish_zero_twist()
             self.reset_controller()
             self.info("FindBranchRollWristController has terminated.")
@@ -639,14 +643,13 @@ class FindBranchRollWristController(TFNode):
             # await self.switch_controllers(activate_controllers=self._servo_controller, deactivate_controllers=self._move_group_controller)
 
             self.get_clock().sleep_for(Duration(seconds=2.0))
-            
 
         return result
 
     def _action_goal_cb_run_find_branch_roll_wrist(self, goal_handle: ServerGoalHandle):
         self.info("Received goal request")
         return GoalResponse.ACCEPT
-    
+
     async def switch_controllers(self, activate_controllers: list[str], deactivate_controllers: list[str]) -> None:
         try:
             switch_ctrlr_req = SwitchController.Request(
@@ -665,7 +668,7 @@ class FindBranchRollWristController(TFNode):
             self.error(f"{e}")
             pass
         return
-    
+
     async def start_servo(self) -> None:
         start_servo_future: Future = self._srv_client_start_servo.call_async(request=Trigger.Request())
         await start_servo_future
@@ -674,7 +677,7 @@ class FindBranchRollWristController(TFNode):
         else:
             self.error(f"Servo failed to start.")
         return
-    
+
     async def stop_servo(self) -> None:
         stop_servo_future: Future = self._srv_client_stop_servo.call_async(request=Trigger.Request())
         await stop_servo_future
@@ -808,7 +811,6 @@ class FindBranchRollWristController(TFNode):
     # ===============================
 
     def _sub_cb_tof_raw(self, msg: Vl53l4cdStamped):
-        
 
         if msg.dev_id == 0:
             self.d_tof0_raw = msg.distance / 1000
@@ -909,7 +911,6 @@ class FindBranchRollWristController(TFNode):
             self.msg_twist.header.stamp = self.get_clock().now().to_msg()
             self._pub_servo.publish(self.msg_twist)
         return
-    
 
 
 def main():

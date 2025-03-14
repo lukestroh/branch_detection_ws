@@ -87,7 +87,7 @@ class FindBranchRollWristControllerBehavior(pt.behaviour.Behaviour):
         await _goal_canceled_future
 
         self.logger.info(f"Terminated with status {new_status}")
-        self.client = None
+        # self.client = None
         return
 
     def _on_cancel_cb(self, future: Future):

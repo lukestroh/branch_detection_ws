@@ -60,27 +60,26 @@ def launch_setup(context, *args, **kwargs) -> list:
     )
 
     node_generate_poses_service = Node(
-        package='final_approach_controller',
-        executable ='generate_poses_service',
-        name='generate_poses_service',
-        output='log',
+        package="final_approach_controller",
+        executable="generate_poses_service",
+        name="generate_poses_service",
+        output="log",
         parameters=[
-            {'robot_base_part': robot_base_part}, 
-            {'robot_eef_part': robot_eef_part}, 
-            
-        ]
+            {"robot_base_part": robot_base_part},
+            {"robot_eef_part": robot_eef_part},
+        ],
     )
 
     node_reset_test = Node(
-        package='final_approach_controller',
-        executable ='reset_test',
-        name='reset_test',
-        output='both',
+        package="final_approach_controller",
+        executable="reset_test",
+        name="reset_test",
+        output="both",
         parameters=[
-            {'robot_base_part': robot_base_part}, 
-            {'robot_eef_part': robot_eef_part}, 
-            {'use_mock_hardware': use_mock_hardware}
-        ]
+            {"robot_base_part": robot_base_part},
+            {"robot_eef_part": robot_eef_part},
+            {"use_mock_hardware": use_mock_hardware},
+        ],
     )
 
     _to_return = [

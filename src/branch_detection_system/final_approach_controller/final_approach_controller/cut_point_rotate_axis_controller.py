@@ -30,7 +30,7 @@ class CutPointRotateAxisController(TFNode):
         self.error = lambda x: self.get_logger().error(f"{pp.pformat(x)}")
 
         # Parameters
-        self.tof_ranging_max = 1.2 # TODO: Get from params
+        self.tof_ranging_max = 1.2  # TODO: Get from params
         self.tof_name = "VL53L4CD"
 
         # Callback group
@@ -86,7 +86,7 @@ class CutPointRotateAxisController(TFNode):
         self._goal_handle = None
         self.d_tof0 = 0.0
         self.d_tof1 = 0.0
-        
+
         self.max_linear_speed = 0.01 * 10  # UR servo is slow?
         self.max_angular_speed = np.pi / 4 * 10
         self.K_p = 1 / self.max_angular_speed
@@ -204,7 +204,9 @@ class CutPointRotateAxisController(TFNode):
         return
 
     def _timer_cb_run_controller(self):
-        if np.isclose(self.d_tof0, self.tof_ranging_max, atol=0.05) or np.isclose(self.d_tof1, self.tof_ranging_max, atol=0.05):
+        if np.isclose(self.d_tof0, self.tof_ranging_max, atol=0.05) or np.isclose(
+            self.d_tof1, self.tof_ranging_max, atol=0.05
+        ):
             self.error(
                 f"{self.tof_name} sensor(s) are returning unreliable data, aborting controller. Data: {self.d_tof0}, {self.d_tof1}"
             )
@@ -212,9 +214,13 @@ class CutPointRotateAxisController(TFNode):
             self.controller_running = False
             self.publish_zero_twist()
             return
-        
-        if self.d_tof0 > 0.4 or self.d_tof1 > 0.4: # TODO: This is arbitrary, fix with better value (maybe based on calculated distance?)
-            self.error(f"{self.tof_name} sensor(s) are returning data beyond the calculated distance, aborting. Data: {self.d_tof0}, {self.d_tof1}")
+
+        if (
+            self.d_tof0 > 0.4 or self.d_tof1 > 0.4
+        ):  # TODO: This is arbitrary, fix with better value (maybe based on calculated distance?)
+            self.error(
+                f"{self.tof_name} sensor(s) are returning data beyond the calculated distance, aborting. Data: {self.d_tof0}, {self.d_tof1}"
+            )
 
         dist, theta = self.get_cut_point_info()
         dist_cut_point_to_branch = dist - self.tf_cut_point_to_tof0[2, 3]
@@ -331,6 +337,8 @@ class CutPointRotateAxisController(TFNode):
         self.msg_twist.header.stamp = self.get_clock().now().to_msg()
         self._pub_servo.publish(self.msg_twist)
         return
+
+    # def reset_controller(self):
 
 
 def main():

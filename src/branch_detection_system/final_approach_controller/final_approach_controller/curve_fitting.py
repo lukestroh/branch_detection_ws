@@ -23,7 +23,7 @@ def get_branch_center_time_and_distance(
     filtered_readings: list,
     sensor_name: str,
     debug_plot: bool = False,
-    recursion_depth: int = 0
+    recursion_depth: int = 0,
 ):
     if recursion_depth >= 2:
         return None
@@ -57,11 +57,13 @@ def get_branch_center_time_and_distance(
             len(normalized_timestamps_filtered),
         )
         y_fit = ransac.predict(quadratic.fit_transform(t_fit[:, np.newaxis]))
-        
+
         # Abort the fitting if the parabolic fit is negative
         coefficients = ransac.estimator_.coef_
         if coefficients[2] < 0:
-            node.warn(f"Calculated parabolic fit is negative: {coefficients[2]}x^2 + {coefficients[1]}x + {coefficients[0]}. Aborting fit.")
+            node.warn(
+                f"Calculated parabolic fit is negative: {coefficients[2]}x^2 + {coefficients[1]}x + {coefficients[0]}. Aborting fit."
+            )
             return None
     except Exception as e:
         node.error(traceback.format_exc())
@@ -73,11 +75,11 @@ def get_branch_center_time_and_distance(
     node.warn(f"{sensor_name} r^2: {fit_r2}")
     if fit_r2 <= 0.0:
         node.error(f"{sensor_name} r^2 value indicates a bad fit: {fit_r2}. Trying with half data.")
-        
-        raw_timestamps = raw_timestamps[len(raw_timestamps)//2 :]
-        raw_readings = raw_readings[len(raw_readings)//2 :]
-        filtered_timestamps = filtered_timestamps[len(filtered_timestamps)//2 :]
-        filtered_readings = filtered_readings[len(filtered_readings)//2 :]
+
+        raw_timestamps = raw_timestamps[len(raw_timestamps) // 2 :]
+        raw_readings = raw_readings[len(raw_readings) // 2 :]
+        filtered_timestamps = filtered_timestamps[len(filtered_timestamps) // 2 :]
+        filtered_readings = filtered_readings[len(filtered_readings) // 2 :]
         return get_branch_center_time_and_distance(
             node=node,
             raw_timestamps=raw_timestamps,
@@ -85,9 +87,8 @@ def get_branch_center_time_and_distance(
             raw_readings=raw_readings,
             filtered_readings=filtered_readings,
             sensor_name=sensor_name,
-            recursion_depth=1
+            recursion_depth=1,
         )
-        
 
     idx_min = np.argmin(y_fit)
     timestamp_min = timestamps_filtered[idx_min]
