@@ -10,13 +10,12 @@ import time
 
 def main():
     ser = sr.create_connection()
-    tof_array_size = (8,8)
+    tof_array_size = (8, 8)
     zone_data = np.zeros(tof_array_size, dtype=int)
 
     fig, ax, cax = p.create_fig(tof_array_size)
 
     start_time = time.time()
-
 
     while True:
         try:
@@ -26,7 +25,6 @@ def main():
             parsed = sr.parse_line(stream_data)
             if parsed is None:
                 continue
-
 
             p.update_data_arr(data=zone_data, idx=parsed["zone"], value=parsed["distance"])
 
@@ -39,6 +37,7 @@ def main():
             sys.exit()
 
     return
+
 
 if __name__ == "__main__":
     main()
