@@ -16,6 +16,7 @@ from geometry_msgs.msg import WrenchStamped
 from lifecycle_msgs.msg import TransitionEvent, State
 from tof_msgs.msg import TofStamped
 from sensor_msgs.msg import JointState
+from tf2_msgs.msg import TFMessage
 from vl53l4cd_msgs.msg import Vl53l4cdStamped
 
 import sys
@@ -41,11 +42,11 @@ def get_dbs(city: str, farm: str, date: str = "") -> list[str]:
     return files
 
 
-def get_bag_reader(db: str):
+def get_bag_reader(db: str) -> BagReader:
     return BagReader(bag_file=db)
 
 
-def get_tof_raw_data(br: BagReader) -> tuple:
+def get_tof_raw_data(br: BagReader) -> tuple[dict]:
     data_tof_raw = list(br.query(topic_name="/microROS/vl53l4cd/data"))
     tof_raw_data: list[Vl53l4cdStamped] = [d[1] for d in data_tof_raw]
     tof0_raw_ts, tof0_raw_data = zip(
@@ -64,10 +65,19 @@ def get_tof_raw_data(br: BagReader) -> tuple:
         ]
     )
 
-    return (tof0_raw_ts, tof0_raw_data, tof1_raw_ts, tof1_raw_data)
+    return (
+        {
+            "tof0_raw_ts": tof0_raw_ts,
+            "tof0_raw_data": tof0_raw_data,
+        },
+        {
+            "tof1_raw_ts": tof1_raw_ts,
+            "tof1_raw_data": tof1_raw_data,
+        },
+    )
 
 
-def get_tof_filtered_data(br: BagReader):
+def get_tof_filtered_data(br: BagReader) -> tuple[dict]:
     data_tof_filtered = list(br.query(topic_name="/vl53l4cd/filtered"))
     tof_filtered_data: list[TofStamped] = [d[1] for d in data_tof_filtered]
     tof0_filtered_ts, tof0_filtered_data = zip(
@@ -88,10 +98,19 @@ def get_tof_filtered_data(br: BagReader):
     )
     # tof1_filtered_data = [tof.data[0] for tof in tof_filtered_data if tof.dev_id == 1]
 
-    return (tof0_filtered_ts, tof0_filtered_data, tof1_filtered_ts, tof1_filtered_data)
+    return (
+        {
+            "tof0_filtered_ts": tof0_filtered_ts,
+            "tof0_filtered_data": tof0_filtered_data,
+        },
+        {
+            "tof1_filtered_ts": tof1_filtered_ts,
+            "tof1_filtered_data": tof1_filtered_data,
+        },
+    )
 
 
-def get_wrench_data(br: BagReader):
+def get_wrench_data(br: BagReader) -> dict:
 
     # FT-wrench data
     data_ft_wrench = list(br.query(topic_name="/force_torque_sensor_broadcaster/wrench"))
@@ -112,149 +131,122 @@ def get_wrench_data(br: BagReader):
             )
         )
     )
-    return (
-        wrench_data_ts,
-        wrench_data_fx,
-        wrench_data_fy,
-        wrench_data_fz,
-        wrench_data_tx,
-        wrench_data_ty,
-        wrench_data_tz,
+    return {
+        "wrench_ts": wrench_data_ts,
+        "wrench_fx": wrench_data_fx,
+        "wrench_fy": wrench_data_fy,
+        "wrench_fz": wrench_data_fz,
+        "wrench_tx": wrench_data_tx,
+        "wrench_ty": wrench_data_ty,
+        "wrench_tz": wrench_data_tz,
+    }
+
+
+def get_joint_states_data(br: BagReader) -> dict:
+    joint_states = list(br.query(topic_name="/joint_states"))
+    joint_states_data: list[JointState] = [d[1] for d in joint_states]
+
+    joint_states_ts, joint_states_pos = zip(
+        *map(lambda ja: [ja.header.stamp.sec + ja.header.stamp.nanosec * 1e-9, ja.position], joint_states_data)
     )
 
+    return {"joint_states_ts": joint_states_ts, "joint_states_pos": np.array(joint_states_pos)}
 
-def get_joint_angle_data(br: BagReader):
-    joint_angles = list(br.query(topic_name="/joint_states"))
-    joint_angle_data: list[JointState] = [d[1] for d in joint_angles]
 
-    joint_angles_ts, joint_angles_pos = zip(
-        *map(lambda ja: [ja.header.stamp.sec + ja.header.stamp.nanosec * 1e-9, ja.position], joint_angle_data)
+def get_tf_data(br: BagReader, static=False) -> dict:
+    if static:
+        topic_name = "tf_static"
+    else:
+        topic_name = "tf"
+    tf_msgs = list(br.query(topic_name=f"/{topic_name}"))
+    tf_data: list[TFMessage] = [d[1] for d in tf_msgs]
+
+    # Unpack all transforms from the list of transforms in each TFMessage
+    all_transforms = list(itertools.chain.from_iterable(map(lambda transform: transform.transforms, tf_data)))
+    tf_ts, tf_frame_id, tf_child_frame_id, tf_t_x, tf_t_y, tf_t_z, tf_r_x, tf_r_y, tf_r_z, tf_r_w = zip(
+        *map(
+            lambda tf: [
+                tf.header.stamp.sec + tf.header.stamp.nanosec * 1e-9,
+                tf.header.frame_id,
+                tf.child_frame_id,
+                tf.transform.translation.x,
+                tf.transform.translation.y,
+                tf.transform.translation.z,
+                tf.transform.rotation.x,
+                tf.transform.rotation.y,
+                tf.transform.rotation.z,
+                tf.transform.rotation.w,
+            ],
+            all_transforms,
+        )
     )
 
-    return (joint_angles_ts, joint_angles_pos)
+    return {
+        f"{topic_name}_ts": tf_ts,
+        f"{topic_name}_frame_id": tf_frame_id,
+        f"{topic_name}_child_frame_id": tf_child_frame_id,
+        f"{topic_name}_t_x": tf_t_x,
+        f"{topic_name}_t_y": tf_t_y,
+        f"{topic_name}_t_z": tf_t_z,
+        f"{topic_name}_r_x": tf_r_x,
+        f"{topic_name}_r_y": tf_r_y,
+        f"{topic_name}_r_z": tf_r_z,
+        f"{topic_name}_r_w": tf_r_w,
+    }
 
 
-def get_forward_position_controller_events(br: BagReader):
-    fpc_transition_events = list(br.query("/forward_position_controller/transition_event"))
-    fpc_transition_events_ts, fpc_transition_events_data = zip(
-        *map(lambda fpce: [fpce[0] * 1e-9, fpce[1]], fpc_transition_events)
+def get_controller_events(br: BagReader, controller_name: str) -> dict:
+    controller_events = list(br.query(topic_name=f"/{controller_name}/transition_event"))
+    controller_transition_events_ts, controller_events_data = zip(
+        *map(lambda ctrlr: [ctrlr[0] * 1e-9, ctrlr[1]], controller_events)
     )
 
-    fpc_transition_start_state, fpc_transition_goal_state = zip(
-        *map(lambda fpc_t: [fpc_t.start_state.id, fpc_t.goal_state.id], fpc_transition_events_data)
+    controller_transition_start_state, controller_transition_goal_state = zip(
+        *map(lambda ctrlr_t: [ctrlr_t.start_state.id, ctrlr_t.goal_state.id], controller_events_data)
     )
 
-    return (fpc_transition_events_ts, fpc_transition_start_state, fpc_transition_goal_state)
+    return {
+        "controller_transition_events_ts": controller_transition_events_ts,
+        "controller_transition_start_state": controller_transition_start_state,
+        "controller_transition_goal_state": controller_transition_goal_state,
+    }
 
 
-def get_scaled_joint_trajectory_controller_events(br: BagReader):
-    sjtc_transition_events = list(br.query("/scaled_joint_trajectory_controller/transition_event"))
-    sjtc_transition_events_ts, sjtc_transition_events_data = zip(
-        *map(lambda sjtce: [sjtce[0] * 1e-9, sjtce[1]], sjtc_transition_events)
-    )
-
-    sjtc_transition_start_state, sjtc_transition_goal_state = zip(
-        *map(lambda sjtc_t: [sjtc_t.start_state.id, sjtc_t.goal_state.id], sjtc_transition_events_data)
-    )
-
-    return (sjtc_transition_events_ts, sjtc_transition_start_state, sjtc_transition_goal_state)
-
-
-def get_df_from_bag_reader(br: BagReader) -> pd.DataFrame:
-    br.topics.sort()
-    pp.pprint(br.topics)
-
-    tof0_filtered_ts, tof0_filtered_data, tof1_filtered_ts, tof1_filtered_data = get_tof_filtered_data(br=br)
-
-    tof0_raw_ts, tof0_raw_data, tof1_raw_ts, tof1_raw_data = get_tof_raw_data(br=br)
-
-    wrench_data_ts, wrench_data_fx, wrench_data_fy, wrench_data_fz, wrench_data_tx, wrench_data_ty, wrench_data_tz = (
-        get_wrench_data(br=br)
-    )
-
-    joint_angle_ts, joint_angle_pos = get_joint_angle_data(br=br)
-
-    fpc_transition_events_ts, fpc_transition_start_state, fpc_transition_goal_state = (
-        get_forward_position_controller_events(br=br)
-    )
-
-    sjtc_transition_events_ts, sjtc_transition_start_state, sjtc_transition_goal_state = (
-        get_scaled_joint_trajectory_controller_events(br=br)
-    )
-
-    # Get the minimum time, usually from the TOF values since microROS starts quickly
-    try:
-        if tof0_raw_ts[0] <= tof1_raw_ts[0]:
-            time_begin = tof0_raw_ts[0]
-        else:
-            time_begin = tof1_raw_ts[0]
-    except Exception as e:
-        logger.warn(f"{e}")
-        return
-
-    # Create dataframe
-    df = pd.DataFrame(
-        data=list(
-            itertools.zip_longest(
-                np.array(tof0_raw_ts) - time_begin,
-                tof0_raw_data,
-                np.array(tof1_raw_ts) - time_begin,
-                tof1_raw_data,
-                np.array(tof0_filtered_ts) - time_begin,
-                tof0_filtered_data,
-                np.array(tof1_filtered_ts) - time_begin,
-                tof1_filtered_data,
-                np.array(wrench_data_ts) - time_begin,
-                wrench_data_fx,
-                wrench_data_fy,
-                wrench_data_fz,
-                wrench_data_tx,
-                wrench_data_ty,
-                wrench_data_tz,
-                joint_angle_ts,
-                joint_angle_pos,
-                np.array(fpc_transition_events_ts) - time_begin,
-                fpc_transition_start_state,
-                fpc_transition_goal_state,
-                np.array(sjtc_transition_events_ts) - time_begin,
-                sjtc_transition_start_state,
-                sjtc_transition_goal_state,
-                fillvalue=np.nan,
-            )
-        ),
-        columns=[
-            "tof0_raw_ts",
-            "tof0_raw_data",
-            "tof1_raw_ts",
-            "tof1_raw_data",
-            "tof0_filtered_ts",
-            "tof0_filtered_data",
-            "tof1_filtered_ts",
-            "tof1_filtered_data",
-            "wrench_ts",
-            "wrench_fx",
-            "wrench_fy",
-            "wrench_fz",
-            "wrench_tx",
-            "wrench_ty",
-            "wrench_tz",
-            "joint_angle_ts",
-            "joint_angle_pos",
-            "fpc_transition_events_ts",
-            "fpc_transition_start_state",
-            "fpc_transition_goal_state",
-            "sjtc_transition_events_ts",
-            "sjtc_transition_start_state",
-            "sjtc_transition_goal_state",
-        ],
-    )
-
-    print(df.head(10))
-
+def create_df_from_data_dict(data: dict) -> pd.DataFrame:
+    df = pd.DataFrame(data=list(itertools.zip_longest(*data.values(), fillvalue=np.nan)), columns=list(data.keys()))
     return df
 
 
-def filter_trials_for_transition_states(df: pd.DataFrame):
+def get_dfs_from_bag_reader(br: BagReader) -> dict:
+    br.topics.sort()
+    pp.pprint(br.topics)
+
+    tof0_raw_data, tof1_raw_data = get_tof_raw_data(br=br)
+    tof0_filtered_data, tof1_filtered_data = get_tof_filtered_data(br=br)
+    wrench_data = get_wrench_data(br=br)
+    joint_states_data = get_joint_states_data(br=br)
+    tf_data = get_tf_data(br=br)
+    tf_static_data = get_tf_data(br=br, static=True)
+    fpc_transition_events_data = get_controller_events(br=br, controller_name="forward_position_controller")
+    sjtc_transition_events_data = get_controller_events(br=br, controller_name="scaled_joint_trajectory_controller")
+
+    df_dict = {
+        "tof0_raw": create_df_from_data_dict(data=tof0_raw_data),
+        "tof1_raw": create_df_from_data_dict(data=tof1_raw_data),
+        "tof0_filtered": create_df_from_data_dict(data=tof0_filtered_data),
+        "tof1_filtered": create_df_from_data_dict(data=tof1_filtered_data),
+        "wrench": create_df_from_data_dict(data=wrench_data),
+        "joint_states": create_df_from_data_dict(data=joint_states_data),
+        "tf": create_df_from_data_dict(data=tf_data),
+        "tf_static": create_df_from_data_dict(data=tf_static_data),
+        "fpc_transition_events": create_df_from_data_dict(data=fpc_transition_events_data),
+        "sjtc_transition_events": create_df_from_data_dict(data=sjtc_transition_events_data),
+    }
+
+    return df_dict
+
+
+def filter_transition_events_for_fpc_deactivate(df: pd.DataFrame):
     # idxs_event_fpc_deactivate = df.index[df['fpc_transition_start_state'].fillna(-1).astype(int)==TransitionStates.TRANSITION_STATE_DEACTIVATING.value].to_list()
 
     # idxs_event_sjtc_deactivate = df.index[df['sjtc_transition_start_state'].fillna(-1).astype(int)==TransitionStates.TRANSITION_STATE_DEACTIVATING.value].to_list()
@@ -263,139 +255,114 @@ def filter_trials_for_transition_states(df: pd.DataFrame):
 
     df_transition_events = df.loc[
         (
-            df["fpc_transition_start_state"].fillna(-1).astype(int)
+            df["controller_transition_start_state"].fillna(-1).astype(int)
             == TransitionStates.TRANSITION_STATE_DEACTIVATING.value
         )
-        | (
-            df["sjtc_transition_start_state"].fillna(-1).astype(int)
-            == TransitionStates.TRANSITION_STATE_DEACTIVATING.value
-        ),
-        [
-            "fpc_transition_events_ts",
-            "fpc_transition_start_state",
-            "fpc_transition_goal_state",
-            "sjtc_transition_events_ts",
-            "sjtc_transition_start_state",
-            "sjtc_transition_goal_state",
-        ],
-    ]
+        # | (
+        #     df["sjtc_transition_start_state"].fillna(-1).astype(int)
+        #     == TransitionStates.TRANSITION_STATE_DEACTIVATING.value
+        # ),
+        # [
+        # "controller_transition_events_ts",
+        # "controller_transition_start_state",
+        # "controller_transition_goal_state",
+        # "sjtc_transition_events_ts",
+        # "sjtc_transition_start_state",
+        # "sjtc_transition_goal_state",
+        # ],
+    ].reset_index()
 
     return df_transition_events
 
 
-def get_bin_mask(big_df: pd.DataFrame, start_time: float, end_time: float, time_str: str):
-    return (big_df[time_str] >= start_time) & (big_df[time_str] <= end_time)
+def get_bin_mask(df: pd.DataFrame, start_time: float, end_time: float, time_str: str):
+    return (df[time_str] >= start_time) & (df[time_str] <= end_time)
 
 
-def slice_dfs_by_transition_event(big_df: pd.DataFrame, transition_event_df: pd.DataFrame) -> list[pd.DataFrame]:
-    # Grab the ToF, wrench, etc. data between transition events
-    trial_dfs = []
-
-    logger.info("Slicing dataframes by data channel")
-
-    df_fpc_transitions = transition_event_df.loc[
-        transition_event_df["fpc_transition_start_state"] == TransitionStates.TRANSITION_STATE_DEACTIVATING.value
-    ].reset_index()
-
-    # Get start and end timestamps from transition events
+def slice_df_by_transition_event(df: pd.DataFrame, df_name: str, transition_event_df: pd.DataFrame):
+    # logger.info()
     i = 0
-    while True:
+    start_index = 0
+    end_index = start_index + 2
+    last_iteration = False
+    while not last_iteration:
+        print(i)
         try:
-            start_time = df_fpc_transitions.at[i * 2, "fpc_transition_events_ts"]
-            end_time = df_fpc_transitions.at[i * 2 + 2, "fpc_transition_events_ts"]
+            print(start_index, end_index)
+            start_time = transition_event_df.at[start_index, "controller_transition_events_ts"]
+            end_time = transition_event_df.at[end_index, "controller_transition_events_ts"]
+        except Exception as e:
+            start_time = transition_event_df.at[start_index, "controller_transition_events_ts"]
+            end_time = np.inf
+            last_iteration = True
 
-            df_tof0_raw_trial = big_df.loc[
-                get_bin_mask(big_df, start_time, end_time, "tof0_raw_ts"), ["tof0_raw_ts", "tof0_raw_data"]
-            ]
-            df_tof1_raw_trial = big_df.loc[
-                get_bin_mask(big_df, start_time, end_time, "tof1_raw_ts"), ["tof1_raw_ts", "tof1_raw_data"]
-            ]
-            df_tof0_filtered_trial = big_df.loc[
-                get_bin_mask(big_df, start_time, end_time, "tof0_filtered_ts"),
-                ["tof0_filtered_ts", "tof0_filtered_data"],
-            ]
-            df_tof1_filtered_trial = big_df.loc[
-                get_bin_mask(big_df, start_time, end_time, "tof1_filtered_ts"),
-                ["tof1_filtered_ts", "tof1_filtered_data"],
-            ]
-            df_wrench_trial = big_df.loc[
-                get_bin_mask(big_df, start_time, end_time, "wrench_ts"),
-                ["wrench_ts", "wrench_fx", "wrench_fy", "wrench_fz", "wrench_tx", "wrench_ty", "wrench_tz"],
-            ]
-            df_joint_angles_trial = big_df.loc[
-                get_bin_mask(big_df, start_time, end_time, "joint_angle_ts"),
-                ["joint_angle_ts", "joint_angle_pos"],
-            ]
+        df_trial = df.loc[get_bin_mask(df=df, start_time=start_time, end_time=end_time, time_str=f"{df_name}_ts")]
 
-            trial_dfs.append(
-                {
-                    "trial_num": i,
-                    "tof0_raw": df_tof0_raw_trial,
-                    "tof1_raw": df_tof1_raw_trial,
-                    "tof0_filtered": df_tof0_filtered_trial,
-                    "tof1_filtered": df_tof1_filtered_trial,
-                    "wrench": df_wrench_trial,
-                    "joint_angles": df_joint_angles_trial,
-                }
-            )
+        i += 1
 
-            # print(trial_dfs)
+        # hard code bad controller switch points when failures happened
+        if i == 13:
+            start_index = end_index
+            end_index = start_index + 1
+        else:
+            start_index = end_index
+            end_index = start_index + 2
 
-            # break
+        yield df_trial
 
-            i += 1
-        except (KeyError, ValueError):
-            break
-
-    return trial_dfs
+    return
 
 
-def warehouse_trial_dfs(trial_dfs: list[dict[str, pd.DataFrame]], filename: str):
-    name = Path(Path(filename).stem).stem
-    trial_path = os.path.join(warehouse_path, name)
-    os.mkdir(trial_path)
-    for trial in trial_dfs:
-        for topic_name, df in trial.items():
-            if topic_name.endswith("trial_num"):
-                continue
-            else:
-                df.to_hdf(
-                    os.path.join(trial_path, name + f"__{topic_name}__{str(trial['trial_num']).zfill(3)}.h5"),
-                    key=name,
-                )
+def warehouse_trials_dfs(trials_dfs: list[pd.DataFrame], topic_name: str, db_name: str):
+    export_name = Path(Path(db_name).stem).stem
+    trial_path = os.path.join(warehouse_path, export_name)
+    if not os.path.exists(trial_path):
+        os.mkdir(trial_path)
 
+    for i, trial in enumerate(trials_dfs):
+        trial.to_hdf(
+            path_or_buf=os.path.join(trial_path, export_name + f"__{topic_name}__{str(i).zfill(3)}.h5"),
+            key="data",
+            format="fixed",
+        )
+
+    return
+
+
+def warehouse_df(df: pd.DataFrame, topic_name: str, db_name: str):
+    export_name = Path(Path(db_name).stem).stem
+    trial_path = os.path.join(warehouse_path, export_name)
+    if not os.path.exists(trial_path):
+        os.mkdir(trial_path)
+    df.to_hdf(path_or_buf=os.path.join(trial_path, export_name + f"__{topic_name}.h5"), key="data", format="fixed")
     return
 
 
 def main():
     dbs = get_dbs(city="prosser", farm="roza", date="20250221")
-    for db in dbs:
-        br = get_bag_reader(db=db)
-        df = get_df_from_bag_reader(br=br)
+    pp.pprint(dbs)
+    # sys.exit()
+    for db_name in dbs:
+        if not db_name.endswith("bds__prosser_roza_t1.1.2__20250221_09-57-31_0.db3.zstd"):
+            continue
+        br = get_bag_reader(db=db_name)
+        df_dict = get_dfs_from_bag_reader(br=br)
         br.cleanup()
 
-        df_transition_events = filter_trials_for_transition_states(df=df)
+        df_transition_events = filter_transition_events_for_fpc_deactivate(df=df_dict["fpc_transition_events"])
 
-        trial_dfs = slice_dfs_by_transition_event(big_df=df, transition_event_df=df_transition_events)
+        for topic_df_name, topic_df in df_dict.items():
+            if ("transition" in topic_df_name) or (topic_df_name == "tf_static"):
+                warehouse_df(df=topic_df, topic_name=topic_df_name, db_name=db_name)
+                continue
+            trials_dfs = list(
+                slice_df_by_transition_event(
+                    df=topic_df, df_name=topic_df_name, transition_event_df=df_transition_events
+                )
+            )
 
-        warehouse_trial_dfs(trial_dfs=trial_dfs, filename=db)
+            warehouse_trials_dfs(trials_dfs=trials_dfs, topic_name=topic_df_name, db_name=db_name)
 
-        # fig = plot_data(df=trial_dfs[0], filename=db)
-
-        # fig = plot_dict_data(data=trial_dfs[0], filename=db)
-
-        # fig.show()
-
-        # res = input("Yes or no: ")
-        # if res == "yes":
-        # fig = plot_data(df=df, filename=db)
-        # fig = plot_transition_events(df=df_transition_events, fig=fig)
-        # fig.show()
-        #     break
-        # else:
-        #     break
-
-        # break
     return
 
 

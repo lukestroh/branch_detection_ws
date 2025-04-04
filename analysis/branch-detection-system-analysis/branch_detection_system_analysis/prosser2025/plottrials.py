@@ -442,11 +442,21 @@ def main():
                         original_ransac_failure_count += 1
                     continue
 
+                # tof1_branch_center_time, tof1_branch_center_min = cf.get_branch_center_time_and_distance(
+                #     raw_timestamps=search_data_dict['tof1_raw']['tof1_raw_ts'].to_list(),
+                #     raw_readings=search_data_dict['tof1_raw']['tof1_raw_data'].to_list(),
+                #     filtered_timestamps=search_data_dict['tof1_filtered']['tof1_filtered_ts'].to_list(),
+                #     filtered_readings=search_data_dict['tof1_filtered']['tof1_filtered_data'].to_list(),
+                #     sensor_name='tof1',
+                #     debug_plot=True
+                # )
             except Exception:
                 i += 1
                 original_ransac_failure_count += 1
                 print(f"Error with fitting: {traceback.format_exc()}")
                 continue
+
+        # break
 
         # Get TF frames at a timestep
         tf_df = get_tf_df_at_closest_timestamp(
