@@ -779,15 +779,9 @@ def main():
     fig = plot_multi_trial_branch_segment(data=tof0_world_points, name="tof0")
     fig = plot_multi_trial_branch_segment(data=tof1_world_points, name="tof1", fig=fig)
     fig = plot_quadratic_fit(t_vals=ortho_t_vals, coefs=coefs, fig=fig)
-    fig = plot_quadratic_residuals(
-        points=all_data, projected_points=projected_points, fig=fig
-    )
+    fig = plot_quadratic_residuals(points=all_data, projected_points=projected_points, fig=fig)
     fig = ph.plot_vector(fig=fig, position=centroid, orientation=direction, scale=0.1, color="blue", name="Vt[0]")
-    fig.update_layout(
-        scene=dict(
-            aspectmode='data'
-        )
-    )
+    fig.update_layout(scene=dict(aspectmode="data"))
     fig.show()
     #####################################################################################################
 

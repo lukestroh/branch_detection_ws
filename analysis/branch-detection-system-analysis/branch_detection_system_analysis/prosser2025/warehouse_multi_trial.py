@@ -353,7 +353,7 @@ def main():
         except sqlite3.DatabaseError as e:
             logger.error(f"Database read error: {traceback.format_exc()}")
             continue
-        
+
         df_dict = get_dfs_from_bag_reader(br=br)
         br.cleanup()
 

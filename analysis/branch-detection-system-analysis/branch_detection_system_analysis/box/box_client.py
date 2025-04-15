@@ -44,7 +44,7 @@ box_environments: dict = {
     "20240202_prosser_trials": "247341820732",
     "20240201_prosser_trials": "247314061474",
     "2025_ToFBranchDetection": "308822377240",
-    "warehouse": "316868797576"
+    "warehouse": "316868797576",
 }
 
 
@@ -203,7 +203,9 @@ def main():
     """
     creates one level of subfolders in box and uploads files
     """
-    root_dir = os.path.join(os.path.expanduser("~"), "branch_detection_ws", "bags", "2025_ToFBranchDetection", "warehouse")
+    root_dir = os.path.join(
+        os.path.expanduser("~"), "branch_detection_ws", "bags", "2025_ToFBranchDetection", "warehouse"
+    )
     # root_dir = os.path.join("/media/luke/T7 Shield", "luke")
     folders = glob.glob("bds*", root_dir=root_dir, recursive=True)
     for folder in sorted(folders):

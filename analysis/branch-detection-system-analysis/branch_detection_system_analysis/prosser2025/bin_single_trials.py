@@ -134,17 +134,6 @@ def get_tf_matrix_from_df(target_frame: str, source_frame: str, tf_df: pd.DataFr
     return transformation_mat
 
 
-def split_trial_by_fpc_deactivate(
-    df: pd.DataFrame, df_topic_name: str, transition_event_df: pd.DataFrame, trial_num: int
-) -> tuple[pd.DataFrame]:
-    split_time = transition_event_df.at[trial_num * 2 + 1, "controller_transition_events_ts"]
-
-    df_search_for_branch = df.loc[df[f"{df_topic_name}_ts"] <= split_time]
-    df_align_and_approach_branch = df.loc[df[f"{df_topic_name}_ts"] > split_time]
-
-    return df_search_for_branch, df_align_and_approach_branch
-
-
 def group_df_by_parabola(df_search_action: pd.DataFrame, topic_name: str):
     ts_gap_threshold = 0.5
     df_search_action[f"{topic_name}_ts_diff"] = df_search_action[f"{topic_name}_ts"].diff()
@@ -500,7 +489,6 @@ def main():
     tof0_world_points = []
     tof1_world_points = []
 
-      
     return
 
 

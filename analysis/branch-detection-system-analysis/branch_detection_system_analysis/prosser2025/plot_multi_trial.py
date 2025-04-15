@@ -225,7 +225,9 @@ def plot_transition_event(
     return fig
 
 
-def plot_all_individual_trials():
+def plot_all_individual_trials(
+    data_dict: dict, df_fpc_transition_events: pd.DataFrame, df_sjtc_transition_events: pd.DataFrame
+):
     #########################################################
     # Plot all individual trials
     if data_dict["tof0_filtered"]["tof0_filtered_ts"].iloc[0] <= data_dict["tof1_filtered"]["tof1_filtered_ts"].iloc[0]:
@@ -272,33 +274,33 @@ def plot_all_individual_trials():
     return
 
 
-def plot_all_separated_trials():
+def plot_all_separated_trials(data_dict: dict, df_fpc_transition_events: pd.DataFrame, trial_num: int):
     # ######################################################
-    # # Plots the separated trials
-    # time_begin = np.inf
-    # search_data_dict = {}
-    # for topic_name, topic_df in data_dict.items():
-    #     if topic_name in ['tf', 'tf_static', 'fpc_transition_events', 'sjtc_transition_events']:
-    #         continue
-    #     df_search_for_branch, df_align_and_approach_branch = split_trial_by_fpc_deactivate(
-    #         df=topic_df,
-    #         df_topic_name=topic_name,
-    #         transition_event_df=df_fpc_transition_events,
-    #         trial_num=i
-    #     )
+    # Plots the separated trials
+    time_begin = np.inf
+    search_data_dict = {}
+    for topic_name, topic_df in data_dict.items():
+        if topic_name in ['tf', 'tf_static', 'fpc_transition_events', 'sjtc_transition_events']:
+            continue
+        df_search_for_branch, df_align_and_approach_branch = split_trial_by_fpc_deactivate(
+            df=topic_df,
+            df_topic_name=topic_name,
+            transition_event_df=df_fpc_transition_events,
+            trial_num=trial_num
+        )
 
-    #     print(topic_name)
-    #     print(df_search_for_branch)
+        print(topic_name)
+        print(df_search_for_branch)
 
-    #     if (df_search_for_branch[f'{topic_name}_ts'].iloc[0] < time_begin):
-    #         time_begin = df_search_for_branch[f'{topic_name}_ts'].iloc[0]
+        if (df_search_for_branch[f'{topic_name}_ts'].iloc[0] < time_begin):
+            time_begin = df_search_for_branch[f'{topic_name}_ts'].iloc[0]
 
-    #     fig = plot_tof_trial(
-    #         data=df_search_for_branch, start_time=time_begin, topic_name=topic_name, trial_num=i
-    #     )
-    #     fig.show()
+        fig = plot_tof_trial(
+            data=df_search_for_branch, start_time=time_begin, topic_name=topic_name, trial_num=i
+        )
+        fig.show()
 
-    #     search_data_dict.update({topic_name: df_search_for_branch})
+        search_data_dict.update({topic_name: df_search_for_branch})
 
     # ############################################################
     return
@@ -342,14 +344,13 @@ def fit_3d_linear_pca(points):
     return centroid, direction
 
 
-def compute_linear_residuals(points, centroid, direction):
-    line_direction_norm = direction / np.linalg.norm(direction)
-    centered_points = points - centroid
-    projections = centered_points @ line_direction_norm
-    closest_points = centroid + np.outer(projections, line_direction_norm)
-    residuals = np.linalg.norm(points - closest_points, axis=1)
-    # print(residuals)
-    return
+def compute_linear_residuals(points, centroid, direction) -> tuple:
+    deltas = points - centroid
+    t_vals = deltas @ direction
+    projections = centroid + np.outer(t_vals, direction)
+    residuals = points - projections
+    residuals = np.linalg.norm(residuals, axis=1)
+    return (t_vals, projections, residuals)
 
 
 def fit_3d_quadratic(points, centroid, direction):
@@ -434,7 +435,7 @@ def project_points_onto_curve(points, t_vals, coefs):
             maxfun=1000,
             maxiter=1000,
         )
-        print(res)
+        # print(res)
         ortho_t_vals.append(res[0][0])
         projected_points.append(evaluate_quadratic(t=res[0][0], coefs=coefs))
         # import sys
@@ -464,6 +465,49 @@ def project_points_onto_curve(points, t_vals, coefs):
     return np.array(ortho_t_vals), np.array(projected_points)
 
 
+def plot_linear_fit(t_vals: np.ndarray, centroid, direction, fig: go.Figure = None) -> go.Figure:
+    if fig is None:
+        fig = go.Figure()
+
+    print(centroid)
+    print(direction)
+    print(t_vals)
+    # t_vals_plot = np.linspace(min(t_vals), max(t_vals), 100)
+    line_pts = centroid + np.array([min(t_vals) * direction, max(t_vals) * direction])
+    
+
+    fig.add_trace(
+        go.Scatter3d(
+            x=line_pts[:,0],
+            y=line_pts[:,1],
+            z=line_pts[:,2],
+            mode='lines',
+            name='linear fit'
+        )
+    )
+    return fig
+
+
+def plot_linear_residuals(points: np.ndarray, projected_points: np.ndarray, fig: go.Figure) -> go.Figure:
+    if fig is None:
+        fig = go.Figure()
+
+    for p, q in zip(points, projected_points):
+        fig.add_trace(
+            go.Scatter3d(
+                x=(p[0], q[0]),
+                y=(p[1], q[1]),
+                z=(p[2], q[2]),
+                showlegend=False,
+                mode="lines",
+                line=dict(color='chartreuse'),
+                legendgroup=0,
+                legendgrouptitle={"text": "residuals"},
+            )
+        )
+    return fig
+
+
 def plot_quadratic_fit(t_vals: np.ndarray, coefs: np.ndarray, fig: go.Figure = None):
     if fig is None:
         fig = go.Figure()
@@ -487,7 +531,7 @@ def plot_quadratic_residuals(points, projected_points, fig: go.Figure = None):
                 z=(p[2], q[2]),
                 showlegend=False,
                 mode="lines",
-                line=dict(color="red"),
+                line=dict(color="darkgoldenrod"),
                 legendgroup=0,
                 legendgrouptitle={"text": "residuals"},
             )
@@ -515,7 +559,7 @@ def main():
                 "fpc_transition_events",
                 "sjtc_transition_events",
             ],
-            trial_name="t1.1.2",
+            trial_name="t1.2.1",
         )
 
         # Load trial-constant files
@@ -748,29 +792,25 @@ def main():
 
     # # Compute orthogonal residuals
 
-    ortho_t_vals, projected_points = project_points_onto_curve(points=all_data, t_vals=t_vals, coefs=coefs)
+    quadratic_t_vals, quadratic_projected_points = project_points_onto_curve(points=all_data, t_vals=t_vals, coefs=coefs)
 
-    # projected_points[:,0] = -projected_points[:,0]
-    # projected_points[:,1] = -projected_points[:,1]
-    # projected_points[:,2] = -projected_points[:,2]
-    # projected_points = -projected_points
-
-    # projected_points = projected_points + centroid[np.newaxis, 0:3]
-
-    # print(all_data)
-    # print(projected_points)
+    linear_t_vals, linear_projected_points, linear_residuals = compute_linear_residuals(points=all_data, centroid=centroid, direction=direction)
+    # print("linear residuals:\n",linear_residuals)
+    # print(np.linalg.norm(linear_residuals, axis=1))
+    print("linear RESIDUALS mean ", np.mean(linear_residuals))
+    print("linear var:", np.var(linear_residuals))
+    print("linear std: ", np.std(linear_residuals))
 
     # Tests:
-    residuals = all_data[:, 0:3] - projected_points
-    print(residuals)
-    print(np.linalg.norm(residuals, axis=1))
-    print("RESIDUALS ", np.mean(np.linalg.norm(residuals, axis=1)))
-    print("var:", np.var(residuals))
-    print("std: ", np.std(residuals))
+    residuals = all_data[:, 0:3] - quadratic_projected_points
+    # print("quadratic residuals:\n", residuals)
+    print("quadratic RESIDUALS mean ", np.mean(np.linalg.norm(residuals, axis=1)))
+    print("quadratic var:", np.var(residuals))
+    print("quadratic std: ", np.std(residuals))
 
     # print(tangents)
-    for i, r in enumerate(residuals):
-        tangent = curve_derivative(t=ortho_t_vals[i], coefs=coefs)
+    # for i, r in enumerate(residuals):
+    #     tangent = curve_derivative(t=ortho_t_vals[i], coefs=coefs)
         # print(np.dot(r, tangent))
         # print("Angle (deg):", np.degrees(np.arccos(
         #     np.clip(np.dot(tangent, r) / (np.linalg.norm(tangent) * np.linalg.norm(r)), -1, 1)
@@ -778,16 +818,12 @@ def main():
 
     fig = plot_multi_trial_branch_segment(data=tof0_world_points, name="tof0")
     fig = plot_multi_trial_branch_segment(data=tof1_world_points, name="tof1", fig=fig)
-    fig = plot_quadratic_fit(t_vals=ortho_t_vals, coefs=coefs, fig=fig)
-    fig = plot_quadratic_residuals(
-        points=all_data, projected_points=projected_points, fig=fig
-    )
-    fig = ph.plot_vector(fig=fig, position=centroid, orientation=direction, scale=0.1, color="blue", name="Vt[0]")
-    fig.update_layout(
-        scene=dict(
-            aspectmode='data'
-        )
-    )
+    fig = plot_quadratic_fit(t_vals=quadratic_t_vals, coefs=coefs, fig=fig)
+    fig = plot_quadratic_residuals(points=all_data, projected_points=quadratic_projected_points, fig=fig)
+    # fig = ph.plot_vector(fig=fig, position=centroid, orientation=direction, scale=0.1, color="blue", name="Vt[0]")
+    fig = plot_linear_fit(t_vals=linear_t_vals, centroid=centroid, direction=direction, fig=fig)
+    fig = plot_linear_residuals(points=all_data, projected_points=linear_projected_points, fig=fig)
+    fig.update_layout(scene=dict(aspectmode="data"))
     fig.show()
     #####################################################################################################
 
