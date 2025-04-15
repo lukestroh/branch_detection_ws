@@ -44,6 +44,7 @@ box_environments: dict = {
     "20240202_prosser_trials": "247341820732",
     "20240201_prosser_trials": "247314061474",
     "2025_ToFBranchDetection": "308822377240",
+    "warehouse": "316868797576"
 }
 
 
@@ -202,15 +203,15 @@ def main():
     """
     creates one level of subfolders in box and uploads files
     """
-    # root_dir = os.path.join(os.path.expanduser("~"), "branch_detection_ws", "bags")
-    root_dir = os.path.join("/media/luke/T7 Shield", "luke")
+    root_dir = os.path.join(os.path.expanduser("~"), "branch_detection_ws", "bags", "2025_ToFBranchDetection", "warehouse")
+    # root_dir = os.path.join("/media/luke/T7 Shield", "luke")
     folders = glob.glob("bds*", root_dir=root_dir, recursive=True)
     for folder in sorted(folders):
         # print(f"FOLDER: {folder}")
         subfolder_path = os.path.join(root_dir, folder)
         subfolder_id = None
         try:
-            subfolder = mybox.client.folder(box_environments["2025_ToFBranchDetection"]).create_subfolder(folder)
+            subfolder = mybox.client.folder(box_environments["warehouse"]).create_subfolder(folder)
             subfolder_id = subfolder.id
         except Exception as e:
             subfolder_id = e.context_info["conflicts"][0]["id"]
@@ -236,6 +237,6 @@ if __name__ == "__main__":
     server_thread = threading.Thread(target=run_server, daemon=True)
     server_thread.start()
 
-    main_thread = threading.Thread(target=main, daemon=True)
+    # main_thread = threading.Thread(target=main, daemon=True)
     main()
     # main_thread.start()

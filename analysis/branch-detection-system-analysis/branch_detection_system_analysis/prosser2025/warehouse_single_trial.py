@@ -313,18 +313,17 @@ def slice_df_by_transition_event(df: pd.DataFrame, df_name: str, transition_even
     return
 
 
-def warehouse_trials_dfs(trials_dfs: list[pd.DataFrame], topic_name: str, db_name: str):
+def warehouse_trial_df(trial_df: pd.DataFrame, topic_name: str, db_name: str):
     export_name = Path(Path(db_name).stem).stem
     trial_path = os.path.join(warehouse_path, export_name)
     if not os.path.exists(trial_path):
         os.mkdir(trial_path)
 
-    for i, trial in enumerate(trials_dfs):
-        trial.to_hdf(
-            path_or_buf=os.path.join(trial_path, export_name + f"__{topic_name}__{str(i).zfill(3)}.h5"),
-            key="data",
-            format="fixed",
-        )
+    trial_df.to_hdf(
+        path_or_buf=os.path.join(trial_path, export_name + f"__{topic_name}__0.h5"),
+        key="data",
+        format="fixed",
+    )
 
     return
 
@@ -339,29 +338,26 @@ def warehouse_df(df: pd.DataFrame, topic_name: str, db_name: str):
 
 
 def main():
-    dbs = get_dbs(city="prosser", farm="roza", date="20250221")
+    import sqlite3
+    import traceback
+
+    dbs = get_dbs(city="prosser", farm="roza", date="20250219")
     pp.pprint(dbs)
     # sys.exit()
     for db_name in dbs:
-        if not db_name.endswith("bds__prosser_roza_t1.1.2__20250221_09-57-31_0.db3.zstd"):
+        try:
+            br = get_bag_reader(db=db_name)
+        except sqlite3.DatabaseError as e:
+            logger.error(f"Database read error: {traceback.format_exc()}")
             continue
-        br = get_bag_reader(db=db_name)
-        df_dict = get_dfs_from_bag_reader(br=br)
+        try:
+            df_dict = get_dfs_from_bag_reader(br=br)
+        except (ValueError, KeyError):
+            continue
         br.cleanup()
 
-        df_transition_events = filter_transition_events_for_fpc_deactivate(df=df_dict["fpc_transition_events"])
-
         for topic_df_name, topic_df in df_dict.items():
-            if ("transition" in topic_df_name) or (topic_df_name == "tf_static"):
-                warehouse_df(df=topic_df, topic_name=topic_df_name, db_name=db_name)
-                continue
-            trials_dfs = list(
-                slice_df_by_transition_event(
-                    df=topic_df, df_name=topic_df_name, transition_event_df=df_transition_events
-                )
-            )
-
-            warehouse_trials_dfs(trials_dfs=trials_dfs, topic_name=topic_df_name, db_name=db_name)
+            warehouse_trial_df(trial_df=topic_df, topic_name=topic_df_name, db_name=db_name)
 
     return
 

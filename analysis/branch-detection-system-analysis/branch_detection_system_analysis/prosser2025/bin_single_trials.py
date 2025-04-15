@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from branch_detection_system_analysis.bag_reader.ros_constants import TransitionStates
 from branch_detection_system_analysis.prosser2025 import curve_fitting as cf
+from branch_detection_system_analysis.prosser2025 import plotly_helpers as ph
 import glob
 import numpy as np
 import pandas as pd
@@ -9,6 +10,7 @@ import plotly.graph_objects as go
 import plotly.subplots
 import os
 from scipy.spatial.transform import Rotation
+import scipy.optimize as so
 import traceback
 
 import pprint as pp
@@ -270,62 +272,183 @@ def plot_all_individual_trials():
     return
 
 
-def plot_all_separated_trials():
-    # ######################################################
-    # # Plots the separated trials
-    # time_begin = np.inf
-    # search_data_dict = {}
-    # for topic_name, topic_df in data_dict.items():
-    #     if topic_name in ['tf', 'tf_static', 'fpc_transition_events', 'sjtc_transition_events']:
-    #         continue
-    #     df_search_for_branch, df_align_and_approach_branch = split_trial_by_fpc_deactivate(
-    #         df=topic_df,
-    #         df_topic_name=topic_name,
-    #         transition_event_df=df_fpc_transition_events,
-    #         trial_num=i
-    #     )
+def fit_3d_linear_pca(points):
+    centroid = np.mean(points, axis=0)
+    centered_points = points - centroid
+    # Use SVD to find line passing through "middle" of data
+    # U can be used to reconstruct how the original points project onto the principal directions.
+    # S contains the amount of variance along each direction.
+    # Vt contains the principal directions of your data:
+    #   Vt[0] is the direction of maximum variance — the dominant direction your data stretches in.
+    U, S, Vt = np.linalg.svd(centered_points)
+    direction = Vt[0]
+    direction = direction / np.linalg.norm(direction)
 
-    #     print(topic_name)
-    #     print(df_search_for_branch)
+    return centroid, direction
 
-    #     if (df_search_for_branch[f'{topic_name}_ts'].iloc[0] < time_begin):
-    #         time_begin = df_search_for_branch[f'{topic_name}_ts'].iloc[0]
 
-    #     fig = plot_tof_trial(
-    #         data=df_search_for_branch, start_time=time_begin, topic_name=topic_name, trial_num=i
-    #     )
-    #     fig.show()
-
-    #     search_data_dict.update({topic_name: df_search_for_branch})
-
-    # ############################################################
+def compute_linear_residuals(points, centroid, direction):
+    line_direction_norm = direction / np.linalg.norm(direction)
+    centered_points = points - centroid
+    projections = centered_points @ line_direction_norm
+    closest_points = centroid + np.outer(projections, line_direction_norm)
+    residuals = np.linalg.norm(points - closest_points, axis=1)
+    # print(residuals)
     return
 
 
-def plot_multi_trial_branch_segment(data: list, name: str, fig: go.Figure = None):
+def fit_3d_quadratic(points, centroid, direction):
+    """Project points onto a line to get parameter t-values and quadratic coefficients"""
+
+    deltas = points - centroid
+    t_vals = (
+        deltas @ direction  # / np.linalg.norm(direction) # direction vec is normalized
+    )  # Does the dot product -- projection of each delta onto the direction vector
+    quadratic_design_mat = np.column_stack([t_vals**2, t_vals, np.ones_like(t_vals)])
+
+    # Fit x(t), y(t), z(t)
+    coefs, resids, rank, _ = np.linalg.lstsq(quadratic_design_mat, points[:, 0:3], rcond=None)
+    coefs = coefs.T
+    return t_vals, coefs
+
+
+def compute_quadratic_residuals(points, t_vals, coefs):
+    quadratic_design_mat = np.vstack([t_vals**2, t_vals, np.ones_like(t_vals)])
+    fitted_points = coefs @ quadratic_design_mat
+    deltas = points[:, 0:3].T - fitted_points
+    residuals = np.linalg.norm(deltas, axis=0)
+    return residuals
+
+
+def evaluate_quadratic(t, coefs):
+    return np.array(
+        [
+            coefs[0, 0] * t**2 + coefs[0, 1] * t + coefs[0, 2],
+            coefs[1, 0] * t**2 + coefs[1, 1] * t + coefs[1, 2],
+            coefs[2, 0] * t**2 + coefs[2, 1] * t + coefs[2, 2],
+        ]
+    )
+
+
+def evaluate_quadratic_derivative(t, coefs):
+    return np.array(
+        [2 * coefs[0, 0] * t + coefs[0, 1], 2 * coefs[1, 0] * t + coefs[1, 1], 2 * coefs[2, 0] * t + coefs[2, 1]]
+    )
+
+
+def get_orthogonality(t, point, coefs):
+    t = float(np.squeeze(t))
+    curve_point = evaluate_quadratic(t=t, coefs=coefs)
+    tangent = evaluate_quadratic_derivative(t=t, coefs=coefs)
+
+    residual = point - curve_point
+    print(np.linalg.norm(np.dot(residual, tangent)))
+    return np.linalg.norm(np.dot(residual, tangent))
+
+
+def get_dist_to_curve(t_val, point, coefs):
+    t_val = float(np.squeeze(t_val))
+    curve_point = evaluate_quadratic(t=t_val, coefs=coefs)
+    # return np.linalg.norm(curve_point - point)
+    return np.sum((curve_point - point) ** 2)
+
+
+def project_points_onto_curve(points, t_vals, coefs):
+    """Project the points onto the curve and return the t_value"""
+    ortho_t_vals = []
+    projected_points = []
+
+    for i, point in enumerate(points[:, 0:3]):
+
+        # res = so.minimize(fun=get_dist_to_curve, x0=[t_vals[i]], args=(point, coefs))
+        # print(evaluate_quadratic(t=res.x[0], coefs=coefs))
+        # ortho_t_vals.append(res.x)
+        # projected_points.append(evaluate_quadratic(t=res.x[0], coefs=coefs))
+
+        res = so.fmin(
+            get_orthogonality,
+            [t_vals[i]],
+            args=(
+                point,
+                coefs,
+            ),
+            disp=True,
+            full_output=True,
+            xtol=1e-10,
+            ftol=1e-12,
+            maxfun=1000,
+            maxiter=1000,
+        )
+        print(res)
+        ortho_t_vals.append(res[0][0])
+        projected_points.append(evaluate_quadratic(t=res[0][0], coefs=coefs))
+        # import sys
+        # sys.exit()
+
+        # p_proj = evaluate_quadratic(res[0][0], coefs)
+        # tangent = evaluate_quadratic_derivative(res[0][0], coefs)
+        # residual = point - p_proj
+        # dot = np.dot(residual, tangent)
+        # print(dot)
+
+        # for i, point in enumerate(points[:, 0:3]):
+
+        #     def dist_to_curve(t):
+        #         curve_point = evaluate_quadratic(t, coefs=coefs)
+        #         return np.linalg.norm(curve_point - point)
+
+        # res = so.minimize_scalar(
+        #     get_dist_to_curve, args=(point, coefs), bounds=(t_vals[i] - 0.1, t_vals[i] + 0.1), method="bounded"
+        # )
+        # print(res.x)
+        # ortho_t_vals.append(res.x)
+        # projected_points.append(evaluate_quadratic(t=res.x, coefs=coefs))
+
+    # break
+
+    return np.array(ortho_t_vals), np.array(projected_points)
+
+
+def plot_quadratic_fit(t_vals: np.ndarray, coefs: np.ndarray, fig: go.Figure = None):
     if fig is None:
         fig = go.Figure()
-        fig.add_trace(go.Scatter3d(x=[0], y=[0], z=[0], name="origin"))
 
-    plot_data = list(zip(*data))
-
-    fig.add_trace(
-        go.Scatter3d(
-            x=plot_data[0],
-            y=plot_data[1],
-            z=plot_data[2],
-            name=name,
-            mode="markers",
-            marker=dict(size=4),
-            hovertext=list(range(len(data))),
-            hovertemplate="Index: %{hovertext}",
-        )
-    )
+    t_vals_plot = np.linspace(min(t_vals), max(t_vals), 100)
+    # t_vals_plot = np.linspace(-1, 1, 500)
+    x = coefs[0, 0] * t_vals_plot**2 + coefs[0, 1] * t_vals_plot + coefs[0, 2]
+    y = coefs[1, 0] * t_vals_plot**2 + coefs[1, 1] * t_vals_plot + coefs[1, 2]
+    z = coefs[2, 0] * t_vals_plot**2 + coefs[2, 1] * t_vals_plot + coefs[2, 2]
+    fig.add_trace(go.Scatter3d(x=x, y=y, z=z, mode="lines", name="quadratic fit"))
 
     return fig
 
 
+def plot_quadratic_residuals(points, projected_points, fig: go.Figure = None):
+    for p, q in zip(points, projected_points):
+        fig.add_trace(
+            go.Scatter3d(
+                x=(p[0], q[0]),
+                y=(p[1], q[1]),
+                z=(p[2], q[2]),
+                showlegend=False,
+                mode="lines",
+                line=dict(color="red"),
+                legendgroup=0,
+                legendgrouptitle={"text": "residuals"},
+            )
+        )
+
+    return fig
+
+
+def curve_derivative(t, coefs):
+    return np.array(
+        [2 * coefs[0, 0] * t + coefs[0, 1], 2 * coefs[1, 0] * t + coefs[1, 1], 2 * coefs[2, 0] * t + coefs[2, 1]]
+    )
+
+
 def main():
+
     data_dict = {}
     files_by_topics_by_trial_name = get_files_by_topics_by_trial_name(
         topics=[
@@ -377,199 +500,7 @@ def main():
     tof0_world_points = []
     tof1_world_points = []
 
-    i = 0
-    while True:
-        try:
-            # For each trial number, build the data_dict
-            files_by_number = filter_files_by_trial_number(files=files_by_topics_by_trial_name, trial_number=i)
-            build_df_dict_from_files(data_dict=data_dict, files=files_by_number)
-
-            # Separate the search from the actuation
-            search_data_dict = {}
-            for topic_name, topic_df in data_dict.items():
-                if topic_name in ["tf", "tf_static", "fpc_transition_events", "sjtc_transition_events"]:
-                    continue
-                if i == 8 or i == 21:
-                    continue
-                df_search_for_branch, df_align_and_approach_branch = split_trial_by_fpc_deactivate(
-                    df=topic_df, df_topic_name=topic_name, transition_event_df=df_fpc_transition_events, trial_num=i
-                )
-
-                df_split_search_df = group_df_by_parabola(
-                    df_search_action=df_search_for_branch.copy(), topic_name=topic_name
-                )
-
-                # print(df_search_for_branch)
-                search_data_dict.update({topic_name: df_split_search_df})
-
-        except KeyError:
-            print("\nNo more trials.")
-            break
-
-        print("\n", i)
-
-        ####################################################################################################
-        try:
-            raw_dfs = [df.copy() for _, df in search_data_dict["tof0_raw"].groupby("group")]
-            filtered_dfs = [df.copy() for _, df in search_data_dict["tof0_filtered"].groupby("group")]
-        except KeyError:
-            i += 1
-            original_ransac_failure_count += 1
-            continue
-
-        if len(raw_dfs) != len(filtered_dfs):
-            raise ValueError
-
-        for j in range(len(filtered_dfs)):
-            # Run the ransac algo
-            try:
-                tof0_time_and_dist = cf.get_branch_center_time_and_distance(
-                    raw_timestamps=raw_dfs[j]["tof0_raw_ts"].to_list(),
-                    raw_readings=raw_dfs[j]["tof0_raw_data"].to_list(),
-                    filtered_timestamps=filtered_dfs[j]["tof0_filtered_ts"].to_list(),
-                    filtered_readings=filtered_dfs[j]["tof0_filtered_data"].to_list(),
-                    sensor_name="tof0",
-                    split_idx=j,
-                    debug_plot=False,
-                )
-                if tof0_time_and_dist is not None:
-                    tof0_branch_center_time, tof0_branch_center_min = tof0_time_and_dist
-                    print(tof0_branch_center_min, tof0_branch_center_time)
-                    original_ransac_success_count += 1
-                    break
-                else:
-                    if j == len(filtered_dfs) - 1:
-                        original_ransac_failure_count += 1
-                    continue
-
-                # tof1_branch_center_time, tof1_branch_center_min = cf.get_branch_center_time_and_distance(
-                #     raw_timestamps=search_data_dict['tof1_raw']['tof1_raw_ts'].to_list(),
-                #     raw_readings=search_data_dict['tof1_raw']['tof1_raw_data'].to_list(),
-                #     filtered_timestamps=search_data_dict['tof1_filtered']['tof1_filtered_ts'].to_list(),
-                #     filtered_readings=search_data_dict['tof1_filtered']['tof1_filtered_data'].to_list(),
-                #     sensor_name='tof1',
-                #     debug_plot=True
-                # )
-            except Exception:
-                i += 1
-                original_ransac_failure_count += 1
-                print(f"Error with fitting: {traceback.format_exc()}")
-                continue
-
-        # break
-
-        # Get TF frames at a timestep
-        tf_df = get_tf_df_at_closest_timestamp(
-            tf_df=data_dict["tf"], tf_static_df=data_dict["tf_static"], timestamp=tof0_branch_center_time
-        )
-        tf_tof0_to_base = get_tf_matrix_from_df(
-            target_frame="amiga__base", source_frame="mock_pruner__tof0", tf_df=tf_df
-        )
-
-        # Put tof readings into world frame
-        tof0_branch_point_world = tf_tof0_to_base @ [0, 0, tof0_branch_center_min, 1]
-        tof0_world_points.append(tof0_branch_point_world)
-
-        i += 1
-
-    print(f"Fitting successes: {original_ransac_success_count}\nFitting failures: {original_ransac_failure_count}")
-
-    i = 0
-    original_ransac_failure_count = 0
-    original_ransac_success_count = 0
-    while True:
-        try:
-            # For each trial number, build the data_dict
-            files_by_number = filter_files_by_trial_number(files=files_by_topics_by_trial_name, trial_number=i)
-            build_df_dict_from_files(data_dict=data_dict, files=files_by_number)
-
-            # Separate the search from the actuation
-            search_data_dict = {}
-            for topic_name, topic_df in data_dict.items():
-                if topic_name in ["tf", "tf_static", "fpc_transition_events", "sjtc_transition_events"]:
-                    continue
-                if i == 8 or i == 21:
-                    continue
-                df_search_for_branch, df_align_and_approach_branch = split_trial_by_fpc_deactivate(
-                    df=topic_df, df_topic_name=topic_name, transition_event_df=df_fpc_transition_events, trial_num=i
-                )
-
-                df_split_search_df = group_df_by_parabola(
-                    df_search_action=df_search_for_branch.copy(), topic_name=topic_name
-                )
-
-                # print(df_search_for_branch)
-                search_data_dict.update({topic_name: df_split_search_df})
-
-        except KeyError:
-            print("\nNo more trials.")
-            break
-
-        print("\n", i)
-
-        ####################################################################################################
-        try:
-            raw_dfs = [df.copy() for _, df in search_data_dict["tof1_raw"].groupby("group")]
-            filtered_dfs = [df.copy() for _, df in search_data_dict["tof1_filtered"].groupby("group")]
-        except KeyError:
-            i += 1
-            original_ransac_failure_count += 1
-            continue
-
-        if len(raw_dfs) != len(filtered_dfs):
-            raise ValueError
-
-        for j in range(len(filtered_dfs)):
-            # Run the ransac algo
-            try:
-                tof1_time_and_dist = cf.get_branch_center_time_and_distance(
-                    raw_timestamps=raw_dfs[j]["tof1_raw_ts"].to_list(),
-                    raw_readings=raw_dfs[j]["tof1_raw_data"].to_list(),
-                    filtered_timestamps=filtered_dfs[j]["tof1_filtered_ts"].to_list(),
-                    filtered_readings=filtered_dfs[j]["tof1_filtered_data"].to_list(),
-                    sensor_name="tof1",
-                    split_idx=j,
-                    debug_plot=False,
-                )
-                if tof1_time_and_dist is not None:
-                    tof1_branch_center_time, tof1_branch_center_min = tof1_time_and_dist
-                    print(tof1_branch_center_time, tof1_branch_center_min)
-                    original_ransac_success_count += 1
-                    break
-                else:
-                    if j == len(filtered_dfs) - 1:
-                        original_ransac_failure_count += 1
-                    continue
-
-            except Exception:
-                i += 1
-                original_ransac_failure_count += 1
-                print(f"Error with fitting: {traceback.format_exc()}")
-                continue
-
-        tf_df = get_tf_df_at_closest_timestamp(
-            tf_df=data_dict["tf"], tf_static_df=data_dict["tf_static"], timestamp=tof1_branch_center_time
-        )
-        tf_tof1_to_base = get_tf_matrix_from_df(
-            target_frame="amiga__base", source_frame="mock_pruner__tof1", tf_df=tf_df
-        )
-        # Put tof readings into world frame
-        tof1_branch_point_world = tf_tof1_to_base @ [0, 0, tof1_branch_center_min, 1]
-        tof1_world_points.append(tof1_branch_point_world)
-
-        i += 1
-
-    print(f"Fitting successes: {original_ransac_success_count}\nFitting failures: {original_ransac_failure_count}")
-
-    # # pp.pprint(tof1_world_points)
-    print(len(tof0_world_points), len(tof1_world_points))
-
-    fig = plot_multi_trial_branch_segment(data=tof0_world_points, name="tof0")
-    fig = plot_multi_trial_branch_segment(data=tof1_world_points, name="tof1", fig=fig)
-
-    fig.show()
-    #####################################################################################################
-
+      
     return
 
 

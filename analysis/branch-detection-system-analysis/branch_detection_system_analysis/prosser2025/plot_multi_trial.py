@@ -515,7 +515,7 @@ def main():
                 "fpc_transition_events",
                 "sjtc_transition_events",
             ],
-            trial_name="t1.2.1",
+            trial_name="t1.1.2",
         )
 
         # Load trial-constant files
