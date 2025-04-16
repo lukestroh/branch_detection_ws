@@ -90,9 +90,14 @@ void MoveArmNode::cartesian_move_to_pose(
     waypoints.push_back(this->move_group_.getCurrentPose().pose);
     waypoints.push_back(request->goal);
 
+    this->move_group_.setPlanningTime(20.0);
+    this->move_group_.setNumPlanningAttempts(10);
+    this->move_group_.setMaxAccelerationScalingFactor(0.1);
+    this->move_group_.setMaxVelocityScalingFactor(0.1);
+
     // Plan cartesian path
     double jump_threshold = 0.0; //disable jump threshold
-    double eef_step = 0.01; //step size (m)
+    double eef_step = 0.001; //step size (m)
     moveit_msgs::msg::RobotTrajectory trajectory;
 
     double fraction_planned = this->move_group_.computeCartesianPath(

@@ -6,55 +6,62 @@ from rclpy.action.client import ClientGoalHandle
 from rclpy.task import Future
 
 from action_msgs.msg import GoalStatus
-from final_approach_controller_msgs.action import RunFinalApproach
+from final_approach_controller_msgs.action import RunTestReset
+
+from geometry_msgs.msg import Pose
 
 
-class FinalApproachControllerBehavior(pt.behaviour.Behaviour):
+
+class ResetTestBehavior(pt.behaviour.Behaviour):
     """Behavior wrapper for the final approach controller action client"""
 
     def __init__(self, name):
-        super(FinalApproachControllerBehavior, self).__init__(name)
+        super(ResetTestBehavior, self).__init__(name)
 
-        # self.bb = pt.blackboard.Blackboard()
-
+        self.blackboard = pt.blackboard.Blackboard()
         return
 
     def setup(self, node):
-        """Sends the inital RunFinalApproach goal"""
         self.node = node
         self.info = lambda x: self.node.get_logger().info(f"\n{x}")
         self.warn = lambda x: self.node.get_logger().warn(f"\n{x}")
         self.error = lambda x: self.node.get_logger().error(f"\n{x}")
         self.fatal = lambda x: self.node.get_logger().fatal(f"\n{x}")
 
-        self.info("Setting up FinalApproachControllerBehavior")
-        self.client = ActionClient(node=self.node, action_type=RunFinalApproach, action_name="run_final_approach")
-        self.client.wait_for_server()
+        self.info("Setting up ResetTestBehavior")
+        self._action_client_run_test_reset = ActionClient(node=self.node, action_type=RunTestReset, action_name="run_test_reset")
+        self._action_client_run_test_reset.wait_for_server()
 
         self.goal_status = None
         self._goal_handle = None
         self._result_future = None
 
         return
+    
 
     def initialise(self):
         """Send a goal to the RunFinalApproach action server"""
         self.goal_status = None
-        self.goal = RunFinalApproach.Goal()
-        self._send_goal_future: Future = self.client.send_goal_async(
-            goal=self.goal,
-        )
+        self.goal = RunTestReset.Goal()
+        poses = self.blackboard.get('poses')
+        self.goal.pose_idx = self.blackboard.get('current_pose_index')
+        self.goal.pose = poses[self.goal.pose_idx]
+
+        """
+        position:
+            x: -0.7238641982640622
+            y: 0.6336055303079968
+            z: 1.5642332165941444
+        orientation:
+            x: -0.2705980500992775
+            y: -0.6532814825059136
+            z: 0.653281482371788
+            w: 0.2705980500437208
+        """
+        self._send_goal_future: Future = self._action_client_run_test_reset.send_goal_async(goal=self.goal)
         self._send_goal_future.add_done_callback(self._send_goal_cb)
         return
-
-    # def goal_callback(self, future):
-    #     res = future.result()
-    #     if res is None or not res.accepted():
-    #         return
-    #     future = res.get_result_async()
-    #     future.add_done_callback(self.goal_result_callback)
-    #     return
-
+    
     def _send_goal_cb(self, future: Future):
         # If there is a result, consider action complete and save result code to be checked in the `update()` method
         self._goal_handle: ClientGoalHandle = future.result()
@@ -70,11 +77,11 @@ class FinalApproachControllerBehavior(pt.behaviour.Behaviour):
         return
 
     def _on_result_cb(self, future: Future):
-        result: RunFinalApproach.Result = future.result().result
+        result: RunTestReset.Result = future.result().result
         self.info(f"{self.name}: Result: {result}")
         self.goal_status = result.success
         return
-
+    
     def update(self):
         if self.goal_status is not None:
             if self.goal_status == True:
@@ -83,14 +90,13 @@ class FinalApproachControllerBehavior(pt.behaviour.Behaviour):
             else:
                 return pt.common.Status.FAILURE
         return pt.common.Status.RUNNING
-
+    
     def terminate(self, new_status: pt.common.Status):
         if self._goal_handle.status == GoalStatus.STATUS_EXECUTING:
             _goal_canceled_future: Future = self._goal_handle.cancel_goal_async()
             _goal_canceled_future.add_done_callback(self._on_cancel_cb)
 
         self.logger.info(f"Terminated with status {new_status}")
-        # self.client = None
         return
 
     def _on_cancel_cb(self, future: Future):

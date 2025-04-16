@@ -30,7 +30,7 @@ from numpy.typing import NDArray
 
 class VL53L4CDFilterNode(Node):
     RANGING_ERR = -1
-    RANGING_MAX = 255
+    RANGING_MAX = 1.600
     tof_model_type = "VL53L4CD"
 
     def __init__(self, node_name="vl53l4cd_filtered_node") -> None:
@@ -146,6 +146,8 @@ class VL53L4CDFilterNode(Node):
         # self.vl53l4cd_msg_raw = msg
 
         try:
+            if msg.status != 0:
+                msg.distance = 1600
             self.deques[msg.dev_id].popleft()
             self.deques[msg.dev_id].append(msg.distance / 1000)
 

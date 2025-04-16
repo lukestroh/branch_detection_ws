@@ -6,17 +6,13 @@ from rclpy.action.client import ClientGoalHandle
 from rclpy.task import Future
 
 from action_msgs.msg import GoalStatus
-from final_approach_controller_msgs.action import RunFinalApproach
+from final_approach_controller_msgs.action import GeneratePoses
 
 
-class FinalApproachControllerBehavior(pt.behaviour.Behaviour):
+class GeneratePosesBehavior(pt.behaviour.Behaviour):
     """Behavior wrapper for the final approach controller action client"""
-
     def __init__(self, name):
-        super(FinalApproachControllerBehavior, self).__init__(name)
-
-        # self.bb = pt.blackboard.Blackboard()
-
+        super(GeneratePosesBehavior, self).__init__(name)
         return
 
     def setup(self, node):
@@ -27,33 +23,38 @@ class FinalApproachControllerBehavior(pt.behaviour.Behaviour):
         self.error = lambda x: self.node.get_logger().error(f"\n{x}")
         self.fatal = lambda x: self.node.get_logger().fatal(f"\n{x}")
 
-        self.info("Setting up FinalApproachControllerBehavior")
-        self.client = ActionClient(node=self.node, action_type=RunFinalApproach, action_name="run_final_approach")
+        self.info("Setting up GeneratePosesBehavior")
+        self.client = ActionClient(node=self.node, action_type=GeneratePoses, action_name="generate_poses")
         self.client.wait_for_server()
 
         self.goal_status = None
         self._goal_handle = None
         self._result_future = None
 
+        self.poses = []
+
+        self.blackboard = pt.blackboard.Blackboard()
+
         return
 
     def initialise(self):
         """Send a goal to the RunFinalApproach action server"""
         self.goal_status = None
-        self.goal = RunFinalApproach.Goal()
+        self.goal = GeneratePoses.Goal()
         self._send_goal_future: Future = self.client.send_goal_async(
             goal=self.goal,
         )
         self._send_goal_future.add_done_callback(self._send_goal_cb)
         return
-
-    # def goal_callback(self, future):
-    #     res = future.result()
-    #     if res is None or not res.accepted():
-    #         return
-    #     future = res.get_result_async()
-    #     future.add_done_callback(self.goal_result_callback)
-    #     return
+    
+    def update(self):
+        if self.goal_status is not None:
+            if self.goal_status == True:
+                self.warn(f"GOAL STATUS: {self.goal_status}")
+                return pt.common.Status.SUCCESS
+            else:
+                return pt.common.Status.FAILURE
+        return pt.common.Status.RUNNING
 
     def _send_goal_cb(self, future: Future):
         # If there is a result, consider action complete and save result code to be checked in the `update()` method
@@ -70,20 +71,14 @@ class FinalApproachControllerBehavior(pt.behaviour.Behaviour):
         return
 
     def _on_result_cb(self, future: Future):
-        result: RunFinalApproach.Result = future.result().result
-        self.info(f"{self.name}: Result: {result}")
+        result: GeneratePoses.Result = future.result().result
+        # self.info(f"{self.name}: Result: {result}")
         self.goal_status = result.success
+        self.poses = result.poses
+        self.blackboard.set('poses', value=self.poses)
+        self.blackboard.set('current_pose', value=self.blackboard.get('poses')[self.blackboard.get('current_pose_index')])
         return
-
-    def update(self):
-        if self.goal_status is not None:
-            if self.goal_status == True:
-                self.warn("GOAL STATUS SUCCESS")
-                return pt.common.Status.SUCCESS
-            else:
-                return pt.common.Status.FAILURE
-        return pt.common.Status.RUNNING
-
+    
     def terminate(self, new_status: pt.common.Status):
         if self._goal_handle.status == GoalStatus.STATUS_EXECUTING:
             _goal_canceled_future: Future = self._goal_handle.cancel_goal_async()

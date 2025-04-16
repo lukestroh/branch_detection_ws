@@ -28,7 +28,8 @@ setup(
             "io_tree_node = behavior_trees_python.io_tree:main",
             "io_manager_node = behavior_trees_python.io_manager:main",
             "set_point_service_node = behavior_trees_python.set_point_service:main",
-            "set_point_from_endpoint_service_node = behavior_trees_python.set_point_from_endpoint_service:main"
+            "set_point_from_endpoint_service_node = behavior_trees_python.set_point_from_endpoint_service:main",
+            "reset_tests_tree = behavior_trees_python.reset_tests_tree:main",
         ],
     },
 )

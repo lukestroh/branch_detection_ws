@@ -10,6 +10,7 @@ from rclpy.node import Node
 from rclpy.duration import Duration
 from rclpy.qos import QoSProfile, HistoryPolicy, DurabilityPolicy, ReliabilityPolicy
 
+from geometry_msgs.msg import TransformStamped
 from tf2_ros import TransformException
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
@@ -65,7 +66,7 @@ class TFNode(Node):
         sync=True,
         as_matrix=False,
         timeout=Duration(seconds=0.5),
-    ):
+    ) -> TransformStamped | np.ndarray | None:
         """Convenience function to lookup a transform
 
         :param target_frame: target
@@ -93,7 +94,7 @@ class TFNode(Node):
             return
         except Exception as ex:
             self.get_logger().fatal(f"{log_str}: Received Exception: {ex }")
-            return
+            return None
         wait = self.get_clock().now() - start
         if wait > rclpy.time.Duration(seconds=0.1):
             self.get_logger().warn(f"{log_str} took {wait.nanoseconds / 1e9} seconds")

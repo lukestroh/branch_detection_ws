@@ -603,7 +603,6 @@ class FindBranchPitchWristController(TFNode):
                             move_to_pose_req.goal.orientation.w = desired_orientation_quat[3]
 
                             self.info("Sending goal")
-                            
 
                             move_group_future: MoveToPose.Response = self._srv_cartesian_move_to_pose.call_async(
                                 request=move_to_pose_req
