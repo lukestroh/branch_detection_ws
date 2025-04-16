@@ -4,7 +4,8 @@ import sys
 
 import re
 
-re_pattern = re.compile('[\W_]+', re.UNICODE)
+re_pattern = re.compile("[\W_]+", re.UNICODE)
+
 
 def create_connection(port: str = "/dev/ttyACM0") -> serial.Serial:
     try:
@@ -15,6 +16,7 @@ def create_connection(port: str = "/dev/ttyACM0") -> serial.Serial:
     ser.baudrate = 115200
     return ser
 
+
 def read_stream(ser: serial.Serial) -> str | None:
     try:
         content = ser.readline().decode().strip()
@@ -22,11 +24,12 @@ def read_stream(ser: serial.Serial) -> str | None:
         return None
     return content
 
+
 def parse_line(data: str) -> dict | None:
     list_data = {}
-    list_data = [subdata.split(":") for subdata in data.split(',')]
+    list_data = [subdata.split(":") for subdata in data.split(",")]
     try:
-        parsed_data = {re_pattern.sub('', key.strip().lower()): int(value) for key, value in list_data}
+        parsed_data = {re_pattern.sub("", key.strip().lower()): int(value) for key, value in list_data}
     except ValueError:
         return None
     return parsed_data
@@ -44,6 +47,7 @@ def main():
         parsed_content = parse_line(content)
         print(content)
     return
+
 
 if __name__ == "__main__":
     main()

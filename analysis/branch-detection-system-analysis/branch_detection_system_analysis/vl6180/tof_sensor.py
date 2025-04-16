@@ -5,10 +5,11 @@ import plotly.graph_objects as go
 import glob
 import os
 
-from bag_reader import BagReader
+from bag_reader.bag_reader import BagReader
 
 from rclpy.serialization import deserialize_message
-# from 
+
+# from
 
 from teensy32_tof_msgs.msg import ToFData
 from typing import List
@@ -47,11 +48,7 @@ def get_df_from_db(database: str):
         "tof1_raw": tof1_raw,
     }
 
-    data_filtered = {
-        "time_filtered": time_filtered,
-        "tof0_filtered": tof0_filtered,
-        "tof1_filtered": tof1_filtered
-    }
+    data_filtered = {"time_filtered": time_filtered, "tof0_filtered": tof0_filtered, "tof1_filtered": tof1_filtered}
 
     df_raw = pd.DataFrame(data=data_raw)
     df_filtered = pd.DataFrame(data=data_filtered)
@@ -64,46 +61,22 @@ def plot_data(data: pd.DataFrame):
     data_raw = data[0]
     data_filtered = data[1]
 
-    fig.add_trace(
-        go.Scatter(
-            x=data_raw["time_raw"],
-            y=data_raw["tof0_raw"],
-            name="tof0_raw"
-        )
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=data_raw["time_raw"],
-            y=data_raw["tof1_raw"],
-            name="tof1_raw"
-        )
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=data_filtered["time_filtered"],
-            y=data_filtered["tof0_filtered"],
-            name="tof1_filtered"
-        )
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=data_filtered["time_filtered"],
-            y=data_filtered["tof1_filtered"],
-            name="tof1_filtered"
-        )
-    )
+    fig.add_trace(go.Scatter(x=data_raw["time_raw"], y=data_raw["tof0_raw"], name="tof0_raw"))
+    fig.add_trace(go.Scatter(x=data_raw["time_raw"], y=data_raw["tof1_raw"], name="tof1_raw"))
+    fig.add_trace(go.Scatter(x=data_filtered["time_filtered"], y=data_filtered["tof0_filtered"], name="tof1_filtered"))
+    fig.add_trace(go.Scatter(x=data_filtered["time_filtered"], y=data_filtered["tof1_filtered"], name="tof1_filtered"))
     fig.show()
 
     return fig
 
+
 def main():
-    
+
     dbs = get_databases()
     for db in dbs:
         dfs = get_df_from_db(database=db)
         plot_data(data=dfs)
-        
-    
+
     return
 
 

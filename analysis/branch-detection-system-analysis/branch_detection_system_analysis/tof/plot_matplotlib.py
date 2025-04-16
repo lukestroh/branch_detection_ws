@@ -2,6 +2,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
+
 def create_fig(array_size: tuple):
     fig, ax = plt.subplots()
 
@@ -11,6 +12,7 @@ def create_fig(array_size: tuple):
     plt.draw()
     return fig, ax, cax
 
+
 def update_fig(ax, zone_data: np.ndarray):
     cax = ax.imshow(zone_data, cmap="magma_r", vmin=0, vmax=2000)
     # img.colorbar()
@@ -18,6 +20,7 @@ def update_fig(ax, zone_data: np.ndarray):
     # print(zone_data)
     plt.pause(0.001)
     return
+
 
 def update_data_arr(data: np.ndarray, idx: int, value: int):
     row = idx // data.shape[0]
@@ -27,8 +30,8 @@ def update_data_arr(data: np.ndarray, idx: int, value: int):
 
 
 def main():
-    data_size = (8,8)
-    
+    data_size = (8, 8)
+
     fig = create_fig(data_size)
 
     while True:
@@ -36,6 +39,6 @@ def main():
         fig.show()
     return
 
+
 if __name__ == "__main__":
     main()
-
