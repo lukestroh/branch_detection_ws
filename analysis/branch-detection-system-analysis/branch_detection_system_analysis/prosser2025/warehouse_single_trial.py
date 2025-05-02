@@ -14,6 +14,7 @@ from branch_detection_system_analysis.bag_reader.ros_constants import Transition
 
 from geometry_msgs.msg import WrenchStamped
 from lifecycle_msgs.msg import TransitionEvent, State
+from ism330dhcx_msgs.msg import Ism330dhcxStamped
 from tof_msgs.msg import TofStamped
 from sensor_msgs.msg import JointState
 from tf2_msgs.msg import TFMessage
@@ -29,16 +30,20 @@ logger = rclpy.logging.get_logger("plot")
 
 
 ws_path = os.path.abspath(os.path.join("/home/luke/branch_detection_ws"))
+bags_path = os.path.join(ws_path, "bags", "2025_ToFBranchDetection")
 warehouse_path = os.path.abspath(os.path.join(ws_path, "bags", "2025_ToFBranchDetection", "warehouse"))
 
 
-def get_dbs(city: str, farm: str, date: str = "") -> list[str]:
-    bags_path = os.path.join(ws_path, "bags", "2025_ToFBranchDetection")
-    # print(bags_path)
+def get_dbs(location: str, farm: str, date: str = "") -> list[str]:
     if date != "":
-        files = glob.glob(bags_path + f"/**/*{city}_{farm}*__{date}*.db3.zstd")
+        files = glob.glob(bags_path + f"/**/*{location}_{farm}*__{date}*.db3.zstd")
     else:
-        files = glob.glob(bags_path + f"/**/*{city}_{farm}*.db3.zstd")
+        files = glob.glob(bags_path + f"/**/*{location}_{farm}*.db3.zstd")
+    return files
+
+
+def get_dbs_by_loc(location: str) -> list[str]:
+    files = glob.glob(bags_path + f"/**/*{location}*.zstd")
     return files
 
 
@@ -108,6 +113,28 @@ def get_tof_filtered_data(br: BagReader) -> tuple[dict]:
             "tof1_filtered_data": tof1_filtered_data,
         },
     )
+
+
+def get_imu_stamped_data(br: BagReader) -> tuple[dict]:
+    data_imu_stamped = list(br.query(topic_name="/ism330dhcx_stamped"))
+    imu_stamped: list[Ism330dhcxStamped] = [d[1] for d in data_imu_stamped]
+    imu_ts, imu_data_ax, imu_data_ay, imu_data_az = zip(
+        *map(
+            lambda imu: [
+                imu.header.stamp.sec + imu.header.stamp.nanosec * 1e-9,
+                imu.linear_acceleration.x,
+                imu.linear_acceleration.y,
+                imu.linear_acceleration.z,
+            ],
+            imu_stamped,
+        )
+    )
+    return {
+        "imu_ts": imu_ts,
+        "imu_data_ax": imu_data_ax,
+        "imu_data_ay": imu_data_ay,
+        "imu_data_az": imu_data_az,
+    }
 
 
 def get_wrench_data(br: BagReader) -> dict:
@@ -223,6 +250,7 @@ def get_dfs_from_bag_reader(br: BagReader) -> dict:
 
     tof0_raw_data, tof1_raw_data = get_tof_raw_data(br=br)
     tof0_filtered_data, tof1_filtered_data = get_tof_filtered_data(br=br)
+    imu_data = get_imu_stamped_data(br=br)
     wrench_data = get_wrench_data(br=br)
     joint_states_data = get_joint_states_data(br=br)
     tf_data = get_tf_data(br=br)
@@ -235,6 +263,7 @@ def get_dfs_from_bag_reader(br: BagReader) -> dict:
         "tof1_raw": create_df_from_data_dict(data=tof1_raw_data),
         "tof0_filtered": create_df_from_data_dict(data=tof0_filtered_data),
         "tof1_filtered": create_df_from_data_dict(data=tof1_filtered_data),
+        "imu": create_df_from_data_dict(data=imu_data),
         "wrench": create_df_from_data_dict(data=wrench_data),
         "joint_states": create_df_from_data_dict(data=joint_states_data),
         "tf": create_df_from_data_dict(data=tf_data),
@@ -337,27 +366,41 @@ def warehouse_df(df: pd.DataFrame, topic_name: str, db_name: str):
     return
 
 
+def is_already_warehoused(db_name: str) -> bool:
+    warehouse_parent = Path(Path(db_name).stem).stem
+    p = os.path.join(warehouse_path, warehouse_parent)
+    if os.path.exists(p):
+        logger.warn(f"Warehouse {p} already exists, skipping file.")
+        return True
+    else:
+        return False
+
+
 def main():
     import sqlite3
     import traceback
 
-    dbs = get_dbs(city="prosser", farm="roza", date="20250219")
+    # dbs = get_dbs(location="prosser", farm="roza", date="20250219")
+    dbs = get_dbs_by_loc(location="arm_farm")
     pp.pprint(dbs)
     # sys.exit()
     for db_name in dbs:
-        try:
-            br = get_bag_reader(db=db_name)
-        except sqlite3.DatabaseError as e:
-            logger.error(f"Database read error: {traceback.format_exc()}")
+        if is_already_warehoused(db_name):
             continue
-        try:
-            df_dict = get_dfs_from_bag_reader(br=br)
-        except (ValueError, KeyError):
-            continue
-        br.cleanup()
+        else:
+            try:
+                br = get_bag_reader(db=db_name)
+            except sqlite3.DatabaseError as e:
+                logger.error(f"Database read error: {traceback.format_exc()}")
+                continue
+            try:
+                df_dict = get_dfs_from_bag_reader(br=br)
+            except (ValueError, KeyError):
+                continue
+            br.cleanup()
 
-        for topic_df_name, topic_df in df_dict.items():
-            warehouse_trial_df(trial_df=topic_df, topic_name=topic_df_name, db_name=db_name)
+            for topic_df_name, topic_df in df_dict.items():
+                warehouse_trial_df(trial_df=topic_df, topic_name=topic_df_name, db_name=db_name)
 
     return
 

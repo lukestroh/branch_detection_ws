@@ -280,24 +280,19 @@ def plot_all_separated_trials(data_dict: dict, df_fpc_transition_events: pd.Data
     time_begin = np.inf
     search_data_dict = {}
     for topic_name, topic_df in data_dict.items():
-        if topic_name in ['tf', 'tf_static', 'fpc_transition_events', 'sjtc_transition_events']:
+        if topic_name in ["tf", "tf_static", "fpc_transition_events", "sjtc_transition_events"]:
             continue
         df_search_for_branch, df_align_and_approach_branch = split_trial_by_fpc_deactivate(
-            df=topic_df,
-            df_topic_name=topic_name,
-            transition_event_df=df_fpc_transition_events,
-            trial_num=trial_num
+            df=topic_df, df_topic_name=topic_name, transition_event_df=df_fpc_transition_events, trial_num=trial_num
         )
 
         print(topic_name)
         print(df_search_for_branch)
 
-        if (df_search_for_branch[f'{topic_name}_ts'].iloc[0] < time_begin):
-            time_begin = df_search_for_branch[f'{topic_name}_ts'].iloc[0]
+        if df_search_for_branch[f"{topic_name}_ts"].iloc[0] < time_begin:
+            time_begin = df_search_for_branch[f"{topic_name}_ts"].iloc[0]
 
-        fig = plot_tof_trial(
-            data=df_search_for_branch, start_time=time_begin, topic_name=topic_name, trial_num=i
-        )
+        fig = plot_tof_trial(data=df_search_for_branch, start_time=time_begin, topic_name=topic_name, trial_num=i)
         fig.show()
 
         search_data_dict.update({topic_name: df_search_for_branch})
@@ -474,17 +469,8 @@ def plot_linear_fit(t_vals: np.ndarray, centroid, direction, fig: go.Figure = No
     print(t_vals)
     # t_vals_plot = np.linspace(min(t_vals), max(t_vals), 100)
     line_pts = centroid + np.array([min(t_vals) * direction, max(t_vals) * direction])
-    
 
-    fig.add_trace(
-        go.Scatter3d(
-            x=line_pts[:,0],
-            y=line_pts[:,1],
-            z=line_pts[:,2],
-            mode='lines',
-            name='linear fit'
-        )
-    )
+    fig.add_trace(go.Scatter3d(x=line_pts[:, 0], y=line_pts[:, 1], z=line_pts[:, 2], mode="lines", name="linear fit"))
     return fig
 
 
@@ -500,7 +486,7 @@ def plot_linear_residuals(points: np.ndarray, projected_points: np.ndarray, fig:
                 z=(p[2], q[2]),
                 showlegend=False,
                 mode="lines",
-                line=dict(color='chartreuse'),
+                line=dict(color="chartreuse"),
                 legendgroup=0,
                 legendgrouptitle={"text": "residuals"},
             )
@@ -792,9 +778,13 @@ def main():
 
     # # Compute orthogonal residuals
 
-    quadratic_t_vals, quadratic_projected_points = project_points_onto_curve(points=all_data, t_vals=t_vals, coefs=coefs)
+    quadratic_t_vals, quadratic_projected_points = project_points_onto_curve(
+        points=all_data, t_vals=t_vals, coefs=coefs
+    )
 
-    linear_t_vals, linear_projected_points, linear_residuals = compute_linear_residuals(points=all_data, centroid=centroid, direction=direction)
+    linear_t_vals, linear_projected_points, linear_residuals = compute_linear_residuals(
+        points=all_data, centroid=centroid, direction=direction
+    )
     # print("linear residuals:\n",linear_residuals)
     # print(np.linalg.norm(linear_residuals, axis=1))
     print("linear RESIDUALS mean ", np.mean(linear_residuals))
@@ -811,10 +801,10 @@ def main():
     # print(tangents)
     # for i, r in enumerate(residuals):
     #     tangent = curve_derivative(t=ortho_t_vals[i], coefs=coefs)
-        # print(np.dot(r, tangent))
-        # print("Angle (deg):", np.degrees(np.arccos(
-        #     np.clip(np.dot(tangent, r) / (np.linalg.norm(tangent) * np.linalg.norm(r)), -1, 1)
-        # )))
+    # print(np.dot(r, tangent))
+    # print("Angle (deg):", np.degrees(np.arccos(
+    #     np.clip(np.dot(tangent, r) / (np.linalg.norm(tangent) * np.linalg.norm(r)), -1, 1)
+    # )))
 
     fig = plot_multi_trial_branch_segment(data=tof0_world_points, name="tof0")
     fig = plot_multi_trial_branch_segment(data=tof1_world_points, name="tof1", fig=fig)
