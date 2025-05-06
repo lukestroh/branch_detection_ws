@@ -131,9 +131,9 @@ def get_imu_stamped_data(br: BagReader) -> tuple[dict]:
     )
     return {
         "imu_ts": imu_ts,
-        "imu_data_ax": imu_data_ax,
-        "imu_data_ay": imu_data_ay,
-        "imu_data_az": imu_data_az,
+        "imu_ax": imu_data_ax,
+        "imu_ay": imu_data_ay,
+        "imu_az": imu_data_az,
     }
 
 
