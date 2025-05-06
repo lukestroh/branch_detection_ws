@@ -3,19 +3,22 @@ import py_trees as pt
 
 from rclpy.action import ActionClient
 from rclpy.action.client import ClientGoalHandle
+from rclpy.node import Node
 from rclpy.task import Future
 
 from action_msgs.msg import GoalStatus
 from final_approach_controller_msgs.action import GeneratePoses
+from final_approach_controller_msgs.msg import GeneratedPoses
 
 
 class GeneratePosesBehavior(pt.behaviour.Behaviour):
     """Behavior wrapper for the final approach controller action client"""
+
     def __init__(self, name):
         super(GeneratePosesBehavior, self).__init__(name)
         return
 
-    def setup(self, node):
+    def setup(self, node: Node):
         """Sends the inital RunFinalApproach goal"""
         self.node = node
         self.info = lambda x: self.node.get_logger().info(f"\n{x}")
@@ -26,6 +29,12 @@ class GeneratePosesBehavior(pt.behaviour.Behaviour):
         self.info("Setting up GeneratePosesBehavior")
         self.client = ActionClient(node=self.node, action_type=GeneratePoses, action_name="generate_poses")
         self.client.wait_for_server()
+
+        self._pub_generated_poses = self.node.create_publisher(
+            msg_type=GeneratedPoses,
+            topic="generated_start_poses",
+            qos_profile=5
+        )
 
         self.goal_status = None
         self._goal_handle = None
@@ -46,7 +55,7 @@ class GeneratePosesBehavior(pt.behaviour.Behaviour):
         )
         self._send_goal_future.add_done_callback(self._send_goal_cb)
         return
-    
+
     def update(self):
         if self.goal_status is not None:
             if self.goal_status == True:
@@ -75,10 +84,13 @@ class GeneratePosesBehavior(pt.behaviour.Behaviour):
         # self.info(f"{self.name}: Result: {result}")
         self.goal_status = result.success
         self.poses = result.poses
-        self.blackboard.set('poses', value=self.poses)
-        self.blackboard.set('current_pose', value=self.blackboard.get('poses')[self.blackboard.get('current_pose_index')])
+        self.blackboard.set("poses", value=self.poses)
+        self.blackboard.set(
+            "current_pose", value=self.blackboard.get("poses")[self.blackboard.get("current_pose_index")]
+        )
+        self._pub_generated_poses.publish(self.poses)
         return
-    
+
     def terminate(self, new_status: pt.common.Status):
         if self._goal_handle.status == GoalStatus.STATUS_EXECUTING:
             _goal_canceled_future: Future = self._goal_handle.cancel_goal_async()

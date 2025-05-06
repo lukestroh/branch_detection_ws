@@ -11,7 +11,6 @@ from final_approach_controller_msgs.action import RunTestReset
 from geometry_msgs.msg import Pose
 
 
-
 class ResetTestBehavior(pt.behaviour.Behaviour):
     """Behavior wrapper for the final approach controller action client"""
 
@@ -29,7 +28,9 @@ class ResetTestBehavior(pt.behaviour.Behaviour):
         self.fatal = lambda x: self.node.get_logger().fatal(f"\n{x}")
 
         self.info("Setting up ResetTestBehavior")
-        self._action_client_run_test_reset = ActionClient(node=self.node, action_type=RunTestReset, action_name="run_test_reset")
+        self._action_client_run_test_reset = ActionClient(
+            node=self.node, action_type=RunTestReset, action_name="run_test_reset"
+        )
         self._action_client_run_test_reset.wait_for_server()
 
         self.goal_status = None
@@ -37,14 +38,13 @@ class ResetTestBehavior(pt.behaviour.Behaviour):
         self._result_future = None
 
         return
-    
 
     def initialise(self):
         """Send a goal to the RunFinalApproach action server"""
         self.goal_status = None
         self.goal = RunTestReset.Goal()
-        poses = self.blackboard.get('poses')
-        self.goal.pose_idx = self.blackboard.get('current_pose_index')
+        poses = self.blackboard.get("poses")
+        self.goal.pose_idx = self.blackboard.get("current_pose_index")
         self.goal.pose = poses[self.goal.pose_idx]
 
         """
@@ -61,7 +61,7 @@ class ResetTestBehavior(pt.behaviour.Behaviour):
         self._send_goal_future: Future = self._action_client_run_test_reset.send_goal_async(goal=self.goal)
         self._send_goal_future.add_done_callback(self._send_goal_cb)
         return
-    
+
     def _send_goal_cb(self, future: Future):
         # If there is a result, consider action complete and save result code to be checked in the `update()` method
         self._goal_handle: ClientGoalHandle = future.result()
@@ -81,16 +81,16 @@ class ResetTestBehavior(pt.behaviour.Behaviour):
         self.info(f"{self.name}: Result: {result}")
         self.goal_status = result.success
         return
-    
+
     def update(self):
         if self.goal_status is not None:
             if self.goal_status == True:
-                self.warn("GOAL STATUS SUCCESS")
+                # self.warn("GOAL STATUS SUCCESS")
                 return pt.common.Status.SUCCESS
             else:
                 return pt.common.Status.FAILURE
         return pt.common.Status.RUNNING
-    
+
     def terminate(self, new_status: pt.common.Status):
         if self._goal_handle.status == GoalStatus.STATUS_EXECUTING:
             _goal_canceled_future: Future = self._goal_handle.cancel_goal_async()

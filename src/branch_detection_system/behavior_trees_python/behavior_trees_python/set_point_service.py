@@ -22,7 +22,7 @@ class SetPointServiceNode(Node):
         self.warn = lambda x: self.get_logger().warn(f"\n{x}")
         self.err = lambda x: self.get_logger().error(f"\n{x}")
 
-        self.blackboard =  py_trees.blackboard.Blackboard()
+        self.blackboard = py_trees.blackboard.Blackboard()
 
         self.cb_group = ReentrantCallbackGroup()
 
@@ -30,13 +30,15 @@ class SetPointServiceNode(Node):
             srv_name="set_point",
             srv_type=SetPoint,
             callback=self._srv_server_cb_set_point,
-            callback_group=self.cb_group
+            callback_group=self.cb_group,
         )
 
-        self.csv_path = os.path.join(os.path.expanduser('~'),'branch_detection_ws', 'src', 'behavior_trees_python', 'points', 'points.csv')
+        self.csv_path = os.path.join(
+            os.path.expanduser("~"), "branch_detection_ws", "src", "behavior_trees_python", "points", "points.csv"
+        )
 
         return
-    
+
     def _srv_server_cb_set_point(self, request: SetPoint.Request, response: SetPoint.Response):
         """Handle incoming requests to set a goal"""
         try:
@@ -44,7 +46,7 @@ class SetPointServiceNode(Node):
             self.blackboard.set("setpoint", (request.position.x, request.position.y, request.position.z))
 
             # Append point to CSV
-            with open("points/points.csv", 'a') as f:
+            with open("points/points.csv", "a") as f:
                 f.write(f"{request.position.x}, {request.position.y}, {request.position.z}")
 
             response.success = True
@@ -56,7 +58,7 @@ class SetPointServiceNode(Node):
             response.message = f"Error: {e}"
 
         return response
-    
+
 
 def main():
     rclpy.init()
@@ -67,4 +69,3 @@ def main():
     rclpy.shutdown()
 
     return
-

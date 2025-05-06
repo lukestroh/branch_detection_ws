@@ -23,7 +23,6 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         emulate_tty=True,
     )
 
-
     _to_launch = [
         node_fa_tree,
     ]

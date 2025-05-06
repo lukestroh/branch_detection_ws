@@ -57,7 +57,7 @@ class FinalApproachTreeNode(Node):
         )
 
         self._last_log_time = self.get_clock().now()
- 
+
         return
 
     def _sub_cb_tof_filtered(self, msg: TofStamped):

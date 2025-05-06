@@ -1,10 +1,11 @@
-#/usr/bin/env python3
+# /usr/bin/env python3
 import rclpy
 from rclpy.node import Node
 from rclpy.callback_groups import ReentrantCallbackGroup
 from std_msgs.msg import Int16
 from sensor_msgs.msg import Joy
 from functools import partial
+
 
 class Button:
     def __init__(
@@ -38,7 +39,7 @@ class Button:
         - state (bool): The current state of the button (on or off).
         """
         is_on = state != self.off_state  # Determine if the button is in the "on" state.
-        
+
         # Check if the state has changed.
         if self.current_state != state:
             # If the button is switched "on".
@@ -47,7 +48,7 @@ class Button:
             # If the button is switched "off".
             else:
                 self.run_callback(self.switch_off_callback)
-            
+
             # Update the current state to the new state.
             self.current_state = state
         else:
@@ -68,6 +69,7 @@ class Button:
         if cb is not None:
             cb()
         return
+
 
 class Axis:
     def __init__(self, low_deadzone, high_deadzone, low_callback=None, high_callback=None):
@@ -102,7 +104,7 @@ class IOManager(Node):
         self.callback_group = ReentrantCallbackGroup()
         self.action_pub = self.create_publisher(Int16, "/joy_action", 1, callback_group=self.callback_group)
         self.button_sub = self.create_subscription(Joy, "/joy", self.handle_joy, 1, callback_group=self.callback_group)
-        
+
         """
         xbox_controller = {
             "buttons": {
@@ -132,19 +134,32 @@ class IOManager(Node):
         }
         """
 
-        #Assign on and off callbacks to the buttons
-        self.buttons = {i:Button(
-                off_state=False, 
-                switch_on_callback=partial(self.send_joy_action, i+1), 
-                switch_off_callback=partial(self.send_joy_action, -(i+1))
-            ) for i in range(14)}
-        
-        #Assign low and high callbacks to the axes
-        self.axes = {
-            6:Axis(-1.0, 1.0, high_callback=partial(self.send_joy_action, 18), low_callback=partial(self.send_joy_action, -18)),
-            7:Axis(-1.0, 1.0, high_callback=partial(self.send_joy_action, 19), low_callback=partial(self.send_joy_action, -19))
+        # Assign on and off callbacks to the buttons
+        self.buttons = {
+            i: Button(
+                off_state=False,
+                switch_on_callback=partial(self.send_joy_action, i + 1),
+                switch_off_callback=partial(self.send_joy_action, -(i + 1)),
+            )
+            for i in range(14)
         }
-        
+
+        # Assign low and high callbacks to the axes
+        self.axes = {
+            6: Axis(
+                -1.0,
+                1.0,
+                high_callback=partial(self.send_joy_action, 18),
+                low_callback=partial(self.send_joy_action, -18),
+            ),
+            7: Axis(
+                -1.0,
+                1.0,
+                high_callback=partial(self.send_joy_action, 19),
+                low_callback=partial(self.send_joy_action, -19),
+            ),
+        }
+
         return
 
     def handle_joy(self, msg: Joy):
@@ -161,10 +176,13 @@ class IOManager(Node):
         self.action_pub.publish(Int16(data=val))
         return
 
+
 def main(args=None):
     rclpy.init(args=args)
     io_manager = IOManager()
     rclpy.spin(io_manager)
     rclpy.shutdown()
+
+
 if __name__ == "__main__":
     main()

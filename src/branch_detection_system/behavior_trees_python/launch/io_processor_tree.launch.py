@@ -15,9 +15,8 @@ logger = rclpy.logging.get_logger("io_processor_tree.launch")
 
 def launch_setup(context: LaunchContext, *args, **kwargs):
     # Launch configs
-    robot_base_part = LaunchConfiguration('robot_base_part')
-    robot_eef_part = LaunchConfiguration('robot_eef_part')
-
+    robot_base_part = LaunchConfiguration("robot_base_part")
+    robot_eef_part = LaunchConfiguration("robot_eef_part")
 
     node_fa_tree = Node(
         package="behavior_trees_python",
@@ -27,42 +26,33 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
     )
 
     node_io_processor = Node(
-        package="behavior_trees_python",
-        executable="io_tree_node",
-        name="io_tree_node",
-        emulate_tty=True
+        package="behavior_trees_python", executable="io_tree_node", name="io_tree_node", emulate_tty=True
     )
 
     node_io_manager = Node(
-        package='behavior_trees_python',
-        executable='io_manager_node',
-        name='io_manager_node',
+        package="behavior_trees_python",
+        executable="io_manager_node",
+        name="io_manager_node",
     )
 
     node_set_point_service = Node(
-        package='behavior_trees_python',
-        executable='set_point_service_node',
-        name='set_point_service_node',
+        package="behavior_trees_python",
+        executable="set_point_service_node",
+        name="set_point_service_node",
     )
 
     node_set_point_from_endpoint_service = Node(
-        package='behavior_trees_python',
-        executable='set_point_from_endpoint_service_node',
-        name='set_point_from_endpoint_service_node',
-        parameters=[
-            {'robot_base_part': robot_base_part},
-            {'robot_eef_part': robot_eef_part}
-
-        ]
+        package="behavior_trees_python",
+        executable="set_point_from_endpoint_service_node",
+        name="set_point_from_endpoint_service_node",
+        parameters=[{"robot_base_part": robot_base_part}, {"robot_eef_part": robot_eef_part}],
     )
 
     node_joystick = Node(
         package="joy",
-        executable='joy_node',
-        name='joystick_node',
+        executable="joy_node",
+        name="joystick_node",
     )
-
-    
 
     _to_launch = [
         node_fa_tree,
@@ -70,7 +60,7 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         node_io_manager,
         node_joystick,
         node_set_point_service,
-        node_set_point_from_endpoint_service
+        node_set_point_from_endpoint_service,
     ]
 
     return _to_launch
@@ -78,8 +68,8 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
 
 def generate_launch_description():
     declared_configs = [
-        dict(name="robot_base_part", default_value='amiga'),
-        dict(name='robot_eef_part', default_value='mock_pruner')
+        dict(name="robot_base_part", default_value="amiga"),
+        dict(name="robot_eef_part", default_value="mock_pruner"),
     ]
 
     declared_args = [

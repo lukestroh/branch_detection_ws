@@ -15,14 +15,21 @@ logger = rclpy.logging.get_logger("reset_tests_tree.launch")
 
 def launch_setup(context: LaunchContext, *args, **kwargs):
     # Launch configs
+    record_bag = LaunchConfiguration("record_bag")
+    record_loc = LaunchConfiguration("record_loc")
 
     node_fa_tree = Node(
         package="behavior_trees_python",
         executable="reset_tests_tree",
         name="reset_tests_tree",
         emulate_tty=True,
+        parameters=[
+            {
+                "record_bag": record_bag,
+                "record_loc": record_loc,
+            }
+        ],
     )
-
 
     _to_launch = [
         node_fa_tree,
@@ -32,7 +39,29 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
 
 
 def generate_launch_description():
-    declared_args = []
+    declared_configs = [
+        dict(
+            name="record_loc",
+            default_value="",
+            description="Optional string parameter describing the location of where the trial is run.",
+        ),
+        dict(
+            name="record_bag",
+            default_value="false",
+            choices=["true", "false"],
+            description=r"Records a bag file with format bds_{datetime}.sq3",
+        ),
+    ]
+
+    declared_args = [
+        DeclareLaunchArgument(
+            name=config.get("name"),
+            default_value=config.get("default_value"),
+            choices=config.get("choices"),
+            description=config.get("description"),
+        )
+        for config in declared_configs
+    ]
 
     ld = LaunchDescription(declared_args + [OpaqueFunction(function=launch_setup)])
 

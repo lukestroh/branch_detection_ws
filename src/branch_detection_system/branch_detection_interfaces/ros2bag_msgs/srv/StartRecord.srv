@@ -1,0 +1,8 @@
+bool record_bag
+string[] topics ["--all"]
+string compression_mode "file"
+string compression_format "zstd"
+string record_loc
+string output_dir
+---
+bool success

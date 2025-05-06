@@ -42,7 +42,7 @@ class IOTreeNode(Node):
         self.tree.add_post_tick_handler(ft.partial(self.post_tick_handler, self.snapshot_visitor))
         self.post_tick_last_print_time = self.get_clock().now()
         return
-    
+
     def create_behavior_tree_ros(self) -> py_trees.trees.BehaviourTree:
         """Construct the behavior tree."""
         root = py_trees.composites.Sequence("Root", memory=False)
@@ -51,7 +51,7 @@ class IOTreeNode(Node):
         tree = py_trees_ros.trees.BehaviourTree(root=root, unicode_tree_debug=False)
         tree.setup(node=self)
         return tree
-    
+
     def description(self):
         """Print description about the program"""
         # content =
@@ -75,7 +75,7 @@ class IOTreeNode(Node):
             + py_trees.console.reset
         )
         return
-    
+
     def post_tick_handler(
         self, snapshot_visitor: py_trees.visitors.SnapshotVisitor, behavior_tree: py_trees.trees.BehaviourTree
     ):
@@ -84,7 +84,7 @@ class IOTreeNode(Node):
             self.info("\n" + py_trees.display.unicode_blackboard())
             self.post_tick_last_print_time = self.get_clock().now()
         return
-    
+
 
 def main():
     rclpy.init()
@@ -94,7 +94,6 @@ def main():
     io_tree_node.tree.tick_tock(
         period_ms=5.0,
         number_of_iterations=py_trees.trees.CONTINUOUS_TICK_TOCK,
-
     )
     try:
         rclpy.spin(io_tree_node, executor=executor)
