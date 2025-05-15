@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from branch_detection_system_analysis.bag_reader.ros_constants import TransitionStates
 from branch_detection_system_analysis.prosser2025 import curve_fitting as cf
-from branch_detection_system_analysis.prosser2025 import plotly_helpers as ph
+from branch_detection_system_analysis.plot import plotly_helpers as ph
 import glob
 import numpy as np
 import pandas as pd
@@ -27,6 +27,7 @@ warehouse_path = os.path.abspath(os.path.join(ws_path, "bags", "2025_ToFBranchDe
 
 
 def get_files_by_iteration(trial_num: int) -> list[str]:
+    """Only works for the two multi-trials"""
     trial_num_str = str(trial_num).zfill(3)
     return glob.glob(warehouse_path + f"/**/*{trial_num_str}.h5")
 
@@ -464,9 +465,9 @@ def plot_linear_fit(t_vals: np.ndarray, centroid, direction, fig: go.Figure = No
     if fig is None:
         fig = go.Figure()
 
-    print(centroid)
-    print(direction)
-    print(t_vals)
+    # print(centroid)
+    # print(direction)
+    # print(t_vals)
     # t_vals_plot = np.linspace(min(t_vals), max(t_vals), 100)
     line_pts = centroid + np.array([min(t_vals) * direction, max(t_vals) * direction])
 
@@ -494,7 +495,7 @@ def plot_linear_residuals(points: np.ndarray, projected_points: np.ndarray, fig:
     return fig
 
 
-def plot_quadratic_fit(t_vals: np.ndarray, coefs: np.ndarray, fig: go.Figure = None):
+def plot_quadratic_fit(t_vals: np.ndarray, coefs: np.ndarray, name: str = None, fig: go.Figure = None):
     if fig is None:
         fig = go.Figure()
 
@@ -503,7 +504,7 @@ def plot_quadratic_fit(t_vals: np.ndarray, coefs: np.ndarray, fig: go.Figure = N
     x = coefs[0, 0] * t_vals_plot**2 + coefs[0, 1] * t_vals_plot + coefs[0, 2]
     y = coefs[1, 0] * t_vals_plot**2 + coefs[1, 1] * t_vals_plot + coefs[1, 2]
     z = coefs[2, 0] * t_vals_plot**2 + coefs[2, 1] * t_vals_plot + coefs[2, 2]
-    fig.add_trace(go.Scatter3d(x=x, y=y, z=z, mode="lines", name="quadratic fit"))
+    fig.add_trace(go.Scatter3d(x=x, y=y, z=z, mode="lines", name=f"{name}"))
 
     return fig
 

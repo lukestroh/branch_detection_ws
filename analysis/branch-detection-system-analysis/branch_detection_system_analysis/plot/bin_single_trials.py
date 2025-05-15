@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from branch_detection_system_analysis.bag_reader.ros_constants import TransitionStates
 from branch_detection_system_analysis.prosser2025 import curve_fitting as cf
-from branch_detection_system_analysis.prosser2025 import plotly_helpers as ph
+from branch_detection_system_analysis.plot import plotly_helpers as ph
 import glob
 import numpy as np
 import pandas as pd
