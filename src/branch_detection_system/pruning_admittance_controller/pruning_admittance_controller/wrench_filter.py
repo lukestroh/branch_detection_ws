@@ -26,7 +26,7 @@ class WrenchFilterNode(Node):
             msg_type=WrenchStamped,
             topic="/force_torque_sensor_broadcaster/wrench",
             callback=self._sub_cb_wrench_raw,
-            qos_profile=1
+            qos_profile=1,
         )
 
         # Publishers

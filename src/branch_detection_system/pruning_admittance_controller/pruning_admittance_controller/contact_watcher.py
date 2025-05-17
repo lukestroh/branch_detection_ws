@@ -13,6 +13,7 @@ Sometimes robot will jerk and we see random forces in random directions.
 
 """
 
+
 class ContactWatcherNode(Node):
     def __init__(self, deque_size):
         super().__init__(node_name="contact_watcher_node")
