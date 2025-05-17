@@ -9,23 +9,13 @@ from ament_index_python.packages import get_package_share_directory
 
 
 from vl53l4cd_msgs.msg import Vl53l4cd, Vl53l4cdStamped
-from visualization_msgs.msg import Marker, MarkerArray
-from geometry_msgs.msg import Point, Quaternion
-from sensor_msgs.msg import JointState
-from std_msgs.msg import ColorRGBA
 from tof_msgs.msg import TofStamped
 
 from filterpy.kalman import KalmanFilter
 from filterpy.common import Q_discrete_white_noise
 
-from array import array
 from collections import deque
 import numpy as np
-import json
-import os
-import scipy.signal as si
-from typing import List, Sequence
-from numpy.typing import NDArray
 
 
 class VL53L4CDFilterNode(Node):
@@ -68,7 +58,7 @@ class VL53L4CDFilterNode(Node):
             .get_parameter_value()
             .double_value
         )
-        
+
         self.depth_width = (
             self.declare_parameter(name="depth.width", value=Parameter.Type.INTEGER).get_parameter_value().integer_value
         )
@@ -93,11 +83,7 @@ class VL53L4CDFilterNode(Node):
         )
 
         # Publishers
-        self._pub_tof_filtered = self.create_publisher(
-            msg_type=TofStamped,
-            topic='/vl53l4cd/filtered',
-            qos_profile=20
-        )
+        self._pub_tof_filtered = self.create_publisher(msg_type=TofStamped, topic="/vl53l4cd/filtered", qos_profile=20)
         # self._pub_tof0_filtered = self.create_publisher(
         #     msg_type=TofStamped,
         #     topic="/vl53l4cd/tof0/filtered",
@@ -115,13 +101,10 @@ class VL53L4CDFilterNode(Node):
         self.filtered_msg.config.row.stride = 1
         self.filtered_msg.config.column.size = 1
         self.filtered_msg.config.column.stride = 1
-        self.filtered_msg.type = 'vl53l4cd'
+        self.filtered_msg.type = "vl53l4cd"
         self.filtered_msg.dfov = self.depth_dfov
         self.filtered_msg.near_plane = self.depth_near_plane
         self.filtered_msg.far_plane = self.depth_far_plane
-
-        
-
 
         # Initialize variables
         # json_covariances = json.load(
@@ -129,12 +112,9 @@ class VL53L4CDFilterNode(Node):
         # )
         # self.vl53l4cd_msg_raw = Vl53l4cdStamped()
         # self.vl53l4cd_msg_filtered = Vl53l4cdStamped()
-       
 
         self.deque_size = 10
         self.deques = [deque([self.RANGING_MAX] * self.deque_size), deque([self.RANGING_MAX] * self.deque_size)]
-
-
 
         # self.info(self.kalmans)
         return
@@ -151,17 +131,14 @@ class VL53L4CDFilterNode(Node):
             self.deques[msg.dev_id].popleft()
             self.deques[msg.dev_id].append(msg.distance / 1000)
 
-
-
             self.filtered_msg.dev_id = msg.dev_id
             self.filtered_msg.data = [np.mean(self.deques[msg.dev_id])]
             self.filtered_msg.status = msg.status
-            
-            self.filtered_msg.header.frame_id = f'tof{msg.dev_id}' # TODO: put prefix names?
+
+            self.filtered_msg.header.frame_id = f"tof{msg.dev_id}"  # TODO: put prefix names?
             self.filtered_msg.header.stamp = self.get_clock().now().to_msg()
 
             self._pub_tof_filtered.publish(msg=self.filtered_msg)
-
 
         except IndexError:
             self.fatal("Sensor ID value exceeded the number of moving average buffers. Please adjust.")
@@ -171,7 +148,7 @@ class VL53L4CDFilterNode(Node):
 
         # try:
         #     for i in range(2): # TODO: hacky, this represents two sensors. Fix.
-        #         if (msg.data[i] == self.RANGING_ERR) or (msg.data[i] == 0): 
+        #         if (msg.data[i] == self.RANGING_ERR) or (msg.data[i] == 0):
         #             # TODO: This is bad logic, need an and...
         #             pass
         #         else:

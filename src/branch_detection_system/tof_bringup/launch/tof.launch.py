@@ -80,7 +80,7 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         ),
         launch_arguments=[
             # ("sensor_quantity", sensor_quantity),
-            ('use_plot_juggler', 'false')
+            ("use_plot_juggler", "false")
         ],
         condition=IfCondition([str(sensor_type.perform(context) == "vl6180")]),
     )

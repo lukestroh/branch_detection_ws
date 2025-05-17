@@ -68,7 +68,7 @@ class VL6180FilterNode(Node):
             .get_parameter_value()
             .double_value
         )
-        
+
         self.depth_width = (
             self.declare_parameter(name="depth.width", value=Parameter.Type.INTEGER).get_parameter_value().integer_value
         )
@@ -103,14 +103,13 @@ class VL6180FilterNode(Node):
             open(os.path.join(get_package_share_directory("vl6180_bringup"), "config/covariances.json"), "r")
         )
         self.vl6180_msg_raw = Vl6180()
-        self.vl6180_msg_raw.data = [0,0]
+        self.vl6180_msg_raw.data = [0, 0]
         self.vl6180_msg_filtered = Vl6180FilteredStamped()
         self.vl6180_msg_filtered.data = [0.0, 0.0]
-       
 
-        sample_freq = 30.3 # sampling frequency of the digital system. 
+        sample_freq = 30.3  # sampling frequency of the digital system.
         nyquist = 0.5 * sample_freq
-        cutoff = 20.0 # cutoff frequency
+        cutoff = 20.0  # cutoff frequency
         normal_cutoff = cutoff / nyquist
 
         self.warn(normal_cutoff)
@@ -119,15 +118,7 @@ class VL6180FilterNode(Node):
         self.deque_size = 10
         self.deques = [deque([self.RANGING_MAX] * self.deque_size), deque([self.RANGING_MAX] * self.deque_size)]
 
-
-        self.sos = si.butter(
-            N=2,
-            Wn=normal_cutoff,
-            fs=30.3,
-            btype='low',
-            analog=False,
-            output='sos'
-        )
+        self.sos = si.butter(N=2, Wn=normal_cutoff, fs=30.3, btype="low", analog=False, output="sos")
 
         # self.info(self.kalmans)
         return
@@ -142,8 +133,8 @@ class VL6180FilterNode(Node):
         # self.warn(self.depth_near_plane)
 
         try:
-            for i in range(2): # TODO: hacky, this represents two sensors. Fix.
-                if (msg.data[i] == self.RANGING_ERR) or (msg.data[i] == 0): 
+            for i in range(2):  # TODO: hacky, this represents two sensors. Fix.
+                if (msg.data[i] == self.RANGING_ERR) or (msg.data[i] == 0):
                     # TODO: This is bad logic, need an and...
                     pass
                 else:
@@ -151,10 +142,7 @@ class VL6180FilterNode(Node):
                     self.deques[i].popleft()
                     self.deques[i].append(self.vl6180_msg_raw.data[i])
 
-                    y = si.sosfilt(
-                        sos=self.sos,
-                        x=self.deques[i]
-                    )
+                    y = si.sosfilt(sos=self.sos, x=self.deques[i])
                     self.vl6180_msg_filtered.data[i] = np.mean(y)
 
                     # self.vl6180_msg_filtered.data[i] = np.mean(self.deques[i])

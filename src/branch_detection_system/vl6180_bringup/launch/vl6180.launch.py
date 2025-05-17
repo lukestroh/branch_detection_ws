@@ -42,20 +42,17 @@ def setup_launch(context: LaunchContext, *args, **kwargs):
     )
 
     node_plot_juggler = Node(
-        package='plotjuggler',
-        executable='plotjuggler',
-        name='plotjuggler_vl6180',
+        package="plotjuggler",
+        executable="plotjuggler",
+        name="plotjuggler_vl6180",
         arguments=[
-            '-l',
-            os.path.join(get_package_share_directory('vl6180_bringup'), 'plotjuggler/plotjuggler_config.xml')
+            "-l",
+            os.path.join(get_package_share_directory("vl6180_bringup"), "plotjuggler/plotjuggler_config.xml"),
         ],
-        condition=IfCondition(use_plot_juggler)
+        condition=IfCondition(use_plot_juggler),
     )
 
-    nodes_to_launch = [
-        node_vl6180_filtered,
-        node_plot_juggler
-    ]
+    nodes_to_launch = [node_vl6180_filtered, node_plot_juggler]
 
     return nodes_to_launch
 

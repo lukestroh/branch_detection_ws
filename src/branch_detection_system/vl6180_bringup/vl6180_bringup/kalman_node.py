@@ -101,7 +101,7 @@ class VL6180FilterNode(Node):
             open(os.path.join(get_package_share_directory("vl6180_bringup"), "config/covariances.json"), "r")
         )
         self.vl6180_msg_raw = Vl6180()
-        self.vl6180_msg_raw.data = [0,0]
+        self.vl6180_msg_raw.data = [0, 0]
         self.vl6180_msg_filtered = Vl6180FilteredStamped()
         self.vl6180_msg_filtered.data = [0.0, 0.0]
         # self.frame_size = (self.vl6180_msg_raw.config.col.size, self.vl6180_msg_raw.config.row.size)
@@ -132,7 +132,7 @@ class VL6180FilterNode(Node):
         self.vl6180_msg_raw = msg
 
         try:
-            for i in range(self.depth_width * self.depth_height * 2): # TODO: hacky, this represents two sensors. Fix.
+            for i in range(self.depth_width * self.depth_height * 2):  # TODO: hacky, this represents two sensors. Fix.
                 if msg.data[i] != self.RANGING_ERR or msg.data[i] < self.RANGING_MAX:
                     self.kalmans[i].predict()
                     self.kalmans[i].update(self.vl6180_msg_raw.data[i])

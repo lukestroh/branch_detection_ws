@@ -68,7 +68,7 @@ class VL6180FilterNode(Node):
             .get_parameter_value()
             .double_value
         )
-        
+
         self.depth_width = (
             self.declare_parameter(name="depth.width", value=Parameter.Type.INTEGER).get_parameter_value().integer_value
         )
@@ -104,15 +104,12 @@ class VL6180FilterNode(Node):
             open(os.path.join(get_package_share_directory("vl6180_bringup"), "config/covariances.json"), "r")
         )
         self.vl6180_msg_raw = Vl6180()
-        self.vl6180_msg_raw.data = [0,0]
+        self.vl6180_msg_raw.data = [0, 0]
         self.vl6180_msg_filtered = Vl6180FilteredStamped()
         self.vl6180_msg_filtered.data = [0.0, 0.0]
-       
 
         self.deque_size = 15
         self.deques = [deque([self.RANGING_MAX] * self.deque_size), deque([self.RANGING_MAX] * self.deque_size)]
-
-
 
         # self.info(self.kalmans)
         return
@@ -127,8 +124,8 @@ class VL6180FilterNode(Node):
         # self.warn(self.depth_near_plane)
 
         try:
-            for i in range(2): # TODO: hacky, this represents two sensors. Fix.
-                if (msg.data[i] == self.RANGING_ERR) or (msg.data[i] == 0): 
+            for i in range(2):  # TODO: hacky, this represents two sensors. Fix.
+                if (msg.data[i] == self.RANGING_ERR) or (msg.data[i] == 0):
                     # TODO: This is bad logic, need an and...
                     pass
                 else:

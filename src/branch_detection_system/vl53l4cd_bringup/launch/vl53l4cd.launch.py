@@ -22,7 +22,7 @@ logger = rclpy.logging.get_logger("vl53l4cd.launch")
 
 def setup_launch(context: LaunchContext, *args, **kwargs):
 
-    robot_eef_part = LaunchConfiguration('robot_eef_part')
+    robot_eef_part = LaunchConfiguration("robot_eef_part")
 
     dir_vl53l4cd_bringup = get_package_share_directory("vl53l4cd_bringup")
     filepath_vl53l4cd_config = os.path.join(dir_vl53l4cd_bringup, "config", "vl53l4cd.yaml")
@@ -38,27 +38,21 @@ def setup_launch(context: LaunchContext, *args, **kwargs):
         executable="vl53l4cd_filter_node",
         name="vl53l4cd_filter_node",
         output="screen",
-        parameters=[
-            filepath_vl53l4cd_config,
-            {"robot_eef_part": robot_eef_part}
-        ],
+        parameters=[filepath_vl53l4cd_config, {"robot_eef_part": robot_eef_part}],
     )
 
     node_plot_juggler = Node(
-        package='plotjuggler',
-        executable='plotjuggler',
-        name='plotjuggler_vl53l4cd',
+        package="plotjuggler",
+        executable="plotjuggler",
+        name="plotjuggler_vl53l4cd",
         arguments=[
-            '-l',
-            os.path.join(get_package_share_directory('vl53l4cd_bringup'), 'plotjuggler/plotjuggler_config.xml')
+            "-l",
+            os.path.join(get_package_share_directory("vl53l4cd_bringup"), "plotjuggler/plotjuggler_config.xml"),
         ],
-        condition=IfCondition(use_plotjuggler)
+        condition=IfCondition(use_plotjuggler),
     )
 
-    nodes_to_launch = [
-        node_vl53l4cd_filtered,
-        node_plot_juggler
-    ]
+    nodes_to_launch = [node_vl53l4cd_filtered, node_plot_juggler]
 
     return nodes_to_launch
 
@@ -66,7 +60,7 @@ def setup_launch(context: LaunchContext, *args, **kwargs):
 def generate_launch_description():
     declared_args = []
     declared_args.append(DeclareLaunchArgument("use_plotjuggler", default_value="false"))
-    declared_args.append(DeclareLaunchArgument('robot_eef_part', default_value='mock_pruner'))
+    declared_args.append(DeclareLaunchArgument("robot_eef_part", default_value="mock_pruner"))
 
     ld = LaunchDescription(declared_args + [OpaqueFunction(function=setup_launch)])
 
