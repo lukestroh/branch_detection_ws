@@ -16,16 +16,17 @@ class FindBranchRollWristControllerBehavior(pt.behaviour.Behaviour):
 
     def __init__(self, name):
         super(FindBranchRollWristControllerBehavior, self).__init__(name)
+        self.name = name
         return
 
     def setup(self, node):
         self.node = node
-        self.info = lambda x: self.node.get_logger().info(f"\n{x}")
-        self.warn = lambda x: self.node.get_logger().warn(f"\n{x}")
-        self.error = lambda x: self.node.get_logger().error(f"\n{x}")
-        self.fatal = lambda x: self.node.get_logger().fatal(f"\n{x}")
+        self.info = lambda x: self.node.get_logger().info(f"\n[{self.name}] {x}")
+        self.warn = lambda x: self.node.get_logger().warn(f"\n[{self.name}] {x}")
+        self.error = lambda x: self.node.get_logger().error(f"\n[{self.name}] {x}")
+        self.fatal = lambda x: self.node.get_logger().fatal(f"\n[{self.name}] {x}")
 
-        self.info("Setting up FindBranchRollWristControllerBehavior")
+        self.info(f"Setting up {self.name}")
 
         self.client = ActionClient(
             node=self.node, action_type=RunFindBranchRollWrist, action_name="run_find_branch_roll_wrist"
@@ -39,7 +40,9 @@ class FindBranchRollWristControllerBehavior(pt.behaviour.Behaviour):
         self._goal_handle = None
 
         self.node.get_logger().info("Finished FindBranchRollWristControllerBehavior setup.")
-        self.blackboard = pt.blackboard.Blackboard()
+
+        self.blackboard = pt.blackboard.Client(name=self.name)
+        self.blackboard.register_key(key="current_pose_index", access=pt.common.Access.WRITE)
         return
 
     def initialise(self):
@@ -58,36 +61,32 @@ class FindBranchRollWristControllerBehavior(pt.behaviour.Behaviour):
         if not self._goal_handle.accepted:
             self.warn(f"{self.name}: Action server not available.")
         else:
-            self.info(f"{self.name}: Goal accepted.")
+            # self.info(f"{self.name}: Goal accepted.")
             self._result_future: Future = self._goal_handle.get_result_async()
             self._result_future.add_done_callback(callback=self._on_result_cb)
         return
 
     def _on_result_cb(self, future: Future):
         result: RunFindBranchRollWrist.Result = future.result().result
-        self.info(f"{self.name}: Result: {result}")
         self.goal_status = result.success
         return
 
     def update(self):
         if self.goal_status is not None:
-            current_pose_index = self.blackboard.get("current_pose_index")
-            self.blackboard.set("current_pose_index", value=current_pose_index + 1)
+            # self.blackboard.current_pose_index += 1 # TODO: move to different behavior
             if self.goal_status == True:
-                self.warn(f"GOAL STATUS: {self.goal_status}")
+                # self.warn(f"GOAL STATUS: {self.goal_status}")
                 return pt.common.Status.SUCCESS
             else:
                 return pt.common.Status.FAILURE
         return pt.common.Status.RUNNING
 
-    async def terminate(self, new_status: pt.common.Status):
+    def terminate(self, new_status: pt.common.Status):
         if self._goal_handle.status == GoalStatus.STATUS_EXECUTING:
             _goal_canceled_future: Future = self._goal_handle.cancel_goal_async()
             _goal_canceled_future.add_done_callback(self._on_cancel_cb)
-        await _goal_canceled_future
 
         self.logger.info(f"Terminated with status {new_status}")
-        # self.client = None
         return
 
     def _on_cancel_cb(self, future: Future):

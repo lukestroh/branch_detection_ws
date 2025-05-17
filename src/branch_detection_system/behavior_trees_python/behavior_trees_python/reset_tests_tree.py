@@ -7,6 +7,7 @@ import py_trees
 import py_trees_ros
 import sys
 from threading import Lock
+import pprint as pp
 
 import rclpy
 from rclpy.duration import Duration
@@ -16,13 +17,16 @@ from rclpy.parameter import Parameter
 
 from tof_msgs.msg import TofStamped
 from geometry_msgs.msg import Pose
-from vl6180_msgs.msg import Vl6180FilteredStamped
 
-from behavior_trees_python.behaviors.cut_point_rotate_axis_client import CutPointRotateAxisControllerBehavior
-from behavior_trees_python.behaviors.final_approach_controller_client import FinalApproachControllerBehavior
-from behavior_trees_python.behaviors.find_branch_roll_wrist_client import FindBranchRollWristControllerBehavior
+from behavior_trees_python.behaviors.cut_point_rotate_axis_behavior import CutPointRotateAxisControllerBehavior
+from behavior_trees_python.behaviors.final_approach_controller_behavior import FinalApproachControllerBehavior
+from behavior_trees_python.behaviors.find_branch_roll_wrist_behavior import FindBranchRollWristControllerBehavior
 from behavior_trees_python.behaviors.generate_poses_behavior import GeneratePosesBehavior
+from behavior_trees_python.behaviors.generate_uniform_cylindrical_poses_behavior import (
+    GenerateUniformCylindricalPosesBehavior,
+)
 from behavior_trees_python.behaviors.iterate_poses_behavior import IteratePosesBehavior
+from behavior_trees_python.behaviors.check_continue_experiment_behavior import CheckContinueExperimentBehavior
 from behavior_trees_python.behaviors.reset_test_behavior import ResetTestBehavior
 from behavior_trees_python.behaviors.start_bag_record_behavior import StartBagRecordBehavior
 from behavior_trees_python.behaviors.stop_bag_record_behavior import StopBagRecordBehavior
@@ -40,14 +44,14 @@ class ResetTestTreeNode(Node):
         # self._bb_tof_data_lock = Lock()
 
         # Parameters
-        self._param_record_loc = (
-            self.node.declare_parameter(name="record_loc", value=Parameter.Type.STRING)
-            .get_parameter_value()
-            .string_value
-        )
+        # self._param_record_loc = (
+        #     self.declare_parameter(name="record_loc", value=Parameter.Type.STRING).get_parameter_value().string_value
+        # )
 
         # Blackboard setup
-        self.bb = py_trees.blackboard.Client(name="ResetTestTreeNode")
+        self.bb = py_trees.blackboard.Client(name="ResetTreeBlackboard")
+        self.bb.register_key(key="trials_done", access=py_trees.common.Access.WRITE)
+        self.bb.trials_done = False
         self.bb.register_key(key="d_tof0", access=py_trees.common.Access.WRITE)
         self.bb.register_key(key="d_tof1", access=py_trees.common.Access.WRITE)
         self.bb.register_key(key="current_pose_index", access=py_trees.common.Access.WRITE)
@@ -55,18 +59,22 @@ class ResetTestTreeNode(Node):
         self.bb.register_key(key="current_pose", access=py_trees.common.Access.WRITE)
         self.bb.register_key(key="poses", access=py_trees.common.Access.WRITE)
         self.bb.current_pose = Pose()
+        self.bb.register_key(key="poses_in_queue", access=py_trees.common.Access.WRITE)
 
         # Behavior tree setup
         self.tree: py_trees_ros.trees.BehaviourTree = self.create_behavior_tree_ros()
         self.snapshot_visitor = py_trees.visitors.SnapshotVisitor()
         self.tree.add_post_tick_handler(ft.partial(self.post_tick_handler, self.snapshot_visitor))
+        self.tree.add_visitor(self.snapshot_visitor)
+
+        self.last_tree_snapshot = None
 
         # Subscribers
         self._sub_tof_filtered = self.create_subscription(
             TofStamped, "/vl53l4cd/filtered", self._sub_cb_tof_filtered, 10
         )
 
-        self._last_log_time = self.get_clock().now()
+        # self._last_log_time = self.get_clock().now()
 
         return
 
@@ -112,17 +120,20 @@ class ResetTestTreeNode(Node):
 
         # Behaviors
         generate_poses_behavior = GeneratePosesBehavior(name="generate_poses_behavior")
-        # iterate_poses_behavior = IteratePosesBehavior(name='iterate_poses_behavior')
+        generate_uniform_cylindrical_poses_behavior = GenerateUniformCylindricalPosesBehavior(
+            name="generate_uniform_cylindrical_poses_behavior"
+        )
+        iterate_poses_behavior = IteratePosesBehavior(name="iterate_poses_behavior")
+        check_continue_experiment_behavior = CheckContinueExperimentBehavior(name="check_continue_experiment_behavior")
         reset_test_behavior = ResetTestBehavior(name="reset_test_behavior")
-        cut_point_rotate_axis_behavior = CutPointRotateAxisControllerBehavior(name="cut_point_rotate_axis_client")
-        final_approach_behavior = FinalApproachControllerBehavior(name="final_approach_behavior_client")
-
-        start_bag_record_behavior = StartBagRecordBehavior(name="start_bag_record_client")
-        stop_bag_record_behavior = StopBagRecordBehavior(name="stop_bag_record_client")
+        cut_point_rotate_axis_behavior = CutPointRotateAxisControllerBehavior(name="cut_point_rotate_axis_behavior")
+        final_approach_behavior = FinalApproachControllerBehavior(name="final_approach_behavior_behavior")
+        start_bag_record_behavior = StartBagRecordBehavior(name="start_bag_record_behavior")
+        stop_bag_record_behavior = StopBagRecordBehavior(name="stop_bag_record_behavior")
 
         # Find branch roll wrist
         find_branch_roll_wrist_behavior = FindBranchRollWristControllerBehavior(
-            name="find_branch_roll_wrist_client",
+            name="find_branch_roll_wrist_behavior",
         )
         find_branch_roll_wrist_retry = py_trees.decorators.Retry(
             name="find_branch_roll_wrist_retry",
@@ -155,36 +166,27 @@ class ResetTestTreeNode(Node):
             children=[find_branch_selector, align_and_approach_sequence],
         )
 
-        # grouped_controller_failure_is_running = py_trees.decorators.FailureIsRunning(
-        #     name='grouped_controller_failure_is_running',
-        #     child=grouped_controller_sequence
-        # )
+        grouped_controller_failure_is_success = py_trees.decorators.FailureIsSuccess(
+            name="grouped_controller_failure_is_success", child=grouped_controller_sequence
+        )
 
-        # grouped_controller_everything_is_running = py_trees.decorators.SuccessIsRunning(
-        #     name='grouped_controller_everything_is_running',
-        #     child=grouped_controller_failure_is_running
-        # )
-
-        # iterate_poses_success_is_running = py_trees.decorators.SuccessIsRunning(
-        #     name='iterate_poses_success_is_running',
-        #     child=iterate_poses_behavior
-        # )
-
-        iterate_poses_sequence = py_trees.composites.Sequence(
-            name="iterate_poses_sequence",
+        iterate_trials_sequence = py_trees.composites.Sequence(
+            name="iterate_trials_sequence",
             memory=True,
             children=[
+                check_continue_experiment_behavior,
                 start_bag_record_behavior,
                 reset_test_behavior,
-                grouped_controller_sequence,
+                grouped_controller_failure_is_success,
                 stop_bag_record_behavior,
+                iterate_poses_behavior,
             ],
         )
-        iterate_poses_failure_is_running = py_trees.decorators.FailureIsRunning(
-            name="iterate_poses_failure_is_running", child=iterate_poses_sequence
-        )
-        iterate_poses_everything_is_running = py_trees.decorators.SuccessIsRunning(
-            name="iterate_poses_success_is_running", child=iterate_poses_failure_is_running
+        # iterate_trials_failure_is_running = py_trees.decorators.FailureIsRunning(
+        #     name="iterate_trials_failure_is_running", child=iterate_trials_sequence
+        # )
+        iterate_trials_success_is_running = py_trees.decorators.SuccessIsRunning(
+            name="iterate_trials_success_is_running", child=iterate_trials_sequence
         )
         # iterate_poses_retry = py_trees.decorators.Retry(
         #     name='iterate_poses_retry',
@@ -200,10 +202,13 @@ class ResetTestTreeNode(Node):
             name="root_sequence",
             memory=True,
             # children=[align_and_approach_sequence]
-            children=[generate_poses_behavior, iterate_poses_everything_is_running],
+            children=[generate_uniform_cylindrical_poses_behavior, iterate_trials_success_is_running],
+        )
+        root_sequence_failure_is_success = py_trees.decorators.FailureIsSuccess(
+            name="root_sequence_failure_is_success", child=root_sequence
         )
         root = py_trees.decorators.OneShot(
-            name="root", child=root_sequence, policy=py_trees.common.OneShotPolicy.ON_COMPLETION
+            name="root", child=root_sequence_failure_is_success, policy=py_trees.common.OneShotPolicy.ON_COMPLETION
         )
         # root.setup_with_descendants()
         tree = py_trees_ros.trees.BehaviourTree(root=root, unicode_tree_debug=False)
@@ -212,6 +217,23 @@ class ResetTestTreeNode(Node):
         self.description()
         return tree
 
+    def filtered_blackboard_display(self, exclude_keys: list[str] = []):
+        bb = py_trees.blackboard.Blackboard()
+        lines = [py_trees.console.bold_blue + "Blackboard:" + py_trees.console.reset]
+        for key, value in sorted(bb.storage.items()):
+            if key in exclude_keys:
+                continue
+            lines.append(
+                py_trees.console.bold_green
+                + f"\t{key}: "
+                + py_trees.console.reset
+                + py_trees.console.yellow
+                + pp.pformat(value)
+                + py_trees.console.reset
+            )
+        lines.append("\n")
+        return "\n".join(lines)
+
     def post_tick_handler(
         self, snapshot_visitor: py_trees.visitors.SnapshotVisitor, behavior_tree: py_trees.trees.BehaviourTree
     ):
@@ -219,7 +241,12 @@ class ResetTestTreeNode(Node):
         # snapshot_visitor.
         # if self.get_clock().now() - self._last_log_time > Duration(seconds=0.005):
         #     self.info("\n")
-        if self.get_clock().now() - self._last_log_time > Duration(seconds=1.0):
+        current_snapshot = {_id: status for _id, status in snapshot_visitor.visited.items()}
+
+        # self.info(current_snapshot)
+
+        # if self.get_clock().now() - self._last_log_time > Duration(seconds=1.0):
+        if current_snapshot != self.last_tree_snapshot:
             self.info(
                 py_trees.display.unicode_tree(
                     root=behavior_tree.root,
@@ -228,9 +255,11 @@ class ResetTestTreeNode(Node):
                     show_status=True,
                 )
                 + "\n"
-                + py_trees.display.unicode_blackboard()
+                # + py_trees.display.unicode_blackboard()
+                + self.filtered_blackboard_display(exclude_keys=["/poses"])
             )
-            self._last_log_time = self.get_clock().now()
+            # self._last_log_time = self.get_clock().now()
+            self.last_tree_snapshot = current_snapshot
 
         if behavior_tree.root.status == py_trees.common.Status.SUCCESS:
             self.info(f"Exiting with status {behavior_tree.root.status}")

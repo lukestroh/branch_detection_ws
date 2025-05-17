@@ -15,23 +15,16 @@ from ros2bag_msgs.srv import StartRecord
 class StartBagRecordBehavior(pt.behaviour.Behaviour):
     def __init__(self, name):
         super(StartBagRecordBehavior, self).__init__(name)
-        self.blackboard = pt.blackboard.Blackboard()
+        self.name = name
         return
 
     def setup(self, node: Node):
         self.node = node
-        self.info = lambda x: self.node.get_logger().info(f"\n{x}")
-        self.warn = lambda x: self.node.get_logger().warn(f"\n{x}")
-        self.error = lambda x: self.node.get_logger().error(f"\n{x}")
-        self.fatal = lambda x: self.node.get_logger().fatal(f"\n{x}")
-        self.info("Setting up StartBagRecordBehavior")
-
-        # Parameters
-        self._param_record_loc = (
-            self.node.declare_parameter(name="record_loc", value=Parameter.Type.STRING)
-            .get_parameter_value()
-            .string_value
-        )
+        self.info = lambda x: self.node.get_logger().info(f"\n[{self.name}] {x}")
+        self.warn = lambda x: self.node.get_logger().warn(f"\n[{self.name}] {x}")
+        self.error = lambda x: self.node.get_logger().error(f"\n[{self.name}] {x}")
+        self.fatal = lambda x: self.node.get_logger().fatal(f"\n[{self.name}] {x}")
+        self.info(f"Setting up {self.name}")
 
         # Service clients
         self._srv_client_start_bag_record = self.node.create_client(srv_name="/start_bag_record", srv_type=StartRecord)
@@ -40,13 +33,16 @@ class StartBagRecordBehavior(pt.behaviour.Behaviour):
         # Behaviour attributes
         self.goal_status = None
 
+        self.blackboard = pt.blackboard.Client(name=self.name)
+
         return
 
     def initialise(self):
         """Call the start bag record service"""
+        self.goal_status = None
         start_record_req = StartRecord.Request()
-        start_record_req.record_bag = True
-        start_record_req.record_loc = self._param_record_loc
+        # start_record_req.record_bag = True
+        # start_record_req.record_loc = self.node._param_record_loc
 
         self._send_goal_future: Future = self._srv_client_start_bag_record.call_async(request=start_record_req)
         self._send_goal_future.add_done_callback(callback=self._send_goal_cb)

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import py_trees as pt
+import numpy as np
 
 from rclpy.action import ActionClient
 from rclpy.action.client import ClientGoalHandle
@@ -7,14 +8,14 @@ from rclpy.node import Node
 from rclpy.task import Future
 
 from action_msgs.msg import GoalStatus
-from final_approach_controller_msgs.action import GeneratePoses
+from final_approach_controller_msgs.action import GenerateCylindricalPoses
 
 
-class GeneratePosesBehavior(pt.behaviour.Behaviour):
+class GenerateUniformCylindricalPosesBehavior(pt.behaviour.Behaviour):
     """Behavior wrapper for the final approach controller action client"""
 
     def __init__(self, name):
-        super(GeneratePosesBehavior, self).__init__(name)
+        super(GenerateUniformCylindricalPosesBehavior, self).__init__(name)
         self.name = name
         return
 
@@ -27,7 +28,9 @@ class GeneratePosesBehavior(pt.behaviour.Behaviour):
         self.fatal = lambda x: self.node.get_logger().fatal(f"\n[{self.name}] {x}")
 
         self.info(f"Setting up {self.name}")
-        self.client = ActionClient(node=self.node, action_type=GeneratePoses, action_name="generate_uniform_poses")
+        self.client = ActionClient(
+            node=self.node, action_type=GenerateCylindricalPoses, action_name="generate_uniform_cylindrical_poses"
+        )
         self.client.wait_for_server()
 
         self.goal_status = None
@@ -46,7 +49,16 @@ class GeneratePosesBehavior(pt.behaviour.Behaviour):
     def initialise(self):
         """Send a goal to the RunFinalApproach action server"""
         self.goal_status = None
-        self.goal = GeneratePoses.Goal()
+        self.goal = GenerateCylindricalPoses.Goal()
+
+        # Edge case settings
+        self.goal.num_radius_poses = 3
+        self.goal.num_theta_poses = 15
+        self.goal.num_z_poses = 3
+        self.goal.radius_range = [0.9, 0.15]
+        self.goal.theta_range = [0.0, 2 * np.pi]
+        self.goal.z_range = [-0.2, -0.15]
+
         self._send_goal_future: Future = self.client.send_goal_async(
             goal=self.goal,
         )
@@ -72,12 +84,11 @@ class GeneratePosesBehavior(pt.behaviour.Behaviour):
             # self.info(f"{self.name}: Goal accepted.")
             self._result_future: Future = self._goal_handle.get_result_async()
             self._result_future.add_done_callback(callback=self._on_result_cb)
-        # self.goal_status = goal_handle.status
-        # self.info((f"{self.goal_status}"))
+
         return
 
     def _on_result_cb(self, future: Future):
-        result: GeneratePoses.Result = future.result().result
+        result: GenerateCylindricalPoses.Result = future.result().result
         # self.info(f"{self.name}: Result: {result}")
         self.goal_status = result.success
         self.poses = result.poses

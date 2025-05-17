@@ -16,8 +16,7 @@ class ResetTestBehavior(pt.behaviour.Behaviour):
 
     def __init__(self, name):
         super(ResetTestBehavior, self).__init__(name)
-
-        self.blackboard = pt.blackboard.Blackboard()
+        self.name = name
         return
 
     def setup(self, node):
@@ -27,7 +26,7 @@ class ResetTestBehavior(pt.behaviour.Behaviour):
         self.error = lambda x: self.node.get_logger().error(f"\n{x}")
         self.fatal = lambda x: self.node.get_logger().fatal(f"\n{x}")
 
-        self.info("Setting up ResetTestBehavior")
+        self.info(f"Setting up {self.name}")
         self._action_client_run_test_reset = ActionClient(
             node=self.node, action_type=RunTestReset, action_name="run_test_reset"
         )
@@ -37,15 +36,23 @@ class ResetTestBehavior(pt.behaviour.Behaviour):
         self._goal_handle = None
         self._result_future = None
 
+        self.blackboard = pt.blackboard.Client(name=self.name)
+        self.blackboard.register_key(key="poses", access=pt.common.Access.WRITE)
+        self.blackboard.register_key(key="current_pose_index", access=pt.common.Access.WRITE)
+        self.blackboard.register_key(key="current_pose", access=pt.common.Access.WRITE)
         return
 
     def initialise(self):
         """Send a goal to the RunFinalApproach action server"""
         self.goal_status = None
         self.goal = RunTestReset.Goal()
-        poses = self.blackboard.get("poses")
-        self.goal.pose_idx = self.blackboard.get("current_pose_index")
-        self.goal.pose = poses[self.goal.pose_idx]
+        # poses = self.blackboard.get("poses")
+        poses = self.blackboard.poses
+        # self.goal.pose_idx = self.blackboard.get("current_pose_index")
+        self.goal.pose_idx = self.blackboard.current_pose_index
+        # self.goal.pose = poses[self.goal.pose_idx]
+        # self.goal.pose = self.blackboard.get("current_pose")
+        self.goal.pose = self.blackboard.current_pose
 
         """
         position:
@@ -69,7 +76,7 @@ class ResetTestBehavior(pt.behaviour.Behaviour):
             self.warn(f"{self.name}: Action server not available.")
             # self.feedback_message = "Action server not available."
         else:
-            self.info(f"{self.name}: Goal accepted.")
+            # self.info(f"{self.name}: Goal accepted.")
             self._result_future: Future = self._goal_handle.get_result_async()
             self._result_future.add_done_callback(callback=self._on_result_cb)
         # self.goal_status = goal_handle.status
@@ -78,7 +85,7 @@ class ResetTestBehavior(pt.behaviour.Behaviour):
 
     def _on_result_cb(self, future: Future):
         result: RunTestReset.Result = future.result().result
-        self.info(f"{self.name}: Result: {result}")
+        # self.info(f"{self.name}: Result: {result}")
         self.goal_status = result.success
         return
 
