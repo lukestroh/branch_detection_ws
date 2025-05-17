@@ -36,7 +36,6 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
     headless_mode = LaunchConfiguration("headless_mode")
     mock_sensor_commands = LaunchConfiguration("mock_sensor_commands")
     use_mock_hardware = LaunchConfiguration("use_mock_hardware")
-    
 
     # ======================
     #      Controllers
@@ -141,8 +140,6 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
             moveit_controllers,
         ],
     )
-
-    
 
     _to_start = [node_move_group]
 
