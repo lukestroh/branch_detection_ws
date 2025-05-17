@@ -35,7 +35,7 @@ def far_plane_filter(
     fp_filter_ts = fp_filter_ts[~np.isnan(fp_filter_ts)]
 
     if fp_filter_ts.size == 0:
-        print(f"Could not find any data points less than the filter's far plane of {filter_far_plane}")
+        # print(f"Could not find any data points less than the filter's far plane of {filter_far_plane}")
         return None
 
     fp_filter_zeroed_ts = fp_filter_ts - fp_filter_ts[0]
@@ -79,9 +79,13 @@ def process_window(start_time, window_size, t_window, zt_window, dist_window, ra
     timestamp_min = t_window[idx_min]
     fit_min = float(y_fit[idx_min])
 
+    residuals = abs(dist_window - y_fit)
+    avg_residual = np.mean(residuals)
+
     return {
         "start_ts": start_time,
         "window_size": window_size,
+        'dist_window': dist_window,
         "coefficients": coefficients,
         "r2": fit_r2,
         "ts_min": timestamp_min,
@@ -89,6 +93,7 @@ def process_window(start_time, window_size, t_window, zt_window, dist_window, ra
         "t_fit": t_fit,
         "y_fit": y_fit,
         "inlier_mask": ransac.inlier_mask_,
+        "avg_residual": avg_residual
     }
 
 
@@ -284,6 +289,8 @@ def get_branch_center_time_and_distance(
     mav_filter_data: list,
     sensor_name: str,
     debug_plot: bool = False,
+    save_plot: bool = False,
+    save_plot_path: str = None,
     window_size: float = 0.75,
     # window_step_size: float = 0.25,
     window_overlap_ratio: float = 1 / 3,
@@ -292,6 +299,7 @@ def get_branch_center_time_and_distance(
     residual_threshold: float = 0.004,
 ) -> dict[int, dict]:
     """
+    TODO: Needs serious refactor, window size and overlap only relates to first bit, not the refitting params
     TODO: Alternatively, could record joint angles in their own array
     instead of tof vs time, match tof vs. wrist3
 
@@ -315,8 +323,31 @@ def get_branch_center_time_and_distance(
     # print(pp.pformat(windowed_data))
 
     filtered_window_data = filter_parabolas(windowed_data=windowed_data)
+    if not filtered_window_data:
+        return None
+    
+    # def evaluate_parabola_shapes(windowed_data: dict):
+    #     """Evaluate parabolic shapes for where the windows where the height = 1/2 the width. For good fits, this should be consistent
+        
+    #     :param windowed_data: Dictionary containing all of the windowed data, even for windows where no fit was found
+    #     :type dict:
+    #     """
+
+    #     for window_idx, window in windowed_data.items():
+    #         delta_t = 1 / window['coefficients'][2]
+    #         print(window_idx, delta_t, window['t_fit'])
+    #         # print(window['coefficients'][2])
+            
+
+    
+    # evaluated_window_data = evaluate_parabola_shapes(windowed_data=filtered_window_data)
+
+    # import sys
+    # sys.exit()
 
     grouped_window_data = group_overlapping_parabolas(window_data=filtered_window_data)
+    if not grouped_window_data:
+        return None
 
     refit_data = {}
     for group_id, group in grouped_window_data.items():
@@ -354,8 +385,21 @@ def get_branch_center_time_and_distance(
 
             fig = dplot.plot_ransac_quadratic_fit(t_fit=window["t_fit"], y_fit=window["y_fit"], fig=fig)
 
-        file_loc = os.path.join(os.path.expanduser('~'), 'branch_detection_ws', 'analysis', 'branch-detection-system-analysis', 'branch_detection_system_analysis', 'figures', 'file.svg')
-        pio.write_image(fig=fig, file=file_loc, format='svg')
-        fig.show()
+        
+        if save_plot:
+            # file_loc = os.path.join(os.path.expanduser('~'), 'branch_detection_ws', 'analysis', 'branch-detection-system-analysis', 'branch_detection_system_analysis', 'figures', 'file.svg')
+            pio.write_image(fig=fig, file=save_plot_path, format='svg')
+        # fig.show()
 
-    return refit_data
+    
+    # Get the lowest residual fit
+    lowest_residual = np.inf
+    lowest_residual_idx = None
+    for refit_idx, refit in refit_data.items():
+        if refit['avg_residual'] < lowest_residual:
+            lowest_residual = refit['avg_residual']
+            lowest_residual_idx = refit_idx
+    ts_min = refit_data[lowest_residual_idx]['ts_min']
+    fit_min = refit_data[lowest_residual_idx]['fit_min']
+
+    return ts_min, fit_min

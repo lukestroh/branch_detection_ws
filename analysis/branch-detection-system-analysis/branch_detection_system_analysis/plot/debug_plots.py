@@ -23,6 +23,9 @@ def plot_ransac_quadratic_fit(
     if fig is None:
         fig = go.Figure()
 
+    fig.update_xaxes(title="Time (s)")
+    fig.update_yaxes(title="Distance (m)")
+
     if np.any(fp_filter_data):
         fig.add_trace(go.Scatter(x=zeroed_ts, y=fp_filter_data, name="maf-fpf", mode="lines"))
 
@@ -49,6 +52,6 @@ def plot_ransac_quadratic_fit(
     # fig.add_vline(x=start_window_time+window_size, line_width=2, line_dash="dash", line_color='blue')
     if show:
         fig.show()
-    if save_fig:
-        fig.write_image(save_path)
+    # if save_fig:
+    #     fig.write_image(save_path)
     return fig
