@@ -19,6 +19,7 @@ logger = rclpy.logging.get_logger("final_approach_controller.launch")
 def launch_setup(context, *args, **kwargs) -> list:
     robot_base_part = LaunchConfiguration("robot_base_part")
     robot_eef_part = LaunchConfiguration("robot_eef_part")
+    tof_sensor_type = LaunchConfiguration("tof_sensor_type")
     use_mock_hardware = LaunchConfiguration("use_mock_hardware")
 
     node_final_approach_controller = Node(
@@ -41,6 +42,7 @@ def launch_setup(context, *args, **kwargs) -> list:
         parameters=[
             {"robot_base_part": robot_base_part},
             {"robot_eef_part": robot_eef_part},
+            {"tof_sensor_type": tof_sensor_type},
             {"use_mock_hardware": use_mock_hardware},
         ],
     )
@@ -98,6 +100,7 @@ def generate_launch_description():
     declared_configs = [
         dict(name="robot_base_part", default_value=""),
         dict(name="robot_eef_part", default_value=""),
+        dict(name="tof_sensor_type", default_value=""),
         dict(name="headless_mode", default_value="true"),
         dict(name="use_mock_hardware", default_value="false"),
     ]

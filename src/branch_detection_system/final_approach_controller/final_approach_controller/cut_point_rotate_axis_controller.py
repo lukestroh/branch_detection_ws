@@ -5,6 +5,7 @@ from rclpy.action.server import ServerGoalHandle
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.duration import Duration
+from rclpy.parameter import Parameter
 from rclpy.time import Time
 
 from final_approach_controller.tf_node import TFNode
@@ -30,8 +31,15 @@ class CutPointRotateAxisController(TFNode):
         self.error = lambda x: self.get_logger().error(f"{pp.pformat(x)}")
 
         # Parameters
-        self.tof_ranging_max = 1.2  # TODO: Get from params
-        self.tof_name = "VL53L4CD"
+        self._param_robot_eef_part = (
+            self.declare_parameter("robot_eef_part", value=Parameter.Type.STRING).get_parameter_value().string_value
+        )
+        self._param_robot_base_part = (
+            self.declare_parameter("robot_base_part", value=Parameter.Type.STRING).get_parameter_value().string_value
+        )
+        self._param_tof_type = (
+            self.declare_parameter("tof_sensor_type", value=Parameter.Type.STRING).get_parameter_value().string_value
+        )
 
         # Callback group
         self.callback_group = ReentrantCallbackGroup()  # allows for subscriber to persist in service, action
@@ -98,6 +106,10 @@ class CutPointRotateAxisController(TFNode):
         self.tf_tof0_to_tof1 = np.identity(4)
         self._dist_cut_point_to_branch_threshold = 0.04  # This is bad, get better sensors? How to calibrate?
         self.controller_running = False
+
+        #
+        self.tof_ranging_max = 1.2  # TODO: Get from params
+        self.tof_name = self._param_tof_type
 
         return
 
@@ -264,7 +276,7 @@ class CutPointRotateAxisController(TFNode):
             self.msg_twist.twist.angular.x = angular_v_mp_tool0_frame[0]
             self.msg_twist.twist.angular.y = angular_v_mp_tool0_frame[1]
             self.msg_twist.twist.angular.z = angular_v_mp_tool0_frame[2]
-            self.msg_twist.header.frame_id = "mock_pruner__tool0"
+            self.msg_twist.header.frame_id = f"{self._param_robot_eef_part}__tool0"
             self.msg_twist.header.stamp = self.get_clock().now().to_msg()
             self._pub_servo.publish(self.msg_twist)
         return

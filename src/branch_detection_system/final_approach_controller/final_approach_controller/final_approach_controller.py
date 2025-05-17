@@ -95,7 +95,7 @@ class FinalApproachControllerNode(TFNode):
         self._goal_handle = None
         self.d_tof0 = 0.0
         self.d_tof1 = 0.0
-        self.max_linear_speed = 0.01 * 10  # UR servo is slow??
+        self.max_linear_speed = 0.05 * 10  # UR servo is slow??
         # TODO::::: need to read raw data to make sure that the reading is valid??
 
         self.tf_mp_tof0_to_base = np.identity(4)
@@ -156,7 +156,7 @@ class FinalApproachControllerNode(TFNode):
                     self.feedback_pub_prev_time = self.get_clock().now()
 
                 # For safety purposes...
-                if self.get_clock().now() - self.start_servo_time > Duration(seconds=10.0):
+                if self.get_clock().now() - self.start_servo_time > Duration(seconds=2.5):
                     goal_handle.canceled()
                     result.success = False
                     self.controller_running = False
@@ -229,18 +229,18 @@ class FinalApproachControllerNode(TFNode):
         dist, theta = self.get_cut_point_info()
         dist_cut_point_to_branch = dist - self.tf_cut_point_to_tof0[2, 3]
 
-        if (
-            np.isclose(dist_cut_point_to_branch, 0, atol=self._dist_cut_point_to_branch_threshold)
-            or (dist_cut_point_to_branch) < 0
-            or self.d_tof0 < self._dist_cut_point_to_branch_threshold
-            or self.d_tof1 < self._dist_cut_point_to_branch_threshold
-        ):
-            self.publish_zero_twist()
+        # if (
+        #     np.isclose(dist_cut_point_to_branch, 0, atol=self._dist_cut_point_to_branch_threshold)
+        #     or (dist_cut_point_to_branch) < 0
+        #     or self.d_tof0 < self._dist_cut_point_to_branch_threshold
+        #     or self.d_tof1 < self._dist_cut_point_to_branch_threshold
+        # ):
+        #     self.publish_zero_twist()
 
-            self.info(f"Reached terminating point at dist:{dist}, theta: {theta}")
-            self._timer_run_controller.cancel()
-            self.controller_running = False
-            return
+        #     self.info(f"Reached terminating point at dist:{dist}, theta: {theta}")
+        #     self._timer_run_controller.cancel()
+        #     self.controller_running = False
+        #     return
 
         # if servo_frame == "cart__base":
         #     tf_cut_point_to_world = self.lookup_transform(

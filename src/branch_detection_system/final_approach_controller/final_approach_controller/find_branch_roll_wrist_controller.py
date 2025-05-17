@@ -26,29 +26,21 @@ from action_msgs.msg import GoalStatus
 from controller_manager_msgs.srv import SwitchController
 from geometry_msgs.msg import TwistStamped, Pose, Point, Quaternion
 from moveit_msgs.action import MoveGroup
-
-# from moveit_msgs.srv import GetCartesianPath
-# from moveit_msgs.msg import (
-#     RobotState,
-#     MotionPlanRequest,
-#     JointConstraint,
-#     OrientationConstraint,
-#     PositionConstraint,
-#     Constraints,
-#     PlanningOptions,
-# )
 from sensor_msgs.msg import JointState
+from std_msgs.msg import String
 from std_srvs.srv import Trigger
 from trajectory_msgs.msg import JointTrajectory
 
 import modern_robotics as mr
 import numpy as np
+import os
+import plotly.graph_objects as go
+import plotly.io as pio
 import scipy.optimize as so
 from scipy.spatial.transform import Rotation
-
 from threading import Event, Lock
 import traceback
-import plotly.graph_objects as go
+
 
 # import copy
 
@@ -159,6 +151,13 @@ class FindBranchRollWristController(TFNode):
             callback_group=self._reentrant_cb_group,
             qos_profile=1,
         )
+        self._sub_bag_record_path = self.create_subscription(
+            msg_type=String,
+            topic="/bag_record_path",
+            callback=self._sub_cb_bag_record_path,
+            callback_group=self._reentrant_cb_group,
+            qos_profile=1,
+        )
         # self._sub_tof0_filtered = self.create_subscription(
         #     msg_type=TofStamped,
         #     topic='/vl53l4cd/tof0/filtered',
@@ -207,6 +206,7 @@ class FindBranchRollWristController(TFNode):
         # Messages
         self.msg_twist = TwistStamped()
         self.msg_tof_branch_fit = ToFBranchFitStamped()
+        self._msg_bag_record_path = String()
 
         # Transforms
         self.tf_mp_base_to_tof0 = np.identity(4)
@@ -220,7 +220,7 @@ class FindBranchRollWristController(TFNode):
         self.feedback_pub_prev_time = self.get_clock().now()
         self.start_states_recorded = False
         if _param_use_mock_hardware:
-            self.max_angular_vel = np.pi / 2
+            self.max_angular_vel = np.pi / 16
         else:
             self.max_angular_vel = np.pi / 16 * 10  # For some reason the UR5e scales down servoing movement very hard?
 
@@ -580,7 +580,9 @@ class FindBranchRollWristController(TFNode):
                                     anchor="tail",
                                 )
                                 fig.update_layout(scene=dict(aspectmode="data"))
-
+                                pio.write_image(
+                                    fig=fig, file=os.path.join(self.bag_record_path, "projections.svg"), format="svg"
+                                )
                                 fig.show()
 
                             #####################################################
@@ -743,9 +745,6 @@ class FindBranchRollWristController(TFNode):
             self._pub_servo.publish(self.msg_twist)
         return
 
-    # def _timer_cb_run_controller(self):
-    #     return
-
     def _timer_cb_run_quadratic_fit(self):
         """Periodically run a fit on the data"""
         self.run_quadratic_fit()
@@ -762,15 +761,34 @@ class FindBranchRollWristController(TFNode):
                 timestamp_readings_tof0_copy = list(self.timestamp_readings_tof0)
                 d_tof0_readings_raw_copy = list(self.d_tof0_raw_readings)
                 d_tof0_readings_copy = list(self.d_tof0_readings)
+            # tof0_time_and_dist = cf.get_branch_center_time_and_distance(
+            #     node=self,
+            #     raw_timestamps=timestamp_readings_tof0_raw_copy,
+            #     filtered_timestamps=timestamp_readings_tof0_copy,
+            #     raw_readings=d_tof0_readings_raw_copy,
+            #     filtered_readings=d_tof0_readings_copy,
+            #     sensor_name="tof0",
+            #     debug_plot=self.debug_plot,
+            # )
             tof0_time_and_dist = cf.get_branch_center_time_and_distance(
                 node=self,
-                raw_timestamps=timestamp_readings_tof0_raw_copy,
-                filtered_timestamps=timestamp_readings_tof0_copy,
-                raw_readings=d_tof0_readings_raw_copy,
-                filtered_readings=d_tof0_readings_copy,
+                filter_far_plane=0.20,
+                #
+                raw_ts=timestamp_readings_tof0_raw_copy,
+                raw_data=d_tof0_readings_raw_copy,
+                mav_filter_ts=timestamp_readings_tof0_copy,
+                mav_filter_data=d_tof0_readings_copy,
+                #
                 sensor_name="tof0",
-                debug_plot=self.debug_plot,
+                debug_plot=True,
+                save_plot=True,
+                save_plot_path=os.path.join(self.bag_record_path, "tof0_ransac_fit.svg"),
+                min_samples=10,
+                max_trials=20,
+                residual_threshold=0.008,
+                window_overlap_ratio=2 / 3,
             )
+            self.warn(f"TOF0: {tof0_time_and_dist}")
             if tof0_time_and_dist is not None:
                 self.tof0_time_center, self.tof0_distance_center = tof0_time_and_dist
                 with self._branch_found_lock:
@@ -786,15 +804,34 @@ class FindBranchRollWristController(TFNode):
                 timestamp_readings_tof1_copy = list(self.timestamp_readings_tof1)
                 d_tof1_readings_raw_copy = list(self.d_tof1_raw_readings)
                 d_tof1_readings_copy = list(self.d_tof1_readings)
+            # tof1_time_and_dist = cf.get_branch_center_time_and_distance(
+            #     node=self,
+            #     raw_timestamps=timestamp_readings_tof1_raw_copy,
+            #     filtered_timestamps=timestamp_readings_tof1_copy,
+            #     raw_readings=d_tof1_readings_raw_copy,
+            #     filtered_readings=d_tof1_readings_copy,
+            #     sensor_name="tof1",
+            #     debug_plot=self.debug_plot,
+            # )
             tof1_time_and_dist = cf.get_branch_center_time_and_distance(
                 node=self,
-                raw_timestamps=timestamp_readings_tof1_raw_copy,
-                filtered_timestamps=timestamp_readings_tof1_copy,
-                raw_readings=d_tof1_readings_raw_copy,
-                filtered_readings=d_tof1_readings_copy,
-                sensor_name="tof1",
-                debug_plot=self.debug_plot,
+                filter_far_plane=0.20,
+                #
+                raw_ts=timestamp_readings_tof1_raw_copy,
+                raw_data=d_tof1_readings_raw_copy,
+                mav_filter_ts=timestamp_readings_tof1_copy,
+                mav_filter_data=d_tof1_readings_copy,
+                #
+                sensor_name="tof0",
+                debug_plot=True,
+                save_plot=True,
+                save_plot_path=os.path.join(self.bag_record_path, "tof1_ransac_fit.svg"),
+                min_samples=10,
+                max_trials=20,
+                residual_threshold=0.008,
+                window_overlap_ratio=2 / 3,
             )
+            self.warn(f"TOF1: {tof1_time_and_dist}")
             if tof1_time_and_dist is not None:
                 self.tof1_time_center, self.tof1_distance_center = tof1_time_and_dist
                 with self._branch_found_lock:
@@ -837,7 +874,6 @@ class FindBranchRollWristController(TFNode):
     def _sub_cb_tof_filtered(self, msg: TofStamped):
         # Do some checks, make sure that the readings make sense in intuitive way.
         # Make sure readings do not exceed maximum. # TODO: Find a way to get sensor parameters in here
-
         if msg.dev_id == 0:
             self.d_tof0 = msg.data[0]
         elif msg.dev_id == 1:
@@ -860,6 +896,10 @@ class FindBranchRollWristController(TFNode):
 
     def _sub_cb_joint_states(self, msg: JointState):
         self.joint_states = msg.position
+        return
+
+    def _sub_cb_bag_record_path(self, msg: String):
+        self.bag_record_path = msg.data
         return
 
     def reset_controller(self) -> None:
