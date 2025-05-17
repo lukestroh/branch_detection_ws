@@ -2,7 +2,13 @@
 import xml.etree
 from launch import LaunchDescription, LaunchContext
 
-from launch.actions import IncludeLaunchDescription, DeclareLaunchArgument, RegisterEventHandler, OpaqueFunction, SetLaunchConfiguration
+from launch.actions import (
+    IncludeLaunchDescription,
+    DeclareLaunchArgument,
+    RegisterEventHandler,
+    OpaqueFunction,
+    SetLaunchConfiguration,
+)
 from launch.launch_description_sources import AnyLaunchDescriptionSource
 from launch.conditions import IfCondition, UnlessCondition, LaunchConfigurationEquals
 from launch.event_handlers import OnProcessStart, OnProcessExit
@@ -23,6 +29,7 @@ import os
 import yaml
 
 import rclpy.logging
+
 logger = rclpy.logging.get_logger("ur_basic.launch")
 
 
@@ -40,9 +47,9 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
 
     launch_servo = LaunchConfiguration("launch_servo")
     ur_prefix = LaunchConfiguration("ur_prefix")
-    
+
     # tf_prefix = LaunchConfiguration("tf_prefix", default=ur_prefix.perform(context))
-    tf_prefix = SetLaunchConfiguration(name='tf_prefix', value=ur_prefix)
+    tf_prefix = SetLaunchConfiguration(name="tf_prefix", value=ur_prefix)
     ur_robot_ip = LaunchConfiguration("ur_robot_ip")
     ur_type = LaunchConfiguration("ur_type")
     use_mock_hardware = LaunchConfiguration("use_mock_hardware")
@@ -81,7 +88,7 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
     robot_conf = load_yaml(
         package_name="branch_detection_system_description", file_path=os.path.join("config", "robot_conf.yaml")
     )
-    robot_stack_size = len(robot_conf["robot_stack"]) # seems a lil hacky...
+    robot_stack_size = len(robot_conf["robot_stack"])  # seems a lil hacky...
 
     parent_child_mappings = {}
 
@@ -106,42 +113,32 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
             parent_child_mappings.update(part_conf)
         else:
             raise ValueError(f"Robot part {robot_part} not found in 'branch_detection_system_description'")
-        
+
     # Set the robot's end-effector part as a launch config to pass to the nodes
     else:
         robot_eef_part = SetLaunchConfiguration(name="robot_eef_part", value=robot_part)
         robot_eef_part.execute(context=context)
 
-    
     """Dynamically evaluate parameter files with their prefix names"""
     # Kinematics
     _filepath_kinematics = os.path.join(
-        get_package_share_directory('branch_detection_system_moveit_config'), "config/kinematics.yaml"
+        get_package_share_directory("branch_detection_system_moveit_config"), "config/kinematics.yaml"
     )
-    _parameterfile_kinematics = ParameterFile(
-        param_file=_filepath_kinematics,
-        allow_substs=True
-    )
+    _parameterfile_kinematics = ParameterFile(param_file=_filepath_kinematics, allow_substs=True)
     _parameterfile_kinematics.evaluate(context=context)
 
     # Joint limits
     _filepath_joint_limits = os.path.join(
-            get_package_share_directory("branch_detection_system_moveit_config"), "config/joint_limits.yaml"
-        )
-    _parameterfile_joint_limits = ParameterFile(
-        param_file=_filepath_joint_limits,
-        allow_substs=True
+        get_package_share_directory("branch_detection_system_moveit_config"), "config/joint_limits.yaml"
     )
+    _parameterfile_joint_limits = ParameterFile(param_file=_filepath_joint_limits, allow_substs=True)
     _parameterfile_joint_limits.evaluate(context=context)
 
     # MoveIt controllers
     _filepath_moveit_controllers = os.path.join(
-            get_package_share_directory("branch_detection_system_moveit_config"), "config/moveit_controllers.yaml"
-        )
-    _parameterfile_moveit_controllers = ParameterFile(
-        param_file=_filepath_moveit_controllers,
-        allow_substs=True
+        get_package_share_directory("branch_detection_system_moveit_config"), "config/moveit_controllers.yaml"
     )
+    _parameterfile_moveit_controllers = ParameterFile(param_file=_filepath_moveit_controllers, allow_substs=True)
     _parameterfile_moveit_controllers.evaluate(context=context)
 
     # logger.error(f"{ur_prefix.perform(context)}")
@@ -149,7 +146,7 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         "name": "pruning_robot",
         "ur_type": ur_type.perform(context),
         "robot_ip": ur_robot_ip.perform(context),
-        "ur_prefix": ur_prefix.perform(context), # parent_child_mappings["ur_prefix"],
+        "ur_prefix": ur_prefix.perform(context),  # parent_child_mappings["ur_prefix"],
         "robot_stack_qty": str(len(robot_conf["robot_stack"])),
         "headless_mode": headless_mode,
         "mock_sensor_commands": mock_sensor_commands,
@@ -160,13 +157,30 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         "initial_positions_file": os.path.join(
             get_package_share_directory("branch_detection_system_description"), "config/initial_positions.yaml"
         ),
-        "kinematics_params_file": os.path.join(get_package_share_directory("branch_detection_system_description"), "config", "cindy_ur5e_calibration.yaml"),
-        "joint_limit_params": os.path.join(get_package_share_directory("ur_description"), "config", ur_type.perform(context), "joint_limits.yaml"),
-        "physical_params": os.path.join(get_package_share_directory("ur_description"), "config", ur_type.perform(context), "physical_parameters.yaml"),
-        "visual_params": os.path.join(get_package_share_directory("ur_description"), "config", ur_type.perform(context), "visual_parameters.yaml"),
-        "script_filename": os.path.join(get_package_share_directory("ur_client_library"), "resources", "external_control.urscript"),
-        "input_recipe_filename": os.path.join(get_package_share_directory("ur_robot_driver"), "resources", "rtde_input_recipe.txt"),
-        "output_recipe_filename": os.path.join(get_package_share_directory("ur_robot_driver"), "resources", "rtde_output_recipe.txt"),
+        "kinematics_params_file": os.path.join(
+            get_package_share_directory("branch_detection_system_description"), "config", "cindy_ur5e_calibration.yaml"
+        ),
+        "joint_limit_params": os.path.join(
+            get_package_share_directory("ur_description"), "config", ur_type.perform(context), "joint_limits.yaml"
+        ),
+        "physical_params": os.path.join(
+            get_package_share_directory("ur_description"),
+            "config",
+            ur_type.perform(context),
+            "physical_parameters.yaml",
+        ),
+        "visual_params": os.path.join(
+            get_package_share_directory("ur_description"), "config", ur_type.perform(context), "visual_parameters.yaml"
+        ),
+        "script_filename": os.path.join(
+            get_package_share_directory("ur_client_library"), "resources", "external_control.urscript"
+        ),
+        "input_recipe_filename": os.path.join(
+            get_package_share_directory("ur_robot_driver"), "resources", "rtde_input_recipe.txt"
+        ),
+        "output_recipe_filename": os.path.join(
+            get_package_share_directory("ur_robot_driver"), "resources", "rtde_output_recipe.txt"
+        ),
         "safety_pos_margin": "0.15",
         "safety_k_position": "20",
         "script_command_port": "50004",
@@ -196,9 +210,7 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         mappings=_mappings,
     )
     mcb.robot_description_kinematics(file_path=_parameterfile_kinematics.param_file)
-    mcb.joint_limits(
-        file_path=_parameterfile_joint_limits.param_file
-    )
+    mcb.joint_limits(file_path=_parameterfile_joint_limits.param_file)
     mcb.planning_pipelines(
         default_planning_pipeline="ompl",
         pipelines=["ompl", "pilz_industrial_motion_planner", "chomp"],
@@ -210,19 +222,16 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
             "config/pilz_cartesian_limits.yaml",
         )
     )
-    mcb.trajectory_execution(
-        file_path=_parameterfile_moveit_controllers.param_file,
-        moveit_manage_controllers=False
-    )
-    
+    mcb.trajectory_execution(file_path=_parameterfile_moveit_controllers.param_file, moveit_manage_controllers=False)
+
     moveit_configs = mcb.to_moveit_configs()
 
     # logger.error(f"{moveit_configs.robot_description_semantic}")
-    
-    # ##############################################################
-    # # SAVE HARD-CODED URDF
+
+    ##############################################################
+    # SAVE HARD-CODED URDF
     # import xml.etree.ElementTree as ET
-    
+
     # et = ET.XML(moveit_configs.robot_description['robot_description'].value[0].perform(context))
     # tree = ET.ElementTree(et)
     # ET.indent(tree)
@@ -233,7 +242,6 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
     # tree = ET.ElementTree(et)
     # ET.indent(tree)
     # tree.write("/home/luke/branch_detection_ws/src/branch_detection_system_moveit_config/srdf/tmp/robot.srdf", encoding='utf-8', xml_declaration=True)
-
 
     # ##############################################################
 
@@ -296,7 +304,7 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
 
     rviz_config_file = PathJoinSubstitution(
         [get_package_share_directory("branch_detection_system_description"), "rviz", "view_robot.rviz"]
-    )    
+    )
 
     node_joint_state_broadcaster_spawner = Node(
         package="controller_manager",
@@ -320,25 +328,18 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         }
     }
     _filepath_ompl_planning = os.path.join(
-        get_package_share_directory('branch_detection_system_moveit_config'),
-        'config',
-        'ompl_planning.yaml'
+        get_package_share_directory("branch_detection_system_moveit_config"), "config", "ompl_planning.yaml"
     )
-    _parameterfile_ompl_planning = ParameterFile(
-        param_file=_filepath_ompl_planning,
-        allow_substs=True
-    )
+    _parameterfile_ompl_planning = ParameterFile(param_file=_filepath_ompl_planning, allow_substs=True)
     _parameterfile_ompl_planning.evaluate(context=context)
     with open(_parameterfile_ompl_planning.param_file) as f:
         _yamlcontent_ompl_planning = yaml.safe_load(f)
     # ompl_planning_yaml = load_yaml("branch_detection_system_moveit_config", "config/ompl_planning.yaml")
     ompl_planning_pipeline_config["move_group"].update(_yamlcontent_ompl_planning)
 
-   
     if use_mock_hardware.perform(context) == "true":
         moveit_configs.trajectory_execution["scaled_joint_trajectory_controller"]["default"] = False
         moveit_configs.trajectory_execution["joint_trajectory_controller"]["default"] = True
-
 
     # TODO: If trajectory_execution is part of mcb, check to see if this should be in yaml file?
     params_trajectory_execution = {
@@ -349,11 +350,10 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
 
     # logger.warn(f"{moveit_configs.trajectory_execution}")
 
-
     warehouse_ros_config = {
         "warehouse_plugin": "warehouse_ros_sqlite::DatabaseConnection",
         "warehouse_host": warehouse_sqlite_path,
-        "warehouse_port": 33829
+        "warehouse_port": 33829,
     }
 
     warehouse_server_node = Node(
@@ -377,8 +377,10 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
             ompl_planning_pipeline_config,
             # trajectory_execution,
             # moveit_controllers,
-            {"moveit_simple_controller_manager": moveit_configs.trajectory_execution,
-             "moveit_controller_manager": "moveit_simple_controller_manager/MoveItSimpleControllerManager"},
+            {
+                "moveit_simple_controller_manager": moveit_configs.trajectory_execution,
+                "moveit_controller_manager": "moveit_simple_controller_manager/MoveItSimpleControllerManager",
+            },
             params_trajectory_execution,
             moveit_configs.planning_scene_monitor,
             {"use_sim_time": use_mock_hardware},
@@ -389,12 +391,12 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
     node_move_arm = Node(
         package="branch_detection_system_moveit_interface",
         executable="move_arm",
-        name='move_arm',
+        name="move_arm",
         parameters=[
             moveit_configs.robot_description,
             moveit_configs.robot_description_semantic,
             # moveit_configs.robot_description_kinematics,
-        ]
+        ],
     )
 
     # MoveIt Servo
@@ -457,7 +459,7 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
             + inactive_flags
             + controllers,
         )
-    
+
     controllers_active = [
         "io_and_status_controller",
         "speed_scaling_state_broadcaster",
@@ -471,18 +473,17 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         "forward_velocity_controller",
         "forward_position_controller",
     ]
-    
+
     if start_servo_mode.perform(context) == "true":
         controllers_active.insert(0, "forward_position_controller")
         controllers_inactive.remove("forward_position_controller")
     else:
         if use_mock_hardware.perform(context) == "true":
             controllers_active.insert(0, "joint_trajectory_controller")
-            controllers_inactive.remove('joint_trajectory_controller')
+            controllers_inactive.remove("joint_trajectory_controller")
         else:
             controllers_active.insert(0, "scaled_joint_trajectory_controller")
-            controllers_inactive.remove('scaled_joint_trajectory_controller')
-    
+            controllers_inactive.remove("scaled_joint_trajectory_controller")
 
     controller_spawners = [controller_spawner(list(controllers_active))] + [
         controller_spawner(list(controllers_inactive), active=False)
@@ -501,7 +502,6 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
                 event_handler=OnProcessExit(target_action=node_joint_state_broadcaster_spawner, on_exit=[controller])
             )
         )
-
 
     _to_start = [
         tf_prefix,
@@ -542,7 +542,11 @@ def generate_launch_description():
         dict(name="launch_rviz", default_value="true"),
         dict(name="launch_servo", default_value="true"),
         dict(name="mock_sensor_commands", default_value="false"),
-        dict(name="start_servo_mode", default_value="true", description="If true, starts the forward_velocity_controller rather than the joint_trajectory_controller"),
+        dict(
+            name="start_servo_mode",
+            default_value="true",
+            description="If true, starts the forward_velocity_controller rather than the joint_trajectory_controller",
+        ),
         dict(
             name="system_description_package",
             default_value="branch_detection_system_description",

@@ -30,6 +30,8 @@ setup(
     license="BSD-3-Clause",
     tests_require=["pytest"],
     entry_points={
-        "console_scripts": [],
+        "console_scripts": [
+            "record_bag_node = branch_detection_system_bringup.record_bag_node:main",
+        ],
     },
 )
