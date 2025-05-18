@@ -17,21 +17,26 @@ from rclpy.node import Node
 
 def far_plane_filter(
     filter_far_plane: float,
-    mav_filter_ts: list,
-    mav_filter_data: list,
+    maf_ts: list,
+    maf_data: list,
 ) -> dict[str, np.ndarray] | None:
     """
+    A low-pass filter, filters data points out beyond the `filter_far_plane` value. Resulting arrays are truncated.
+
     :param tof_far_plane: A user set parameter that can alter what is the maximum reading.
-    :type float:
-    :param mav_filter_timestamps: Timestamp data from the moving average filter
-    :type list:
-    :param mav_filter_readings: Distance data from the moving average filter
-    :type list:
+    :type tof_far_plane: float
+    :param maf_ts: Timestamp data from the moving average filter
+    :type maf_ts: list
+    :param maf_data: Distance data from the moving average filter
+    :type maf_data: list
+
+    :return: A dictionary containing the filtered data
+    :rtype: dict
     """
     # filter readings beyond a distance
-    fp_filter_data = np.where(np.asarray(mav_filter_data) < filter_far_plane, mav_filter_data, np.nan)
+    fp_filter_data = np.where(np.asarray(maf_data) < filter_far_plane, maf_data, np.nan)
     # Put all of those values beyond as np.nan
-    fp_filter_ts = np.where(np.isnan(fp_filter_data), np.nan, np.asarray(mav_filter_ts))
+    fp_filter_ts = np.where(np.isnan(fp_filter_data), np.nan, np.asarray(maf_ts))
     # Filter out the np.nan values
     fp_filter_data = fp_filter_data[~np.isnan(fp_filter_data)]
     fp_filter_ts = fp_filter_ts[~np.isnan(fp_filter_ts)]
@@ -49,7 +54,7 @@ def far_plane_filter(
     }
 
 
-def fit_ransac(zt_window, dist_window, max_trials, min_samples, residual_threshold):
+def fit_ransac(node, zt_window, dist_window, max_trials, min_samples, residual_threshold):
     quadratic = skpp.PolynomialFeatures(degree=2)
     x_quad = quadratic.fit_transform(X=zt_window[:, np.newaxis])
 
@@ -60,11 +65,16 @@ def fit_ransac(zt_window, dist_window, max_trials, min_samples, residual_thresho
         min_samples=min_samples,
         residual_threshold=residual_threshold,
     )
-    ransac = ransac.fit(X=x_quad, y=dist_window)
+    try:
+        ransac = ransac.fit(X=x_quad, y=dist_window)
+    except ValueError as e:
+        node.error(traceback.format_exc())
+        node.warn(min_samples)
+        return None
     return ransac, quadratic, x_quad
 
 
-def process_window(start_time, window_size, t_window, zt_window, dist_window, ransac, quadratic, xquad) -> dict:
+def process_window(node, start_time, window_size, t_window, zt_window, dist_window, ransac, quadratic, xquad) -> dict:
 
     t_fit = np.linspace(
         min(zt_window),
@@ -79,6 +89,7 @@ def process_window(start_time, window_size, t_window, zt_window, dist_window, ra
 
     idx_min = np.argmin(y_fit)
     timestamp_min = t_window[idx_min]
+    node.warn(f"TIMESTAMP MIN: {timestamp_min}")
     fit_min = float(y_fit[idx_min])
 
     residuals = abs(dist_window - y_fit)
@@ -99,44 +110,38 @@ def process_window(start_time, window_size, t_window, zt_window, dist_window, ra
     }
 
 
-def _error_result(start_time, window_size):
-    return {
-        "start_ts": start_time,
-        "window_size": window_size,
-        "coefficients": None,
-        "r2": None,
-        "ts_min": None,
-        "fit_min": None,
-        "t_fit": None,
-        "y_fit": None,
-        "inlier_mask": None,
-    }
-
-
 def fit_and_process_ransac(
-    zt_window, dist_window, start_ts, window_size, t_window, max_trials, min_samples, residual_threshold
-):
-    ransac, quadratic, xquad = fit_ransac(
+    node: Node, t_window, zt_window, dist_window, start_ts, window_size, max_trials, min_samples, residual_threshold
+): 
+    fit_res = fit_ransac(
+        node=node,
         zt_window=zt_window,
         dist_window=dist_window,
         max_trials=max_trials,
         min_samples=min_samples,
         residual_threshold=residual_threshold,
     )
-    result = process_window(
-        start_time=start_ts,
-        window_size=window_size,
-        t_window=t_window,
-        zt_window=zt_window,
-        dist_window=dist_window,
-        ransac=ransac,
-        quadratic=quadratic,
-        xquad=xquad,
-    )
+    if fit_res is not None:
+        ransac, quadratic, xquad = fit_res
+        result = process_window(
+            node=node,
+            start_time=start_ts,
+            window_size=window_size,
+            t_window=t_window,
+            zt_window=zt_window,
+            dist_window=dist_window,
+            ransac=ransac,
+            quadratic=quadratic,
+            xquad=xquad,
+        )
+    else:
+        result = _error_result(start_time=start_ts, window_size=window_size)
+    
     return result
 
 
 def window_ransac(
+    node,
     data: dict,
     window_size: float,
     window_overlap_ratio: float,
@@ -175,29 +180,17 @@ def window_ransac(
         zt_window = data["zeroed_ts"][window_indices]
         dist_window = data["data"][window_indices]
 
-        # print(zt_window)
-
-        try:
-            ransac, quadratic, xquad = fit_ransac(
-                zt_window=zt_window,
-                dist_window=dist_window,
-                max_trials=max_trials,
-                min_samples=min_samples,
-                residual_threshold=residual_threshold,
-            )
-            result = process_window(
-                start_time=start_window_time,
-                window_size=window_size,
-                t_window=t_window,
-                zt_window=zt_window,
-                dist_window=dist_window,
-                ransac=ransac,
-                quadratic=quadratic,
-                xquad=xquad,
-            )
-        except ValueError as e:
-            # print(traceback.format_exc())
-            result = _error_result(start_time=start_window_time, window_size=window_size)
+        result = fit_and_process_ransac(
+            node=node,
+            t_window=t_window,
+            zt_window=zt_window,
+            dist_window=dist_window,
+            start_ts=start_window_time,
+            window_size=window_size,
+            max_trials=max_trials,
+            min_samples=min_samples,
+            residual_threshold=residual_threshold
+        )
 
         window_results[window_idx] = result
         if window_overlap_ratio > 0:
@@ -234,6 +227,21 @@ def filter_parabolas(windowed_data: dict) -> dict:
     return filtered_window_data
 
 
+def _error_result(start_time, window_size):
+    return {
+        "start_ts": start_time,
+        "window_size": window_size,
+        "coefficients": None,
+        "r2": None,
+        "ts_min": None,
+        "fit_min": None,
+        "t_fit": None,
+        "y_fit": None,
+        "inlier_mask": None,
+        "avg_residual": None
+    }
+
+
 def group_overlapping_parabolas(window_data: dict) -> dict:
     window_ids = list(window_data.keys())
     split_idxs = np.where(np.diff(window_ids) > 2)[0] + 1
@@ -248,7 +256,7 @@ def group_overlapping_parabolas(window_data: dict) -> dict:
     return grouped_windows
 
 
-def refit_by_group(data: dict, group: list[dict]):
+def refit_by_group(data: dict, group: list[dict], node: Node):
     start_ts = np.inf
     end_ts = 0.0
     for window_data in group:
@@ -270,11 +278,12 @@ def refit_by_group(data: dict, group: list[dict]):
     dist_window = data["data"][window_indices]
 
     result = fit_and_process_ransac(
+        node=node,
+        t_window=t_window,
         zt_window=zt_window,
         dist_window=dist_window,
         start_ts=start_ts,
         window_size=cropped_window_size,
-        t_window=t_window,
         max_trials=20,
         min_samples=15,
         residual_threshold=0.004,
@@ -310,14 +319,14 @@ def get_branch_center_time_and_distance(
     # The ransac regressor doesn't like the nans and the unix timestamps, so filter all data and normalize to first timestamp
 
     fpf_data = far_plane_filter(
-        filter_far_plane=filter_far_plane, mav_filter_ts=mav_filter_ts, mav_filter_data=mav_filter_data
+        filter_far_plane=filter_far_plane, maf_ts=mav_filter_ts, maf_data=mav_filter_data
     )
     if fpf_data is None:
-        node.warn("Failed at fpf_filter()")
-
+        node.warn(f"{sensor_name}: Failed at fpf_filter()")
         return None
 
     windowed_data = window_ransac(
+        node=node,
         data=fpf_data,
         window_size=window_size,
         window_overlap_ratio=window_overlap_ratio,
@@ -325,40 +334,20 @@ def get_branch_center_time_and_distance(
         min_samples=min_samples,
         residual_threshold=residual_threshold,
     )
-    # node.info(windowed_data)
-    # print(pp.pformat(windowed_data))
 
     filtered_window_data = filter_parabolas(windowed_data=windowed_data)
     if not filtered_window_data:
-        node.warn("Failed at filter_parabolas()")
+        node.warn(f"{sensor_name}: Failed at filter_parabolas()")
         return None
-
-    # def evaluate_parabola_shapes(windowed_data: dict):
-    #     """Evaluate parabolic shapes for where the windows where the height = 1/2 the width. For good fits, this should be consistent
-
-    #     :param windowed_data: Dictionary containing all of the windowed data, even for windows where no fit was found
-    #     :type dict:
-    #     """
-
-    #     for window_idx, window in windowed_data.items():
-    #         delta_t = 1 / window['coefficients'][2]
-    #         print(window_idx, delta_t, window['t_fit'])
-    #         # print(window['coefficients'][2])
-
-    # evaluated_window_data = evaluate_parabola_shapes(windowed_data=filtered_window_data)
-
-    # import sys
-    # sys.exit()
 
     grouped_window_data = group_overlapping_parabolas(window_data=filtered_window_data)
     if not grouped_window_data:
-        node.warn("Failed at group_overlapping_parabolas()")
-
+        node.warn(f"{sensor_name}: Failed at group_overlapping_parabolas()")
         return None
 
     refit_data = {}
     for group_id, group in grouped_window_data.items():
-        refit_data.update({group_id: refit_by_group(data=fpf_data, group=group)})
+        refit_data.update({group_id: refit_by_group(data=fpf_data, group=group, node=node)})
 
     if debug_plot:
         # if record_bag: TODO
@@ -392,19 +381,42 @@ def get_branch_center_time_and_distance(
 
             fig = dplot.plot_ransac_quadratic_fit(t_fit=window["t_fit"], y_fit=window["y_fit"], fig=fig)
 
+        fig.show()
         if save_plot:
-            # file_loc = os.path.join(os.path.expanduser('~'), 'branch_detection_ws', 'analysis', 'branch-detection-system-analysis', 'branch_detection_system_analysis', 'figures', 'file.svg')
             pio.write_image(fig=fig, file=save_plot_path, format="svg")
-        # fig.show()
+
+        # TODO: Plot final parabolas, pass save name to debug plot
 
     # Get the lowest residual fit
     lowest_residual = np.inf
     lowest_residual_idx = None
     for refit_idx, refit in refit_data.items():
-        if refit["avg_residual"] < lowest_residual:
-            lowest_residual = refit["avg_residual"]
-            lowest_residual_idx = refit_idx
-    ts_min = refit_data[lowest_residual_idx]["ts_min"]
-    fit_min = refit_data[lowest_residual_idx]["fit_min"]
+        if refit["avg_residual"] is not None:
+            if refit["avg_residual"] < lowest_residual:
+                lowest_residual = refit["avg_residual"]
+                lowest_residual_idx = refit_idx
+    
+    if lowest_residual == np.inf or lowest_residual_idx is None:
+        return None
+    else:
+        ts_min = refit_data[lowest_residual_idx]["ts_min"]
+        fit_min = refit_data[lowest_residual_idx]["fit_min"]
 
     return ts_min, fit_min
+
+# def evaluate_parabola_shapes(windowed_data: dict):
+    #     """Evaluate parabolic shapes for where the windows where the height = 1/2 the width. For good fits, this should be consistent
+
+    #     :param windowed_data: Dictionary containing all of the windowed data, even for windows where no fit was found
+    #     :type dict:
+    #     """
+
+    #     for window_idx, window in windowed_data.items():
+    #         delta_t = 1 / window['coefficients'][2]
+    #         print(window_idx, delta_t, window['t_fit'])
+    #         # print(window['coefficients'][2])
+
+    # evaluated_window_data = evaluate_parabola_shapes(windowed_data=filtered_window_data)
+
+    # import sys
+    # sys.exit()
