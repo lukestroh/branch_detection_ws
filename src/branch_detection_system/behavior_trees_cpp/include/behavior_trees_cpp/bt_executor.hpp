@@ -22,7 +22,6 @@ class BranchDetectionActionServer : public BT::TreeExecutionServer{
 
         std::optional<std::string> onTreeExecutionCompleted(BT::NodeStatus status, bool was_canceled) override;
 
-
     private:
         std::shared_ptr<BT::StdCoutLogger> bt_logger_;
 

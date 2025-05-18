@@ -1,9 +1,5 @@
 #include <behavior_trees_cpp/bt_executor.hpp>
 
-#include <rclcpp/rclcpp.hpp>
-// BranchDetectionActionServer(const rclcpp::NodeOptions& options) : TreeExecutionServer(options) {
-
-
 // }
 
 BranchDetectionActionServer::BranchDetectionActionServer(const rclcpp::NodeOptions& options) : TreeExecutionServer(options) {
@@ -16,7 +12,7 @@ void BranchDetectionActionServer::onTreeCreated(BT::Tree& tree) {
     bt_logger_ = std::make_shared<BT::StdCoutLogger>(tree);
 }
 
-void BranchDetectionActionServer::onGoalReceived(const std::string& tree_name, const std::string& payload) {
+bool BranchDetectionActionServer::onGoalReceived(const std::string& tree_name, const std::string& payload) {
     return true;
 }
 
@@ -32,7 +28,8 @@ std::optional<std::string> BranchDetectionActionServer::onTreeExecutionCompleted
     BT::NodeStatus status,
     bool was_cancelled
 ) {
-
+    bt_logger_.reset();
+    return std::nullopt;
 }
 
 
@@ -41,7 +38,7 @@ std::optional<std::string> BranchDetectionActionServer::onTreeExecutionCompleted
 int main(int argc, char** argv) {
     rclcpp::init(argc, argv);
     rclcpp::NodeOptions options;
-    auto branch_detection_action_server = std::make_shared<BT::TreeExecutionServer>(options);
+    auto branch_detection_action_server = std::make_shared<BranchDetectionActionServer>(options);
 
     rclcpp::executors::MultiThreadedExecutor exec(rclcpp::ExecutorOptions(), 0, false, std::chrono::milliseconds(250));
 
