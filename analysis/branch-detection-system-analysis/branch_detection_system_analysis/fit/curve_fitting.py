@@ -85,7 +85,7 @@ def process_window(start_time, window_size, t_window, zt_window, dist_window, ra
     return {
         "start_ts": start_time,
         "window_size": window_size,
-        'dist_window': dist_window,
+        "dist_window": dist_window,
         "coefficients": coefficients,
         "r2": fit_r2,
         "ts_min": timestamp_min,
@@ -93,7 +93,7 @@ def process_window(start_time, window_size, t_window, zt_window, dist_window, ra
         "t_fit": t_fit,
         "y_fit": y_fit,
         "inlier_mask": ransac.inlier_mask_,
-        "avg_residual": avg_residual
+        "avg_residual": avg_residual,
     }
 
 
@@ -257,7 +257,7 @@ def refit_by_group(data: dict, group: list[dict]):
                 end_ts = window["start_ts"] + window["window_size"]
 
     # Crop the window to 80%
-    new_window_size = (end_ts - start_ts)
+    new_window_size = end_ts - start_ts
     cropped_window_size = (end_ts - start_ts) * 0.8
     start_ts = start_ts + (new_window_size - cropped_window_size) / 2
     end_ts = start_ts + cropped_window_size
@@ -325,10 +325,10 @@ def get_branch_center_time_and_distance(
     filtered_window_data = filter_parabolas(windowed_data=windowed_data)
     if not filtered_window_data:
         return None
-    
+
     # def evaluate_parabola_shapes(windowed_data: dict):
     #     """Evaluate parabolic shapes for where the windows where the height = 1/2 the width. For good fits, this should be consistent
-        
+
     #     :param windowed_data: Dictionary containing all of the windowed data, even for windows where no fit was found
     #     :type dict:
     #     """
@@ -337,9 +337,7 @@ def get_branch_center_time_and_distance(
     #         delta_t = 1 / window['coefficients'][2]
     #         print(window_idx, delta_t, window['t_fit'])
     #         # print(window['coefficients'][2])
-            
 
-    
     # evaluated_window_data = evaluate_parabola_shapes(windowed_data=filtered_window_data)
 
     # import sys
@@ -352,7 +350,7 @@ def get_branch_center_time_and_distance(
     refit_data = {}
     for group_id, group in grouped_window_data.items():
         refit_data.update({group_id: refit_by_group(data=fpf_data, group=group)})
- 
+
     if debug_plot:
         # if record_bag: TODO
         fig = dplot.plot_ransac_quadratic_fit(
@@ -363,11 +361,11 @@ def get_branch_center_time_and_distance(
             # mav_filter_ts=mav_filter_ts,
             # mav_filter_data=mav_filter_data,
         )
-        
+
         for window_id, window in filtered_window_data.items():
             # pp.pprint(window)
             coefs = window["coefficients"]
-            r2 = window['r2']
+            r2 = window["r2"]
 
             if coefs is None:
                 continue
@@ -385,21 +383,19 @@ def get_branch_center_time_and_distance(
 
             fig = dplot.plot_ransac_quadratic_fit(t_fit=window["t_fit"], y_fit=window["y_fit"], fig=fig)
 
-        
         if save_plot:
             # file_loc = os.path.join(os.path.expanduser('~'), 'branch_detection_ws', 'analysis', 'branch-detection-system-analysis', 'branch_detection_system_analysis', 'figures', 'file.svg')
-            pio.write_image(fig=fig, file=save_plot_path, format='svg')
+            pio.write_image(fig=fig, file=save_plot_path, format="svg")
         # fig.show()
 
-    
     # Get the lowest residual fit
     lowest_residual = np.inf
     lowest_residual_idx = None
     for refit_idx, refit in refit_data.items():
-        if refit['avg_residual'] < lowest_residual:
-            lowest_residual = refit['avg_residual']
+        if refit["avg_residual"] < lowest_residual:
+            lowest_residual = refit["avg_residual"]
             lowest_residual_idx = refit_idx
-    ts_min = refit_data[lowest_residual_idx]['ts_min']
-    fit_min = refit_data[lowest_residual_idx]['fit_min']
+    ts_min = refit_data[lowest_residual_idx]["ts_min"]
+    fit_min = refit_data[lowest_residual_idx]["fit_min"]
 
     return ts_min, fit_min

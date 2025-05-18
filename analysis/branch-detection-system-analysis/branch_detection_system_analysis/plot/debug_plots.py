@@ -1,6 +1,85 @@
 #!/usr/bin/env python3
+from branch_detection_system_analysis.plot import plotly_helpers as ph
+
 import numpy as np
+from numpy.typing import ArrayLike
+import os
 import plotly.graph_objects as go
+import plotly.io as pio
+
+
+def plot_branch_projection(
+    tof0: ArrayLike,
+    tof1: ArrayLike,
+    branch_center_pos: ArrayLike,
+    branch_vec_ori: ArrayLike,
+    desired_eef_pos: ArrayLike,
+    desired_eef_ori: ArrayLike,
+    plot_base_origin: bool = True,
+    base_origin_name: str = None,
+    save_fig: bool = False,
+    save_fig_dir: str = None,
+    fig: go.Figure = None,
+) -> go.Figure:
+    if fig is None:
+        fig = go.Figure()
+
+        if plot_base_origin:
+            fig.add_trace(go.Scatter3d(x=[0], y=[0], z=[0], name=f"{base_origin_name}__base"))
+
+        fig.add_trace(
+            go.Scatter3d(
+                x=[tof0[0]],
+                y=[tof0[1]],
+                z=[tof0[2]],
+                name="tof0_proj",
+            )
+        )
+        fig.add_trace(
+            go.Scatter3d(
+                x=[tof1[0]],
+                y=[tof1[1]],
+                z=[tof1[2]],
+                name="tof1_proj",
+            )
+        )
+        fig.add_trace(
+            go.Scatter3d(
+                x=[branch_center_pos[0]],
+                y=[branch_center_pos[1]],
+                z=[branch_center_pos[2]],
+                name="branch_center",
+            )
+        )
+        fig.add_trace(
+            go.Scatter3d(
+                x=[desired_eef_pos[0]],
+                y=[desired_eef_pos[1]],
+                z=[desired_eef_pos[2]],
+                name="desired_eef_xyz",
+            )
+        )
+        ph.plot_vector(
+            fig=fig,
+            position=desired_eef_pos,
+            orientation=desired_eef_ori,
+            scale=0.5,
+            color="blue",
+            anchor="tail",
+        )
+        ph.plot_vector(
+            fig=fig,
+            position=desired_eef_pos,
+            orientation=branch_vec_ori,
+            scale=0.5,
+            color="red",
+            anchor="tail",
+        )
+        fig.update_layout(scene=dict(aspectmode="data"))
+        if save_fig:
+            pio.write_image(fig=fig, file=os.path.join(save_fig_dir, "projections.svg"), format="svg")
+
+    return fig
 
 
 def plot_ransac_quadratic_fit(
@@ -37,7 +116,7 @@ def plot_ransac_quadratic_fit(
 
     if np.any(mav_filter_data):
         fig.add_trace(
-            go.Scatter(x=np.asarray(mav_filter_ts) - mav_filter_ts[0], y=mav_filter_data, name="MAF_data", mode="lines")
+            go.Scatter(x=np.asarray(mav_filter_ts), y=mav_filter_data, name="MAF_data", mode="lines")
         )
 
     if np.any(inlier_mask):
@@ -50,6 +129,24 @@ def plot_ransac_quadratic_fit(
 
     # fig.add_vline(x=start_window_time, line_width=2, line_dash="dash", line_color='blue')
     # fig.add_vline(x=start_window_time+window_size, line_width=2, line_dash="dash", line_color='blue')
+
+    fig.update_layout(
+        scene=dict(
+            camera=dict(
+                center=dict(
+                    x=1,
+                    y=-1,
+                    z=2
+                ),
+                eye=dict(
+                    x=-0.5,
+                    y=1,
+                    z=-0.5
+                )
+            ),
+            aspectmode='data'
+        )
+    )
     if show:
         fig.show()
     # if save_fig:
