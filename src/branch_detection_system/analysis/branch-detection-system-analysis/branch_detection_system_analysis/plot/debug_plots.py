@@ -75,14 +75,16 @@ def plot_branch_projection(
             color="red",
             anchor="tail",
         )
-        fig.update_layout(scene=dict(aspectmode="data"))
+        fig.update_layout(title=dict(text="Projected branch detection points"), scene=dict(aspectmode="data"))
         if save_fig:
             pio.write_image(fig=fig, file=os.path.join(save_fig_dir, "projections.svg"), format="svg")
+            pio.write_html(fig=fig, file=os.path.join(save_fig_dir, "projections.html"), auto_open=True)
 
     return fig
 
 
 def plot_ransac_quadratic_fit(
+    sensor_name: str = None,
     zeroed_ts=None,
     fp_filter_data=None,
     raw_ts=None,
@@ -105,6 +107,12 @@ def plot_ransac_quadratic_fit(
     fig.update_xaxes(title="Time (s)")
     fig.update_yaxes(title="Distance (m)")
 
+    if sensor_name is not None:
+        fig.update_layout(
+            title=dict(text=f"{sensor_name} RANSAC fits"),
+            scene=dict(camera=dict(center=dict(x=1, y=-1, z=2), eye=dict(x=-0.5, y=1, z=-0.5)), aspectmode="data"),
+        )
+
     if np.any(fp_filter_data):
         fig.add_trace(go.Scatter(x=zeroed_ts, y=fp_filter_data, name="maf-fpf", mode="lines"))
 
@@ -115,9 +123,7 @@ def plot_ransac_quadratic_fit(
         fig.add_trace(go.Scatter(x=np.asarray(raw_ts) - raw_ts[0], y=raw_data, name="raw_sensor_data", mode="lines"))
 
     if np.any(mav_filter_data):
-        fig.add_trace(
-            go.Scatter(x=np.asarray(mav_filter_ts), y=mav_filter_data, name="MAF_data", mode="lines")
-        )
+        fig.add_trace(go.Scatter(x=np.asarray(mav_filter_ts), y=mav_filter_data, name="MAF_data", mode="lines"))
 
     if np.any(inlier_mask):
         # Plot ransac masked data
@@ -130,23 +136,6 @@ def plot_ransac_quadratic_fit(
     # fig.add_vline(x=start_window_time, line_width=2, line_dash="dash", line_color='blue')
     # fig.add_vline(x=start_window_time+window_size, line_width=2, line_dash="dash", line_color='blue')
 
-    fig.update_layout(
-        scene=dict(
-            camera=dict(
-                center=dict(
-                    x=1,
-                    y=-1,
-                    z=2
-                ),
-                eye=dict(
-                    x=-0.5,
-                    y=1,
-                    z=-0.5
-                )
-            ),
-            aspectmode='data'
-        )
-    )
     if show:
         fig.show()
     # if save_fig:

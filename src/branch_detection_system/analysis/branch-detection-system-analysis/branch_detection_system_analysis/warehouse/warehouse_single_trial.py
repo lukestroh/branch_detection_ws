@@ -11,12 +11,13 @@ import plotly.subplots
 
 from branch_detection_system_analysis.bag_reader.bag_reader import BagReader
 from branch_detection_system_analysis.bag_reader.ros_constants import TransitionStates
-
+from final_approach_controller_msgs.msg import GeneratedPoses
 from geometry_msgs.msg import WrenchStamped
 from lifecycle_msgs.msg import TransitionEvent, State
 from ism330dhcx_msgs.msg import Ism330dhcxStamped
 from tof_msgs.msg import TofStamped
 from sensor_msgs.msg import JointState
+from std_msgs.msg import Bool
 from tf2_msgs.msg import TFMessage
 from vl53l4cd_msgs.msg import Vl53l4cdStamped
 
@@ -52,23 +53,27 @@ def get_bag_reader(db: str) -> BagReader:
 
 
 def get_tof_raw_data(br: BagReader) -> tuple[dict]:
-    data_tof_raw = list(br.query(topic_name="/microROS/vl53l4cd/data"))
-    tof_raw_data: list[Vl53l4cdStamped] = [d[1] for d in data_tof_raw]
-    tof0_raw_ts, tof0_raw_data = zip(
-        *[
-            (tof.header.stamp.sec + tof.header.stamp.nanosec * 1e-9, tof.distance / 1000)
-            for tof in tof_raw_data
-            if tof.dev_id == 0
-        ]
-    )
+    try:
+        data_tof_raw = list(br.query(topic_name="/microROS/vl53l4cd/data"))
 
-    tof1_raw_ts, tof1_raw_data = zip(
-        *[
-            (tof.header.stamp.sec + tof.header.stamp.nanosec * 1e-9, tof.distance / 1000)
-            for tof in tof_raw_data
-            if tof.dev_id == 1
-        ]
-    )
+        tof_raw_data: list[Vl53l4cdStamped] = [d[1] for d in data_tof_raw]
+        tof0_raw_ts, tof0_raw_data = zip(
+            *[
+                (tof.header.stamp.sec + tof.header.stamp.nanosec * 1e-9, tof.distance / 1000)
+                for tof in tof_raw_data
+                if tof.dev_id == 0
+            ]
+        )
+
+        tof1_raw_ts, tof1_raw_data = zip(
+            *[
+                (tof.header.stamp.sec + tof.header.stamp.nanosec * 1e-9, tof.distance / 1000)
+                for tof in tof_raw_data
+                if tof.dev_id == 1
+            ]
+        )
+    except KeyError:
+        tof0_raw_ts = tof0_raw_data = tof1_raw_ts = tof1_raw_data = []
 
     return (
         {
@@ -83,25 +88,27 @@ def get_tof_raw_data(br: BagReader) -> tuple[dict]:
 
 
 def get_tof_filtered_data(br: BagReader) -> tuple[dict]:
-    data_tof_filtered = list(br.query(topic_name="/vl53l4cd/filtered"))
-    tof_filtered_data: list[TofStamped] = [d[1] for d in data_tof_filtered]
-    tof0_filtered_ts, tof0_filtered_data = zip(
-        *[
-            (tof.header.stamp.sec + tof.header.stamp.nanosec * 1e-9, tof.data[0])
-            for tof in tof_filtered_data
-            if tof.dev_id == 0
-        ]
-    )
-    # tof0_filtered_data = [tof.data[0] for tof in tof_filtered_data if tof.dev_id == 0]
+    try:
+        data_tof_filtered = list(br.query(topic_name="/vl53l4cd/filtered"))
+        tof_filtered_data: list[TofStamped] = [d[1] for d in data_tof_filtered]
+        tof0_filtered_ts, tof0_filtered_data = zip(
+            *[
+                (tof.header.stamp.sec + tof.header.stamp.nanosec * 1e-9, tof.data[0])
+                for tof in tof_filtered_data
+                if tof.dev_id == 0
+            ]
+        )
+        # tof0_filtered_data = [tof.data[0] for tof in tof_filtered_data if tof.dev_id == 0]
 
-    tof1_filtered_ts, tof1_filtered_data = zip(
-        *[
-            (tof.header.stamp.sec + tof.header.stamp.nanosec * 1e-9, tof.data[0])
-            for tof in tof_filtered_data
-            if tof.dev_id == 1
-        ]
-    )
-    # tof1_filtered_data = [tof.data[0] for tof in tof_filtered_data if tof.dev_id == 1]
+        tof1_filtered_ts, tof1_filtered_data = zip(
+            *[
+                (tof.header.stamp.sec + tof.header.stamp.nanosec * 1e-9, tof.data[0])
+                for tof in tof_filtered_data
+                if tof.dev_id == 1
+            ]
+        )
+    except KeyError:
+        tof0_filtered_ts = tof0_filtered_data = tof1_filtered_ts = tof1_filtered_data = []
 
     return (
         {
@@ -116,19 +123,22 @@ def get_tof_filtered_data(br: BagReader) -> tuple[dict]:
 
 
 def get_imu_stamped_data(br: BagReader) -> tuple[dict]:
-    data_imu_stamped = list(br.query(topic_name="/ism330dhcx_stamped"))
-    imu_stamped: list[Ism330dhcxStamped] = [d[1] for d in data_imu_stamped]
-    imu_ts, imu_data_ax, imu_data_ay, imu_data_az = zip(
-        *map(
-            lambda imu: [
-                imu.header.stamp.sec + imu.header.stamp.nanosec * 1e-9,
-                imu.linear_acceleration.x,
-                imu.linear_acceleration.y,
-                imu.linear_acceleration.z,
-            ],
-            imu_stamped,
+    try:
+        data_imu_stamped = list(br.query(topic_name="/ism330dhcx_stamped"))
+        imu_stamped: list[Ism330dhcxStamped] = [d[1] for d in data_imu_stamped]
+        imu_ts, imu_data_ax, imu_data_ay, imu_data_az = zip(
+            *map(
+                lambda imu: [
+                    imu.header.stamp.sec + imu.header.stamp.nanosec * 1e-9,
+                    imu.linear_acceleration.x,
+                    imu.linear_acceleration.y,
+                    imu.linear_acceleration.z,
+                ],
+                imu_stamped,
+            )
         )
-    )
+    except (ValueError, KeyError):
+        imu_ts = imu_data_ax = imu_data_ay = imu_data_az = []
     return {
         "imu_ts": imu_ts,
         "imu_ax": imu_data_ax,
@@ -137,8 +147,26 @@ def get_imu_stamped_data(br: BagReader) -> tuple[dict]:
     }
 
 
-def get_wrench_data(br: BagReader) -> dict:
+def get_generated_start_poses_data(br: BagReader) -> dict:
+    try:
+        _generated_start_poses = list(br.query(topic_name=f"/generated_start_poses"))
+        generated_start_poses: list[GeneratedPoses] = [d[1] for d in _generated_start_poses]
+        start_poses = zip(*map(lambda g: g.poses, generated_start_poses))
+    except KeyError:
+        start_poses = []
+    return {"start_poses": start_poses}
 
+
+def get_controller_success(br: BagReader, controller_name: str, topic: str) -> dict:
+    try:
+        _controller_success = list(br.query(topic_name=f"/{controller_name}_controller/{topic}_success"))
+        controller_success: list[bool] = [d[1].data for d in _controller_success]
+    except KeyError:
+        controller_success = []
+    return {"controller_success": controller_success}
+
+
+def get_wrench_data(br: BagReader) -> dict:
     # FT-wrench data
     data_ft_wrench = list(br.query(topic_name="/force_torque_sensor_broadcaster/wrench"))
     wrench_data: list[WrenchStamped] = [d[1] for d in data_ft_wrench]
@@ -181,6 +209,16 @@ def get_joint_states_data(br: BagReader) -> dict:
 
 
 def get_tf_data(br: BagReader, static=False) -> dict:
+    """
+    Gets transform data. Set `static=True` to get static transform data
+
+    :param br: BagReader object for database extraction.
+    :type br: BagReader
+    :param static: Set true to get static transforms from topic '/tf_static'. Defaults to false.
+    :type static: bool
+    :returns: A dictionary of all transform data
+    :rtype: dict
+    """
     if static:
         topic_name = "tf_static"
     else:
@@ -224,13 +262,16 @@ def get_tf_data(br: BagReader, static=False) -> dict:
 
 def get_controller_events(br: BagReader, controller_name: str) -> dict:
     controller_events = list(br.query(topic_name=f"/{controller_name}/transition_event"))
-    controller_transition_events_ts, controller_events_data = zip(
-        *map(lambda ctrlr: [ctrlr[0] * 1e-9, ctrlr[1]], controller_events)
-    )
+    try:
+        controller_transition_events_ts, controller_events_data = zip(
+            *map(lambda ctrlr: [ctrlr[0] * 1e-9, ctrlr[1]], controller_events)
+        )
 
-    controller_transition_start_state, controller_transition_goal_state = zip(
-        *map(lambda ctrlr_t: [ctrlr_t.start_state.id, ctrlr_t.goal_state.id], controller_events_data)
-    )
+        controller_transition_start_state, controller_transition_goal_state = zip(
+            *map(lambda ctrlr_t: [ctrlr_t.start_state.id, ctrlr_t.goal_state.id], controller_events_data)
+        )
+    except ValueError:
+        controller_transition_events_ts = controller_transition_start_state = controller_transition_goal_state = []
 
     return {
         "controller_transition_events_ts": controller_transition_events_ts,
@@ -255,53 +296,32 @@ def get_dfs_from_bag_reader(br: BagReader) -> dict:
     joint_states_data = get_joint_states_data(br=br)
     tf_data = get_tf_data(br=br)
     tf_static_data = get_tf_data(br=br, static=True)
+    start_poses_data = get_generated_start_poses_data(br=br)
+    fbwr_controller_localization_success_data = get_controller_success(br=br, controller_name="fbrw", topic="alignment")
+    fbwr_controller_alignment_success_data = get_controller_success(br=br, controller_name="fbrw", topic="localization")
     fpc_transition_events_data = get_controller_events(br=br, controller_name="forward_position_controller")
     sjtc_transition_events_data = get_controller_events(br=br, controller_name="scaled_joint_trajectory_controller")
 
-    df_dict = {
-        "tof0_raw": create_df_from_data_dict(data=tof0_raw_data),
-        "tof1_raw": create_df_from_data_dict(data=tof1_raw_data),
-        "tof0_filtered": create_df_from_data_dict(data=tof0_filtered_data),
-        "tof1_filtered": create_df_from_data_dict(data=tof1_filtered_data),
-        "imu": create_df_from_data_dict(data=imu_data),
-        "wrench": create_df_from_data_dict(data=wrench_data),
-        "joint_states": create_df_from_data_dict(data=joint_states_data),
-        "tf": create_df_from_data_dict(data=tf_data),
-        "tf_static": create_df_from_data_dict(data=tf_static_data),
-        "fpc_transition_events": create_df_from_data_dict(data=fpc_transition_events_data),
-        "sjtc_transition_events": create_df_from_data_dict(data=sjtc_transition_events_data),
+    data_dict = {
+        "tof0_raw": tof0_raw_data,
+        "tof1_raw": tof1_raw_data,
+        "tof0_filtered": tof0_filtered_data,
+        "tof1_filtered": tof1_filtered_data,
+        "imu": imu_data,
+        "wrench": wrench_data,
+        "joint_states": joint_states_data,
+        "tf": tf_data,
+        "tf_static": tf_static_data,
+        "start_poses": start_poses_data,
+        "fbwr_controller_localization_success": fbwr_controller_localization_success_data,
+        "fbwr_controller_alignment_success": fbwr_controller_alignment_success_data,
+        "fpc_transition_events": fpc_transition_events_data,
+        "sjtc_transition_events": sjtc_transition_events_data,
     }
 
+    df_dict = {k: create_df_from_data_dict(data=v) for k, v in data_dict.items()}
+
     return df_dict
-
-
-def filter_transition_events_for_fpc_deactivate(df: pd.DataFrame):
-    # idxs_event_fpc_deactivate = df.index[df['fpc_transition_start_state'].fillna(-1).astype(int)==TransitionStates.TRANSITION_STATE_DEACTIVATING.value].to_list()
-
-    # idxs_event_sjtc_deactivate = df.index[df['sjtc_transition_start_state'].fillna(-1).astype(int)==TransitionStates.TRANSITION_STATE_DEACTIVATING.value].to_list()
-    # print(idxs_event_fpc_deactivate)
-    # print(idxs_event_sjtc_deactivate)
-
-    df_transition_events = df.loc[
-        (
-            df["controller_transition_start_state"].fillna(-1).astype(int)
-            == TransitionStates.TRANSITION_STATE_DEACTIVATING.value
-        )
-        # | (
-        #     df["sjtc_transition_start_state"].fillna(-1).astype(int)
-        #     == TransitionStates.TRANSITION_STATE_DEACTIVATING.value
-        # ),
-        # [
-        # "controller_transition_events_ts",
-        # "controller_transition_start_state",
-        # "controller_transition_goal_state",
-        # "sjtc_transition_events_ts",
-        # "sjtc_transition_start_state",
-        # "sjtc_transition_goal_state",
-        # ],
-    ].reset_index()
-
-    return df_transition_events
 
 
 def get_bin_mask(df: pd.DataFrame, start_time: float, end_time: float, time_str: str):
@@ -377,14 +397,25 @@ def is_already_warehoused(db_name: str) -> bool:
 
 
 def main():
+    from branch_detection_system_analysis.plot import plotting_backend as pb
     import sqlite3
     import traceback
+    import sys
+
+    ws_path = os.path.abspath(os.path.join("/home/luke/branch_detection_ws"))
+    warehouse_path = os.path.join(ws_path, "bags", "2025_ToFBranchDetection", "warehouse")
 
     # dbs = get_dbs(location="prosser", farm="roza", date="20250219")
     dbs = get_dbs_by_loc(location="arm_farm")
-    pp.pprint(dbs)
     # sys.exit()
+
+    trial_file_name = "bds__arm_farm__20250519_15-27-56"
+
+    # dbs = pb.get_files_by_trial_name(warehouse_path=warehouse_path, name=trial_file_name)
+    # print(dbs)
     for db_name in dbs:
+        # if trial_file_name not in db_name:
+        #     continue
         if is_already_warehoused(db_name):
             continue
         else:
@@ -393,10 +424,11 @@ def main():
             except sqlite3.DatabaseError as e:
                 logger.error(f"Database read error: {traceback.format_exc()}")
                 continue
-            try:
-                df_dict = get_dfs_from_bag_reader(br=br)
-            except (ValueError, KeyError):
-                continue
+            # try:
+            df_dict = get_dfs_from_bag_reader(br=br)
+            # except (ValueError, KeyError) as e:
+            #     logger.error(f"{traceback.format_exc()}")
+            #     continue
             br.cleanup()
 
             for topic_df_name, topic_df in df_dict.items():

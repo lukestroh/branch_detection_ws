@@ -81,6 +81,30 @@ def build_df_dict_from_files(data_dict: dict | None, files: list[str]) -> None:
     return data_dict
 
 
+def get_df_rows_at_closest_timestamp(df_dict: dict, topic_name: str, timestamps: float) -> pd.DataFrame:
+    # """Gets the closest set of TF frames at a given timestamp"""
+    # ts_closest = df.iloc[(df[f"{topic_name}_ts"] - timestamp).abs().argsort()[:1]]
+    # df_closest = df.loc[df[f"{topic_name}_ts"] == ts_closest[f"{topic_name}_ts"].item()]
+    # return df_closest
+    df = df_dict[topic_name]
+    ts_col = df[f"{topic_name}_ts"].to_numpy()
+    idxs = np.searchsorted(ts_col, timestamps)
+
+    # Clip to avoid index errors
+    idxs = np.clip(idxs, 1, len(ts_col) - 1)
+
+    # Compare to previous timestamp for closeness
+    prev = ts_col[idxs - 1]
+    next_ = ts_col[idxs]
+    prev_diff = np.abs(prev - timestamps)
+    next_diff = np.abs(next_ - timestamps)
+
+    # Use prev if it's closer
+    closest_idxs = np.where(prev_diff < next_diff, idxs - 1, idxs)
+
+    return df.iloc[closest_idxs].reset_index(drop=True)
+
+
 """
 Plotting functions
 """
@@ -103,6 +127,43 @@ def plot_linear_wrench_data(wrench_df: pd.DataFrame, fig: go.Figure = None) -> g
     fig.add_trace(go.Scatter(x=wrench_df["wrench_ts"], y=wrench_df["wrench_fx"], name="wrench_fx"))
     fig.add_trace(go.Scatter(x=wrench_df["wrench_ts"], y=wrench_df["wrench_fy"], name="wrench_fy"))
     fig.add_trace(go.Scatter(x=wrench_df["wrench_ts"], y=wrench_df["wrench_fz"], name="wrench_fz"))
+    return fig
+
+
+def plot_tof_vs_timestamp():
+    return
+
+
+def plot_tof_vs_joint_state(df_dict: dict, tof_name: str, fig: go.Figure = None) -> go.Figure:
+    if fig is None:
+        fig = go.Figure()
+
+    tof_df = df_dict[f"{tof_name}_filtered"]
+
+    timestamps = tof_df[f"{tof_name}_filtered_ts"].to_numpy()
+
+    joint_states_ts_filtered_df = get_df_rows_at_closest_timestamp(
+        df_dict=df_dict, topic_name="joint_states", timestamps=timestamps
+    )
+
+    wrist_3_pos = np.vstack(joint_states_ts_filtered_df["joint_states_pos"])[:, 2]
+
+    fig.add_trace(
+        go.Scatter(
+            x=wrist_3_pos,
+            y=tof_df[f"{tof_name}_filtered_data"],
+            mode="markers",
+        )
+    )
+
+    fig.update_layout(
+        title=dict(text=f"{tof_name} MAF readings vs. ur5e__wrist_3 position"),
+        xaxis=dict(title="Wrist-3 position"),
+        yaxis=dict(title="Distance (m)"),
+    )
+
+    fig.show()
+
     return fig
 
 
