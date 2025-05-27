@@ -83,8 +83,59 @@ def plot_branch_projection(
     return fig
 
 
+def plot_maf_vs_joint_state(
+    data: dict, sensor_name: str, fig: go.Figure = None, save_fig: bool = False, save_path: str = ""
+):
+    if fig is None:
+        fig = go.Figure()
+
+    fig.add_trace(
+        go.Scatter(
+            x=data["wrist_state"],
+            y=data["data"],
+            mode="lines",
+            text=data["ts"],
+            hovertemplate="theta: %{x}<br>d: %{y}<br>time: %{text}<extra></extra>",
+        )
+    )
+
+    return fig
+
+
+def plot_ransac_tof_vs_joint_state(
+    data: dict, sensor_name: str, fig: go.Figure = None, save_fig: bool = False, save_path: str = ""
+):
+    if fig is None:
+        fig = go.Figure()
+
+    fig.add_trace(
+        go.Scatter(
+            x=data["wrist_state"],
+            y=data["y_fit"],
+            name=sensor_name,
+            text=data["ts"],
+            hovertemplate="theta: %{x}<br>d: %{y}<br>time: %{text}<extra></extra>",
+        )
+    )
+
+    fig.update_xaxes(title="wrist3 position (rad)")
+    fig.update_yaxes(title="Distance (m)")
+    fig.update_layout(title=dict(text="ToF raw, filtered, and windowed fits vs. Wrist 3 joint state"))
+
+    if save_fig:
+        pio.write_html(fig=fig, file=save_path)
+
+    return fig
+
+
+def plot_ransac_tof_vs_timestamp():
+
+    return
+
+
 def plot_ransac_quadratic_fit(
     sensor_name: str = None,
+    joint_states_data=None,
     zeroed_ts=None,
     fp_filter_data=None,
     raw_ts=None,
@@ -105,6 +156,7 @@ def plot_ransac_quadratic_fit(
         fig = go.Figure()
 
     fig.update_xaxes(title="Time (s)")
+    fig.update_xaxes(title="wrist3_pos (rad)")
     fig.update_yaxes(title="Distance (m)")
 
     if sensor_name is not None:
@@ -113,8 +165,11 @@ def plot_ransac_quadratic_fit(
             scene=dict(camera=dict(center=dict(x=1, y=-1, z=2), eye=dict(x=-0.5, y=1, z=-0.5)), aspectmode="data"),
         )
 
-    if np.any(fp_filter_data):
-        fig.add_trace(go.Scatter(x=zeroed_ts, y=fp_filter_data, name="maf-fpf", mode="lines"))
+    if np.any(joint_states_data) and np.any(fp_filter_data):
+        fig.add_trace(go.Scatter(x=joint_states_data[2], y=fp_filter_data, name="tof vs. wrist3", mode="lines"))
+
+    # if np.any(fp_filter_data):
+    #     fig.add_trace(go.Scatter(x=zeroed_ts, y=fp_filter_data, name="maf-fpf", mode="lines"))
 
     if np.any(y_fit):
         fig.add_trace(go.Scatter(x=t_fit, y=y_fit, name="RANSAC fit", mode="lines"))

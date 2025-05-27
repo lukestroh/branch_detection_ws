@@ -2,6 +2,7 @@
 import datetime
 import glob
 import numpy as np
+from numpy.typing import ArrayLike
 import os
 import pandas as pd
 import plotly.graph_objects as go
@@ -10,6 +11,12 @@ import re
 """
 Data collection functions
 """
+
+
+class PlotFig(go.Figure):
+    def __init__(self):
+        layout = dict(legend_title_font_size=20)
+        super().__init__(layout=layout)
 
 
 def get_files_by_trial_name(warehouse_path: str, name: str) -> list[str]:
@@ -81,7 +88,7 @@ def build_df_dict_from_files(data_dict: dict | None, files: list[str]) -> None:
     return data_dict
 
 
-def get_df_rows_at_closest_timestamp(df_dict: dict, topic_name: str, timestamps: float) -> pd.DataFrame:
+def get_df_rows_at_closest_timestamp(df_dict: dict, topic_name: str, timestamps: ArrayLike) -> pd.DataFrame:
     # """Gets the closest set of TF frames at a given timestamp"""
     # ts_closest = df.iloc[(df[f"{topic_name}_ts"] - timestamp).abs().argsort()[:1]]
     # df_closest = df.loc[df[f"{topic_name}_ts"] == ts_closest[f"{topic_name}_ts"].item()]
