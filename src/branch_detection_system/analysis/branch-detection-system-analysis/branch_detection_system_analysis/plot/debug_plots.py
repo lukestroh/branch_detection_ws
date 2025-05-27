@@ -7,6 +7,8 @@ import os
 import plotly.graph_objects as go
 import plotly.io as pio
 
+import pprint as pp
+
 
 def plot_branch_projection(
     tof0: ArrayLike,
@@ -89,13 +91,14 @@ def plot_maf_vs_joint_state(
     if fig is None:
         fig = go.Figure()
 
+
     fig.add_trace(
         go.Scatter(
             x=data["wrist_state"],
             y=data["data"],
             mode="lines",
             text=data["ts"],
-            hovertemplate="theta: %{x}<br>d: %{y}<br>time: %{text}<extra></extra>",
+            hovertemplate="theta: %{x}<br>d: %{y}<br>time: %{text}<br>r2: %{r2}<extra></extra>",
         )
     )
 
@@ -105,8 +108,12 @@ def plot_maf_vs_joint_state(
 def plot_ransac_tof_vs_joint_state(
     data: dict, sensor_name: str, fig: go.Figure = None, save_fig: bool = False, save_path: str = ""
 ):
+    # if data['']
     if fig is None:
         fig = go.Figure()
+
+    # print(data)
+    
 
     fig.add_trace(
         go.Scatter(

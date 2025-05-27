@@ -14,6 +14,7 @@ import plotly.subplots
 import os
 import scipy.optimize as so
 import traceback
+import pprint as pp
 
 
 ws_path = os.path.abspath(os.path.join("/home/luke/branch_detection_ws"))
@@ -38,9 +39,11 @@ def main():
         min_samples=10,
         max_trials=20,
         residual_threshold=0.008,
-        window_overlap_ratio=9 / 10,
+        window_overlap_ratio=9/10,
         window_size=2.0,
     )
+
+    # pp.pprint(tof0_time_and_dist)
 
     # if tof0_time_and_dist is not None:
     #     tof0_branch_center_time, tof0_branch_center_min = tof0_time_and_dist
