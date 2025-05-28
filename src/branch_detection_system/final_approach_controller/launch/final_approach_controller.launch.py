@@ -32,6 +32,7 @@ def launch_setup(context, *args, **kwargs) -> list:
             {"robot_eef_part": robot_eef_part},
             {"use_mock_hardware": use_mock_hardware},
         ],
+        emulate_tty=True,
     )
 
     node_cut_point_rotate_axis_controller = Node(
@@ -45,6 +46,7 @@ def launch_setup(context, *args, **kwargs) -> list:
             {"tof_sensor_type": tof_sensor_type},
             {"use_mock_hardware": use_mock_hardware},
         ],
+        emulate_tty=True,
     )
 
     # logger.warn(f"{robot_base_part.perform(context)}")
@@ -59,6 +61,7 @@ def launch_setup(context, *args, **kwargs) -> list:
             {"robot_eef_part": robot_eef_part},
             {"use_mock_hardware": use_mock_hardware},
         ],
+        emulate_tty=True,
     )
 
     node_generate_poses_service = Node(
@@ -70,6 +73,7 @@ def launch_setup(context, *args, **kwargs) -> list:
             {"robot_base_part": robot_base_part},
             {"robot_eef_part": robot_eef_part},
         ],
+        emulate_tty=True,
     )
 
     node_reset_test = Node(
@@ -82,6 +86,7 @@ def launch_setup(context, *args, **kwargs) -> list:
             {"robot_eef_part": robot_eef_part},
             {"use_mock_hardware": use_mock_hardware},
         ],
+        emulate_tty=True,
     )
 
     _to_return = [

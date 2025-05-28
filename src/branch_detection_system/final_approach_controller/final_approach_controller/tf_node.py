@@ -20,8 +20,10 @@ import numpy as np
 import os
 import yaml
 
+from final_approach_controller.logger_node import LoggerNode
 
-class TFNode(Node):
+
+class TFNode(LoggerNode):
     def __init__(self, node_name, *args, **kwargs) -> None:
         super().__init__(node_name=node_name, *args)
 

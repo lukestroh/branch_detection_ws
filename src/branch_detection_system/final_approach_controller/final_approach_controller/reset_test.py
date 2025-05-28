@@ -127,7 +127,7 @@ class ResetTestNode(TFNode):
         if _param_use_mock_hardware:
             self.max_linear_speed = 0.1
         else:
-            self.max_linear_speed = 0.01 * 10
+            self.max_linear_speed = 0.02 * 10
 
         return
 
@@ -218,7 +218,7 @@ class ResetTestNode(TFNode):
         with self._timer_lock:
             if self._timer_pub_servo is None:
                 self._timer_pub_servo = self.create_timer(
-                    timer_period_sec=1 / 250,
+                    timer_period_sec=1 / 50,
                     callback=self._timer_cb_pub_servo,
                     callback_group=self._reentrant_cb_group,
                 )
@@ -230,7 +230,7 @@ class ResetTestNode(TFNode):
                 await self.start_servo()
                 start_servoing_time = self.get_clock().now()
 
-                while self.get_clock().now() - start_servoing_time < Duration(seconds=10.0):
+                while self.get_clock().now() - start_servoing_time < Duration(seconds=5.0):
                     self.msg_twist.twist.linear.x = 0.0
                     self.msg_twist.twist.linear.y = 0.0
                     self.msg_twist.twist.linear.z = -1 * self.max_linear_speed

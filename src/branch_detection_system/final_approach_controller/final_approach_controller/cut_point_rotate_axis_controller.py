@@ -154,6 +154,13 @@ class CutPointRotateAxisController(TFNode):
                 goal_handle.publish_feedback(feedback_msg)
                 time.sleep(1)
 
+                # if self.get_clock().now() - self.start_servo_time > Duration(seconds=5):
+                #     goal_handle.canceled()
+                #     result.success = False
+                #     self.controller_running = False
+                #     self.error("CutPointRotateWristController timed out.")
+                #     return result
+
             result.success = True
 
             goal_handle.succeed()

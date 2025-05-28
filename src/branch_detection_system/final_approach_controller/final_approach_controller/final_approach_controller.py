@@ -95,7 +95,7 @@ class FinalApproachControllerNode(TFNode):
         self._goal_handle = None
         self.d_tof0 = 0.0
         self.d_tof1 = 0.0
-        self.max_linear_speed = 0.05 * 10  # UR servo is slow??
+        self.max_linear_speed = 0.02 * 10  # UR servo is slow??
         # TODO::::: need to read raw data to make sure that the reading is valid??
 
         self.tf_mp_tof0_to_base = np.identity(4)
@@ -155,8 +155,8 @@ class FinalApproachControllerNode(TFNode):
                     goal_handle.publish_feedback(feedback_msg)
                     self.feedback_pub_prev_time = self.get_clock().now()
 
-                # For safety purposes...
-                if self.get_clock().now() - self.start_servo_time > Duration(seconds=2.5):
+                # For safety purposes, set timeout
+                if self.get_clock().now() - self.start_servo_time > Duration(seconds=5):
                     goal_handle.canceled()
                     result.success = False
                     self.controller_running = False
@@ -287,7 +287,6 @@ class FinalApproachControllerNode(TFNode):
     # ===============================
     #        Service callbacks
     # ===============================
-
     def _srv_server_cb_start_final_approach(self, request, response):
         self.controller_running = True
         self._timer_run_controller = self.create_timer(
