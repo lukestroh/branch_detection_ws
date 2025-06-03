@@ -123,11 +123,9 @@ class VL53L4CDFilterNode(Node):
         """
         Callback for raw distance data from the VL53L4CD sensor
         """
-        # self.vl53l4cd_msg_raw = msg
-
         try:
             if msg.status != 0:
-                msg.distance = 1600
+                msg.distance = 1600 # Set to far plane so that alignment check doesn't get stale value TODO: change to far plane var
             self.deques[msg.dev_id].popleft()
             self.deques[msg.dev_id].append(msg.distance / 1000)
 
@@ -142,27 +140,6 @@ class VL53L4CDFilterNode(Node):
 
         except IndexError:
             self.fatal("Sensor ID value exceeded the number of moving average buffers. Please adjust.")
-
-        # self.info(self.deques)
-        # self.warn(self.depth_near_plane)
-
-        # try:
-        #     for i in range(2): # TODO: hacky, this represents two sensors. Fix.
-        #         if (msg.data[i] == self.RANGING_ERR) or (msg.data[i] == 0):
-        #             # TODO: This is bad logic, need an and...
-        #             pass
-        #         else:
-        #             # self.warn(msg.data[0])
-
-        #             self.deques[i].popleft()
-        #             self.deques[i].append(self.vl53l4cd_msg_raw.data[i])
-        #             self.vl53l4cd_msg_filtered.data[i] = np.mean(self.deques[i])
-
-        #     # self.vl53l4cd_msg_filtered.header.frame_id = "vl53l4cd_0" # TODO: need two nodes or publishers for two separate frames
-        #     self.vl53l4cd_msg_filtered.header.stamp = self.get_clock().now().to_msg()
-        #     self._pub_tof_filtered.publish(self.vl53l4cd_msg_filtered)
-        # except IndexError as e:
-        #     self.err(f"IndexError: {e}. Check the ranging mode.")
         return
 
 
