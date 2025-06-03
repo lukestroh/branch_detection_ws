@@ -14,7 +14,7 @@ from action_msgs.msg import GoalStatus
 from branch_detection_system_moveit_msgs.srv import MoveToPose
 from controller_manager_msgs.srv import SwitchController
 from final_approach_controller_msgs.action import RunFindBranchRollWrist
-from final_approach_controller_msgs.msg import ToFBranchFitStamped
+from final_approach_controller_msgs.msg import ToFBranchFitStamped, WindowedData, TimestampTofMin
 from geometry_msgs.msg import TwistStamped, Pose, Point, Quaternion
 from moveit_msgs.action import MoveGroup
 from sensor_msgs.msg import JointState
@@ -172,17 +172,23 @@ class FindBranchRollWristController(TFNode):
             callback_group=self._reentrant_cb_group,
             qos_profile=1,
         )
-        self._pub_rviz_start_pose_marker = self.create_publisher(
-            msg_type=Marker,
-            topic="/rviz/start_pose_visualization_marker",
+        self._pub_rotation_speed = self.create_publisher(
+            msg_type=Float64,
+            topic="/fbwr_controller/rotation_speed",
             callback_group=self._reentrant_cb_group,
             qos_profile=1,
         )
-        self._pub_rotation_speed = self.create_publisher(
-            msg_type=Float64,
-            topic='/fbwr_controller/rotation_speed',
+        self._pub_windowed_data = self.create_publisher(
+            msg_type=WindowedData,
+            topic="/fbrw_controller/windowed_data",
             callback_group=self._reentrant_cb_group,
-            qos_profile=1
+            qos_profile=50,
+        )
+        self._pub_ts_tof_min = self.create_publisher(
+            msg_type=TimestampTofMin,
+            topic="/fbrw_controller/ts_tof_min",
+            callback_group=self._reentrant_cb_group,
+            qos_profile=10,
         )
 
         # self._pub_fit = self.create_publisher(
@@ -197,14 +203,18 @@ class FindBranchRollWristController(TFNode):
         self._timer_pub_servo = None
 
         # Messages
-        self.msg_twist = TwistStamped()
-        self.msg_twist.twist.linear.x = 0.0
-        self.msg_twist.twist.linear.y = 0.0
-        self.msg_twist.twist.linear.z = 0.0
-        self.msg_twist.twist.angular.x = 0.0
-        self.msg_twist.twist.angular.y = 0.0
-        self.msg_twist.header.frame_id = f"{self._param_robot_eef_part}__tool0"
-        self.msg_tof_branch_fit = ToFBranchFitStamped()
+        self._msg_twist = TwistStamped()
+        self._msg_twist.twist.linear.x = 0.0
+        self._msg_twist.twist.linear.y = 0.0
+        self._msg_twist.twist.linear.z = 0.0
+        self._msg_twist.twist.angular.x = 0.0
+        self._msg_twist.twist.angular.y = 0.0
+        self._msg_twist.header.frame_id = f"{self._param_robot_eef_part}__tool0"
+        # self.msg_tof_branch_fit = ToFBranchFitStamped()
+        self._msg_ts_tof_min = TimestampTofMin()
+
+        # Action requests
+        self.move_to_pose_req = MoveToPose.Request()
 
         # Transforms
         self.tf_mp_base_to_tof0 = np.identity(4)
@@ -233,6 +243,7 @@ class FindBranchRollWristController(TFNode):
         self.d_tof1 = 0.0  # 0.255
         self.d_tof0_raw = 0.0  # 0.255
         self.d_tof1_raw = 0.0  # 0.255
+        self.start_joint_states = None
 
         # Debug parameters
         self.bag_record_path: str = ""
@@ -249,7 +260,8 @@ class FindBranchRollWristController(TFNode):
         with self._timer_lock:
             if not self._timer_pub_servo.is_canceled():
                 self._timer_pub_servo.cancel()
-        goal_handle.canceled()
+        if goal_handle.is_cancel_requested:
+            goal_handle.canceled()
         self.reset_controller()
         return CancelResponse.ACCEPT
 
@@ -258,11 +270,12 @@ class FindBranchRollWristController(TFNode):
         return GoalResponse.ACCEPT
 
     async def _action_exe_cb_run_find_branch_roll_wrist(self, goal_handle: ServerGoalHandle):
-        self.controller_running = True
+        # Let the tofs settle
+        self.get_clock().sleep_for(Duration(seconds=1.0))
 
-        await self.start_servo()
-        # Publish rotation speed for future analysis
-        self._pub_rotation_speed.publish(Float64(data=self.max_angular_vel))
+        # feedback_msg = RunFindBranchRollWrist.Feedback()
+        _result = RunFindBranchRollWrist.Result()
+        self.controller_running = True
 
         if not self.start_states_recorded:
             self.start_controller_tf = self.lookup_transform(
@@ -272,6 +285,9 @@ class FindBranchRollWristController(TFNode):
                 as_matrix=True,
             )
             self.start_joint_states = self.joint_states
+
+        await self.start_servo()
+        self._pub_rotation_speed.publish(Float64(data=self.max_angular_vel))
 
         with self._timer_lock:
             if self._timer_pub_servo is None:
@@ -284,278 +300,141 @@ class FindBranchRollWristController(TFNode):
                 self._timer_pub_servo.reset()
 
         try:
-            feedback_msg = RunFindBranchRollWrist.Feedback()
-            result = RunFindBranchRollWrist.Result()
-
-            # TODO: check if initial reading of sensor. If so, set flag to data found and record tf pose time.
-
             while self.controller_running:
-                # self.debug_counter += 1
                 self.get_clock().sleep_for(Duration(seconds=0.005))  # loop runs too fast, slow it down!
 
-                if goal_handle.status == GoalStatus.STATUS_CANCELED:
-                    with self._timer_lock:
-                        if not self._timer_pub_servo.is_canceled():
-                            self._timer_pub_servo.cancel()
-                    result.success = False
-                    self._pub_localization_success.publish(msg=Bool(data=False))
-                    self._pub_alignment_success.publish(msg=Bool(data=False))
-                    return result
+                if not self.check_action_goal_status(goal_handle=goal_handle):
+                    _result.success = False
+                    return _result
 
-                if goal_handle.status == GoalStatus.STATUS_ABORTED:
-                    with self._timer_lock:
-                        if not self._timer_pub_servo.is_canceled():
-                            self._timer_pub_servo.cancel()
-                    result.success = False
-                    self._pub_localization_success.publish(msg=Bool(data=False))
-                    self._pub_alignment_success.publish(msg=Bool(data=False))
-                    return result
+                # if both have a fit, publish zero message, do pose math, call service, kill timer, controller_running = False
+                tof0_branch_found, tof1_branch_found = self.check_if_branch_found()
 
-                if goal_handle.status == GoalStatus.STATUS_EXECUTING:
-                    # Cancel action if requested
-                    if goal_handle.is_cancel_requested:
-                        self.publish_zero_twist()
-                        goal_handle.canceled()
-                        self.info("FindBranchRollWristController canceled.")
-                        self.reset_controller()
-                        result.success = False
-                        self._pub_localization_success.publish(msg=Bool(data=False))
-                        self._pub_alignment_success.publish(msg=Bool(data=False))
-                        return result
-
-                    # Action feedback
-                    if self.get_clock().now() - self.feedback_pub_prev_time >= Duration(seconds=1):
-                        feedback_msg.tof0 = self.d_tof0
-                        feedback_msg.tof1 = self.d_tof1
-                        goal_handle.publish_feedback(feedback=feedback_msg)
-                        self.feedback_pub_prev_time = self.get_clock().now()
-
-                    ################################################################################################################
-                    # if both have a fit, publish zero message, do pose math, call service, kill timer, controller_running = False
-
-                    # self.warn(f"tof0 found: {self.tof0_branch_found}")
-                    # self.warn(f"tof1 found: {self.tof1_branch_found}")
-                    with self._branch_found_lock:
-                        tof0_branch_found = self.tof0_branch_found
-                        tof1_branch_found = self.tof1_branch_found
-                        # self.debug_counter -= 1
-
-                    if tof0_branch_found and tof1_branch_found:
-                        self.info("Branch found!")
-                        self.info(f"tof0: {tof0_branch_found}, tof1: {tof1_branch_found}")
-
-                        self.neg_rot_complete = True
-                        self.pos_rot_complete = True
-                        self.rotations_complete = True
-
-                        self.publish_zero_twist()
-                        self.info("Branch readings found for both ToFs!")
-
-                    if not self.rotations_complete:
-                        if not self.neg_rot_complete:
-                            # self.info(self.start_joint_states[2] - self.joint_states[2])
-                            # # rotate to the closest side
-                            # if self.joint_states[-1] < 0 and self.joint_states[-1] > -1 * np.pi:
-                            # negative angular rotation
-                            angular_z = -1 * self.max_angular_vel
-                            if np.isclose(self.start_joint_states[2] - self.joint_states[2], np.pi / 2, atol=0.05):
-                                # TODO: (long term) make sure wrist mount config is standard
-                                self.publish_zero_twist()
-                                self.neg_rot_complete = True
-                                self.run_quadratic_fit()
-
-                                # self.get_clock().sleep_for(Duration(seconds=3))
-                                if not tof0_branch_found:
-                                    self.d_tof0_raw_readings = []
-                                    self.d_tof0_readings = []
-                                    self.ts_tof0 = []
-                                    self.ts_tof0_raw = []
-                                if not tof1_branch_found:
-                                    self.d_tof0_raw_readings = []
-                                    self.d_tof1_readings = []
-                                    self.ts_tof1 = []
-                                    self.ts_tof0_raw = []
-
-                        elif not self.pos_rot_complete:
-                            # if self.joint_states[-1] > 0 and self.joint_states[-1] < np.pi:
-                            # positive angular rotation
-                            angular_z = self.max_angular_vel
-                            if np.isclose(self.start_joint_states[2] - self.joint_states[2], -np.pi / 2, atol=0.05):
-                                self.publish_zero_twist()
-                                self.pos_rot_complete = True
-                                self.run_quadratic_fit()
-
-                        with self._servo_msg_lock:
-                            self.msg_twist.twist.angular.z = angular_z
-                            self.msg_twist.header.stamp = self.get_clock().now().to_msg()
-
-                        if self.neg_rot_complete and self.pos_rot_complete:
-                            self.publish_zero_twist()
-                            self.rotations_complete = True
+                if not self.rotations_complete:
+                    self.actuate_wrist()
+                else:
+                    if self.tof0_time_center is None or self.tof1_time_center is None:  # TODO: Check and/or logic here
+                        if not goal_handle.status == GoalStatus.STATUS_ABORTED:
+                            self.warn("Could not find the branch. Aborting FindBranchRollWristController.")
+                            goal_handle.abort()
+                            # self.reset_controller() # Done in 'finally'
+                            self._pub_localization_success.publish(msg=Bool(data=False))
+                            self._pub_alignment_success.publish(msg=Bool(data=False))
+                            _result.success = False
+                        return _result
 
                     else:
-                        if (
-                            self.tof0_time_center is None or self.tof1_time_center is None
-                        ):  # TODO: Check and/or logic here
-                            if not goal_handle.status == GoalStatus.STATUS_ABORTED:
-                                self.warn("Could not find the branch. Aborting FindBranchRollWristController.")
-                                goal_handle.abort()
-                                # self.reset_controller() # Done in 'finally'
-                                self._pub_localization_success.publish(msg=Bool(data=False))
-                                self._pub_alignment_success.publish(msg=Bool(data=False))
-                                result.success = False
-                            return result
-
-                        else:
-                            self._pub_localization_success.publish(msg=Bool(data=True))
-                            # Stop servo
-                            self.publish_zero_twist()  # Just in case
-                            with self._timer_lock:
-                                if not self._timer_pub_servo.is_canceled():
-                                    self._timer_pub_servo.cancel()
+                        self._pub_localization_success.publish(msg=Bool(data=True))
+                        if rclpy.ok():
                             await self.stop_servo()
 
                             await self.switch_controllers(
                                 activate_controllers=self._move_group_controller,
                                 deactivate_controllers=self._servo_controller,
                             )
+                        else:
+                            raise Exception("rclpy is not ok :(")
 
-                            # Project tof readings in base frame
-                            tof0_vec_base_frame = self.get_tof_vec_base_frame(
-                                ts=self.tof0_time_center, tof=self.tof0_distance_center, sensor_name="tof0"
+                        # Get branch info, find desired xyz + quat
+                        branch_center_point, branch_vec_normalized, tof0_vec_base_frame, tof1_vec_base_frame = (
+                            self.get_branch_vec_from_tof(return_frames=self.debug_plot)
+                        )
+
+                        desired_eef_xyz = self.get_desired_position_from_branch_vec(
+                            branch_center_point=branch_center_point, branch_vec=branch_vec_normalized
+                        )
+
+                        desired_orientation_quat, desired_orientation_vec = (
+                            self.get_desired_orientation_from_branch_vec(
+                                branch_center_point=branch_center_point,
+                                branch_vec=branch_vec_normalized,
+                                desired_eef_xyz=desired_eef_xyz,
                             )
-                            tof1_vec_base_frame = self.get_tof_vec_base_frame(
-                                ts=self.tof1_time_center, tof=self.tof1_distance_center, sensor_name="tof1"
-                            )
+                        )
 
-                            # Get the centerpoint of these two points.
-                            branch_center_point = np.mean([tof0_vec_base_frame, tof1_vec_base_frame], axis=0)  # C
-
-                            # Get closest point on a circle from point, given circle center,
-                            # point, plane normal
-                            # https://www.geometrictools.com/Documentation/DistanceToCircle3.pdf
-                            branch_vec = tof0_vec_base_frame - tof1_vec_base_frame
-                            branch_vec_normalized = branch_vec / np.linalg.norm(branch_vec)  # N
-
-                            tf_cut_point_to_base = self.lookup_transform(
-                                target_frame=f"{self._param_robot_base_part}__base",
-                                source_frame=f"{self._param_robot_eef_part}__tool0",
-                                sync=True,
-                                as_matrix=True,
-                                time=self.get_clock().now(),
-                            )
-
-                            curr_pose = tf_cut_point_to_base[0:3, 3]  # P
-
-                            delta = curr_pose - branch_center_point
-                            _Q_C = delta - np.dot(branch_vec_normalized, delta) * branch_vec_normalized
-
-                            desired_radius_from_branch = 0.10  # m
-
-                            desired_eef_xyz = (
-                                branch_center_point + _Q_C / np.linalg.norm(_Q_C) * desired_radius_from_branch
+                        ######################################################################################
+                        if self.debug_plot:
+                            fig = dplot.plot_branch_projection(
+                                tof0=tof0_vec_base_frame,
+                                tof1=tof1_vec_base_frame,
+                                branch_center_pos=branch_center_point,
+                                branch_vec_ori=branch_vec_normalized,
+                                base_origin_name=self._param_robot_base_part,
+                                desired_eef_pos=desired_eef_xyz,
+                                desired_eef_ori=desired_orientation_vec,
+                                save_fig=True,
+                                save_fig_dir=self.bag_record_path,
                             )
 
-                            desired_orientation_vec_to_branch = branch_center_point - desired_eef_xyz
+                        #####################################################
+                        self.info(f"Moving to pose {desired_eef_xyz}, {desired_orientation_vec}")
+                        self.move_to_pose_req.goal.position.x = desired_eef_xyz[0]
+                        self.move_to_pose_req.goal.position.y = desired_eef_xyz[1]
+                        self.move_to_pose_req.goal.position.z = desired_eef_xyz[2]
+                        self.move_to_pose_req.goal.orientation.x = desired_orientation_quat[0]
+                        self.move_to_pose_req.goal.orientation.y = desired_orientation_quat[1]
+                        self.move_to_pose_req.goal.orientation.z = desired_orientation_quat[2]
+                        self.move_to_pose_req.goal.orientation.w = desired_orientation_quat[3]
 
-                            desired_orientation_vec_to_branch_norm = desired_orientation_vec_to_branch / np.linalg.norm(
-                                desired_orientation_vec_to_branch
-                            )
+                        self.info("Sending goal")
 
-                            """CREATE BASIS VECTORS: we need to create a coordinate basis with respect to the calculated vector. Use a temp vec, like world_z. Mimicking the 'camera' frame, this would give us the x-axis, which we want pointing to the right. Therefore, we should take desired x world_z
-                            desired_x_axis = np.cross(desired_orientation_vec_to_branch_norm, world_z)
-                            desired_x_axis = desired_x_axis / np.linalg.norm(
-                                desired_x_axis
-                            )  # this SHOULD be 1 already....
-                            desired_y_axis = np.cross(desired_orientation_vec_to_branch_norm, desired_x_axis)
-                            desired_y_axis = desired_y_axis / np.linalg.norm(desired_y_axis)"""
+                        move_group_future: Future = self._srv_cartesian_move_to_pose.call_async(
+                            request=self.move_to_pose_req
+                        )
+                        move_group_future.add_done_callback(callback=self._done_cb_srv_cartesian_move_to_pose)
+                        await move_group_future
 
-                            desired_y_axis = np.cross(desired_orientation_vec_to_branch_norm, branch_vec_normalized)
-                            # Form the rotation matrix from our basis vectors
-                            rot_mat = np.column_stack(
-                                (branch_vec_normalized, desired_y_axis, desired_orientation_vec_to_branch_norm)
-                            )
-                            desired_orientation_rot = Rotation.from_matrix(rot_mat)
-                            desired_orientation_quat = desired_orientation_rot.as_quat()
+                        # Wait a second for moving average filter to settle.
+                        self.get_clock().sleep_for(Duration(seconds=1.0))
 
-                            ######################################################################################
-                            if self.debug_plot:
-                                fig = dplot.plot_branch_projection(
-                                    tof0=tof0_vec_base_frame,
-                                    tof1=tof1_vec_base_frame,
-                                    branch_center_pos=branch_center_point,
-                                    branch_vec_ori=branch_vec_normalized,
-                                    base_origin_name=self._param_robot_base_part,
-                                    desired_eef_pos=desired_eef_xyz,
-                                    desired_eef_ori=desired_orientation_vec_to_branch_norm,
-                                    save_fig=True,
-                                    save_fig_dir=self.bag_record_path,
+                        if move_group_future.result() is None or not move_group_future.result().result:
+                            goal_handle.abort()
+                            _result.success = False
+                        else:
+                            if self.d_tof0 < self.tof_far_plane and self.d_tof1 < self.tof_far_plane:
+                                goal_handle.succeed()
+                                _result.success = True
+                            else:
+                                goal_handle.abort()
+                                _result.success = False
+                                self.error(
+                                    f"Failed to navigate to pose where both sensors can read the branch.\nd_tof0: {self.d_tof0}, d_tof1: {self.d_tof1}, far_plane: {self.tof_far_plane}"
                                 )
 
-                            #####################################################
-                            self.info(f"Moving to pose {desired_eef_xyz}, {desired_orientation_vec_to_branch}")
-                            move_to_pose_req = MoveToPose.Request()
-                            move_to_pose_req.goal.position.x = desired_eef_xyz[0]
-                            move_to_pose_req.goal.position.y = desired_eef_xyz[1]
-                            move_to_pose_req.goal.position.z = desired_eef_xyz[2]
-                            move_to_pose_req.goal.orientation.x = desired_orientation_quat[0]
-                            move_to_pose_req.goal.orientation.y = desired_orientation_quat[1]
-                            move_to_pose_req.goal.orientation.z = desired_orientation_quat[2]
-                            move_to_pose_req.goal.orientation.w = desired_orientation_quat[3]
+                        self.controller_running = False
 
-                            self.info("Sending goal")
+                        await self.switch_controllers(
+                            activate_controllers=self._servo_controller,
+                            deactivate_controllers=self._move_group_controller,
+                        )
 
-                            move_group_future: Future = self._srv_cartesian_move_to_pose.call_async(
-                                request=move_to_pose_req
-                            )
-                            move_group_future.add_done_callback(callback=self._done_cb_srv_cartesian_move_to_pose)
-                            await move_group_future
+                        if _result.success:
+                            self._pub_alignment_success.publish(msg=Bool(data=True))
+                        else:
+                            self._pub_alignment_success.publish(msg=Bool(data=False))
 
-                            # Wait a second for moving average filter to settle.
-                            self.get_clock().sleep_for(Duration(seconds=1.0))
-
-                            if move_group_future.result() is None or not move_group_future.result().result:
-                                goal_handle.abort()
-                                result.success = False
-                            else:
-                                if self.d_tof0 < self.tof_far_plane and self.d_tof1 < self.tof_far_plane:
-                                    goal_handle.succeed()
-                                    result.success = True
-                                else:
-                                    goal_handle.abort()
-                                    result.success = False
-                                    self.error(
-                                        f"Failed to navigate to pose where both sensors can read the branch.\nd_tof0: {self.d_tof0}, d_tof1: {self.d_tof1}, far_plane: {self.tof_far_plane}"
-                                    )
-
-                            self.controller_running = False
-                            await self.switch_controllers(
-                                activate_controllers=self._servo_controller,
-                                deactivate_controllers=self._move_group_controller,
-                            )
-
-                            if result.success:
-                                self._pub_alignment_success.publish(msg=Bool(data=True))
-                            else:
-                                self._pub_alignment_success.publish(msg=Bool(data=False))
-
-                            return result
+                        return _result
             ############################################################################################################
 
         except Exception as e:
             self.get_logger().fatal(f"{traceback.format_exc()}")
-            result.success = False
+            _result.success = False
             goal_handle.abort()
         finally:
-            self.publish_zero_twist()
-            self.reset_controller()
-            self.info("FindBranchRollWristController has terminated.")
-            await self.stop_servo()
-            # await self.switch_controllers(activate_controllers=self._servo_controller, deactivate_controllers=self._move_group_controller)
+            if rclpy.ok():
+                try:
+                    self.publish_zero_twist()
+                    await self.stop_servo()
+                    self.reset_controller()
+                    self.info("FindBranchRollWristController has terminated.")
 
-            self.get_clock().sleep_for(Duration(seconds=2.0))
+                except Exception as e:
+                    self.fatal(traceback.format_exc())
+                # await self.switch_controllers(activate_controllers=self._servo_controller, deactivate_controllers=self._move_group_controller)
 
-        return result
+                self.get_clock().sleep_for(Duration(seconds=2.0))
+
+        return _result
 
     # ===============================
     #        Future callbacks
@@ -608,25 +487,24 @@ class FindBranchRollWristController(TFNode):
         return
 
     def _timer_cb_pub_servo(self):
+        with self._timer_lock:
+            if self._timer_pub_servo.is_canceled():
+                return
         with self._servo_msg_lock:
-            self._pub_servo.publish(self.msg_twist)
+            self._pub_servo.publish(self._msg_twist)
         return
 
     # ===============================
     #     Subscription callbacks
     # ===============================
     def _sub_cb_tof_raw(self, msg: Vl53l4cdStamped):
-
         if msg.dev_id == 0:
             self.d_tof0_raw = msg.distance / 1000
         elif msg.dev_id == 1:
             self.d_tof1_raw = msg.distance / 1000
 
         if self.controller_running:
-            # timestamp_tuple = self.get_clock().now().seconds_nanoseconds()
-            # timestamp_float = timestamp_tuple[0] + timestamp_tuple[1] * 1e-9
             timestamp_float = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
-            # with self._branch_found_lock:
             with self._data_lock:
                 if msg.dev_id == 0:
                     if not self.tof0_branch_found:
@@ -679,6 +557,113 @@ class FindBranchRollWristController(TFNode):
     # ===============================
     #         Class methods
     # ===============================
+    def reset_controller(self) -> None:
+        self.controller_running = False
+        self.rotations_complete = False
+        self.neg_rot_complete = False
+        self.pos_rot_complete = False
+        with self._branch_found_lock:
+            self.tof0_branch_found = False
+            self.tof1_branch_found = False
+        self.tof0_time_center = None
+        self.tof1_time_center = None
+        self.tof0_distance_center = None
+        self.tof1_distance_center = None
+        # self.start_controller_tf = np.identity(4)  # TODO: unused.
+
+        self.reset_data_caches()
+
+        self.info("Controller parameters have been reset")
+        return
+
+    def reset_data_caches(self):
+        with self._data_lock:
+            self.d_tof0_raw_readings = []
+            self.d_tof0_readings = []
+            self.ts_tof0 = []
+            self.ts_tof0_raw = []
+            self.d_tof1_raw_readings = []
+            self.d_tof1_readings = []
+            self.ts_tof1 = []
+            self.ts_tof1_raw = []
+            self.joint_states_cache = []
+            self.ts_joint_states_cache = []
+        return
+
+    def check_action_goal_status(self, goal_handle: ServerGoalHandle) -> bool:
+        if goal_handle.status == GoalStatus.STATUS_CANCELED:
+            with self._timer_lock:
+                if not self._timer_pub_servo.is_canceled():
+                    self.publish_zero_twist()
+                    self._timer_pub_servo.cancel()
+            self.warn("FindBranchRollWristController canceled.")
+            self._pub_localization_success.publish(msg=Bool(data=False))
+            self._pub_alignment_success.publish(msg=Bool(data=False))
+            self.reset_controller()
+            return False
+
+        if goal_handle.status == GoalStatus.STATUS_ABORTED:
+            with self._timer_lock:
+                if not self._timer_pub_servo.is_canceled():
+                    self.publish_zero_twist()
+                    self._timer_pub_servo.cancel()
+            self.error("FindBranchRollWristController aborted.")
+            self._pub_localization_success.publish(msg=Bool(data=False))
+            self._pub_alignment_success.publish(msg=Bool(data=False))
+            self.reset_controller()
+            return False
+
+        if goal_handle.status == GoalStatus.STATUS_EXECUTING:
+            return True
+
+    def check_if_branch_found(self) -> tuple:
+        with self._branch_found_lock:
+            tof0_branch_found = self.tof0_branch_found
+            tof1_branch_found = self.tof1_branch_found
+
+        if tof0_branch_found and tof1_branch_found:
+            self.info("Branch found!")
+            self.info(f"tof0: {tof0_branch_found}, tof1: {tof1_branch_found}")
+
+            self.neg_rot_complete = True
+            self.pos_rot_complete = True
+            self.rotations_complete = True
+
+            self.publish_zero_twist()
+            self.info("Branch readings found for both ToFs!")
+        return (tof0_branch_found, tof1_branch_found)
+
+    def actuate_wrist(self):
+        ##############################################################################################
+        # Make this a behavior?
+        if not self.neg_rot_complete:
+            angular_z = -1 * self.max_angular_vel
+            if np.isclose(self.start_joint_states[2] - self.joint_states[2], np.pi / 2, atol=0.05):
+                # TODO: (long term) make sure wrist mount config is standard
+                self.publish_zero_twist()
+                self.neg_rot_complete = True
+                self.run_quadratic_fit()
+                ##############################################################################################
+                self.reset_data_caches()
+        elif not self.pos_rot_complete:
+            # if self.joint_states[-1] > 0 and self.joint_states[-1] < np.pi:
+            # positive angular rotation
+            angular_z = self.max_angular_vel
+            if np.isclose(self.start_joint_states[2] - self.joint_states[2], -np.pi / 2, atol=0.05):
+                self.publish_zero_twist()
+                self.pos_rot_complete = True
+                self.run_quadratic_fit()
+        with self._servo_msg_lock:
+            self._msg_twist.twist.angular.z = angular_z
+            self._msg_twist.header.stamp = self.get_clock().now().to_msg()
+        if self.neg_rot_complete and self.pos_rot_complete:
+            self.publish_zero_twist()
+            self.rotations_complete = True
+            with self._timer_lock:
+                if not self._timer_pub_servo.is_canceled():
+                    self._timer_pub_servo.cancel()
+        return
+
     def run_quadratic_fit(self):
         with self._branch_found_lock:
             tof0_branch_found = self.tof0_branch_found
@@ -714,8 +699,8 @@ class FindBranchRollWristController(TFNode):
                 filter_far_plane=self.filter_far_plane,
                 sensor_name="tof0",
                 debug_plot=True,
-                save_plot=True,
-                save_plot_path=self.bag_record_path,
+                save_fig=True,
+                save_fig_path=self.bag_record_path,
                 window_size=2.0,
                 window_overlap_ratio=9 / 10,
                 min_samples=10,
@@ -726,6 +711,10 @@ class FindBranchRollWristController(TFNode):
             self.warn(f"TOF0: {tof0_time_and_dist}")
             if tof0_time_and_dist is not None:
                 self.tof0_time_center, self.tof0_distance_center = tof0_time_and_dist
+                self._msg_ts_tof_min.sensor_id = 0
+                self._msg_ts_tof_min.timestamp = self.tof0_time_center
+                self._msg_ts_tof_min.data = self.tof0_distance_center
+                self._pub_ts_tof_min.publish(msg=self._msg_ts_tof_min)
                 with self._branch_found_lock:
                     self.tof0_branch_found = True
         else:
@@ -759,8 +748,8 @@ class FindBranchRollWristController(TFNode):
                 filter_far_plane=self.filter_far_plane,
                 sensor_name="tof1",
                 debug_plot=True,
-                save_plot=True,
-                save_plot_path=self.bag_record_path,
+                save_fig=True,
+                save_fig_path=self.bag_record_path,
                 window_size=2.0,
                 window_overlap_ratio=9 / 10,
                 min_samples=10,
@@ -771,6 +760,10 @@ class FindBranchRollWristController(TFNode):
             self.warn(f"TOF1: {tof1_time_and_dist}")
             if tof1_time_and_dist is not None:
                 self.tof1_time_center, self.tof1_distance_center = tof1_time_and_dist
+                self._msg_ts_tof_min.sensor_id = 1
+                self._msg_ts_tof_min.timestamp = self.tof1_time_center
+                self._msg_ts_tof_min.data = self.tof1_distance_center
+                self._pub_ts_tof_min.publish(msg=self._msg_ts_tof_min)
                 with self._branch_found_lock:
                     self.tof1_branch_found = True
         else:
@@ -801,47 +794,81 @@ class FindBranchRollWristController(TFNode):
 
         return tof_vec_base_frame
 
-    def reset_controller(self) -> None:
-        self.controller_running = False
-        self.rotations_complete = False
-        self.neg_rot_complete = False
-        self.pos_rot_complete = False
-        with self._branch_found_lock:
-            self.tof0_branch_found = False
-            self.tof1_branch_found = False
-        self.tof0_time_center = None
-        self.tof1_time_center = None
-        self.tof0_distance_center = None
-        self.tof1_distance_center = None
-        self.start_controller_tf = np.identity(4)  # TODO: unused.
-        with self._data_lock:
-            self.d_tof0_readings = []
-            self.d_tof1_readings = []
-            self.d_tof0_raw_readings = []
-            self.d_tof1_raw_readings = []
-            self.ts_tof0 = []
-            self.ts_tof1 = []
-            self.ts_tof0_raw = []
-            self.ts_tof1_raw = []
-            self.joint_states_cache = []
-            self.ts_joint_states_cache = []
+    def get_branch_vec_from_tof(self, return_frames: bool = False):
+        # Project tof readings in base frame
+        tof0_vec_base_frame = self.get_tof_vec_base_frame(
+            ts=self.tof0_time_center, tof=self.tof0_distance_center, sensor_name="tof0"
+        )
+        tof1_vec_base_frame = self.get_tof_vec_base_frame(
+            ts=self.tof1_time_center, tof=self.tof1_distance_center, sensor_name="tof1"
+        )
 
-        self.info("Controller parameters have been reset")
-        return
+        # Get the centerpoint of these two points.
+        branch_center_point = np.mean([tof0_vec_base_frame, tof1_vec_base_frame], axis=0)  # C
+
+        branch_vec = tof0_vec_base_frame - tof1_vec_base_frame
+        branch_vec_normalized = branch_vec / np.linalg.norm(branch_vec)  # N
+
+        if return_frames:
+            return (branch_center_point, branch_vec_normalized), (tof0_vec_base_frame, tof1_vec_base_frame)
+        else:
+            return (branch_center_point, branch_vec_normalized), (None, None)
+
+    def get_desired_position_from_branch_vec(self, branch_center_point: np.ndarray, branch_vec: np.ndarray):
+        """
+        Get closest point on a circle from point, given circle center,
+        point, plane normal
+        https://www.geometrictools.com/Documentation/DistanceToCircle3.pdf
+
+        :param branch_vec: Unit vector of the branch in robot base domain.
+        :type branch_vec: np.ndarray
+        """
+        tf_cut_point_to_base = self.lookup_transform(
+            target_frame=f"{self._param_robot_base_part}__base",
+            source_frame=f"{self._param_robot_eef_part}__tool0",
+            sync=True,
+            as_matrix=True,
+            time=self.get_clock().now(),
+        )
+        curr_pose = tf_cut_point_to_base[0:3, 3]  # P
+
+        delta = curr_pose - branch_center_point
+        _Q_C = delta - np.dot(branch_vec, delta) * branch_vec
+
+        desired_radius_from_branch = 0.10  # m
+
+        desired_eef_xyz = branch_center_point + _Q_C / np.linalg.norm(_Q_C) * desired_radius_from_branch
+        return desired_eef_xyz
+
+    def get_desired_orientation_from_branch_vec(
+        self, branch_center_point, branch_vec, desired_eef_xyz, return_vec: bool = False
+    ):
+        """Creates a set of basis vectors defining the desired coordinate system and returns a quaternion from the robot base frame"""
+        desired_orientation_vec_to_branch = branch_center_point - desired_eef_xyz
+        desired_orientation_vec_to_branch_norm = desired_orientation_vec_to_branch / np.linalg.norm(
+            desired_orientation_vec_to_branch
+        )
+        desired_y_axis = np.cross(desired_orientation_vec_to_branch_norm, branch_vec)
+        # Form the rotation matrix from our basis vectors
+        rot_mat = np.column_stack((branch_vec, desired_y_axis, desired_orientation_vec_to_branch_norm))
+        desired_orientation_rot = Rotation.from_matrix(rot_mat)
+        desired_orientation_quat = desired_orientation_rot.as_quat()
+
+        return desired_orientation_quat, desired_orientation_vec_to_branch_norm
 
     def publish_zero_twist(self):
         with self._servo_msg_lock:
-            self.msg_twist.twist.linear.x = 0.0
-            self.msg_twist.twist.linear.y = 0.0
-            self.msg_twist.twist.linear.z = 0.0
-            self.msg_twist.twist.angular.x = 0.0
-            self.msg_twist.twist.angular.y = 0.0
-            self.msg_twist.twist.angular.z = 0.0
-            self.msg_twist.header.frame_id = (
+            self._msg_twist.twist.linear.x = 0.0
+            self._msg_twist.twist.linear.y = 0.0
+            self._msg_twist.twist.linear.z = 0.0
+            self._msg_twist.twist.angular.x = 0.0
+            self._msg_twist.twist.angular.y = 0.0
+            self._msg_twist.twist.angular.z = 0.0
+            self._msg_twist.header.frame_id = (
                 f"{self._param_robot_eef_part}__tool0"  # TODO: if changing to EEF, change ur_servo.yaml
             )
-            self.msg_twist.header.stamp = self.get_clock().now().to_msg()
-            self._pub_servo.publish(self.msg_twist)
+            self._msg_twist.header.stamp = self.get_clock().now().to_msg()
+            self._pub_servo.publish(self._msg_twist)
         return
 
     async def switch_controllers(self, activate_controllers: list[str], deactivate_controllers: list[str]) -> None:

@@ -20,7 +20,7 @@ import numpy as np
 import os
 import yaml
 
-from final_approach_controller.logger_node import LoggerNode
+from branch_detection_system_bringup.logger_node import LoggerNode
 
 
 class TFNode(LoggerNode):

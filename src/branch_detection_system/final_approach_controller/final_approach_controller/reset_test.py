@@ -12,9 +12,10 @@ from rclpy.qos import QoSProfile
 
 from branch_detection_system_moveit_msgs.srv import MoveToPose
 from final_approach_controller_msgs.action import RunTestReset
-from geometry_msgs.msg import Twist, TwistStamped
+from geometry_msgs.msg import Twist, TwistStamped, Pose
 from std_srvs.srv import Trigger
 from controller_manager_msgs.srv import SwitchController, ListControllers
+from visualization_msgs.msg import Marker
 
 from final_approach_controller.tf_node import TFNode
 import modern_robotics as mr
@@ -72,15 +73,9 @@ class ResetTestNode(TFNode):
         )
 
         # Service clients
-        self._srv_move_to_pose = self.create_client(
-            srv_type=MoveToPose, srv_name="/move_to_pose", callback_group=self._reentrant_cb_group
-        )
-        # self._srv_move_to_pose.wait_for_service()
-
         self._srv_cartesian_move_to_pose = self.create_client(
             srv_type=MoveToPose, srv_name="/cartesian_move_to_pose", callback_group=self._reentrant_cb_group
         )
-
         while not self._srv_cartesian_move_to_pose.wait_for_service(timeout_sec=1.0):
             self.warn("Waiting for Cartesian move to pose service...")
 
@@ -114,6 +109,12 @@ class ResetTestNode(TFNode):
                 reliability=rclpy.qos.ReliabilityPolicy.RELIABLE, history=rclpy.qos.HistoryPolicy.KEEP_LAST, depth=10
             ),
         )
+        self._pub_rviz_start_pose_marker = self.create_publisher(
+            msg_type=Marker,
+            topic="/rviz/start_pose_visualization_marker",
+            callback_group=self._reentrant_cb_group,
+            qos_profile=1,
+        )
 
         # Timers
         self._timer_setup_tf_frames = self.create_timer(timer_period_sec=3.0, callback=self._timer_cb_setup_tf_frames)
@@ -128,6 +129,8 @@ class ResetTestNode(TFNode):
             self.max_linear_speed = 0.1
         else:
             self.max_linear_speed = 0.02 * 10
+
+        self.start_pose_marker_id = 0
 
         return
 
@@ -171,7 +174,6 @@ class ResetTestNode(TFNode):
         await list_ctrlrs_future
         if list_ctrlrs_future.result().controller:
             self.warn(list_ctrlrs_future.result().controller)
-
 
     def publish_zero_twist(self):
         with self._servo_msg_lock:
@@ -273,6 +275,8 @@ class ResetTestNode(TFNode):
 
             self.info("New pose set")
 
+            self.publish_pose_to_rviz(pose=run_test_reset_req.pose)
+
             run_test_reset_result.success = True
             goal_handle.succeed()
             return run_test_reset_result
@@ -347,6 +351,32 @@ class ResetTestNode(TFNode):
             self._pub_servo.publish(self.msg_twist)
         return
     
+    # ===============================
+    #         Class methods
+    # ===============================
+    def publish_pose_to_rviz(self, pose: Pose) -> None:
+        marker = Marker()
+        marker.header.frame_id = f"{self._param_robot_base_part}__base"
+        marker.header.stamp = self.get_clock().now().to_msg()
+        marker.ns = 'start_pose_markers'
+        marker.id = self.start_pose_marker_id
+        marker.type = Marker.ARROW
+        marker.action = Marker.ADD
+        marker.pose = pose
+        marker.scale.x = 0.5
+        marker.scale.y = 0.5
+        marker.scale.z = 0.5
+        marker.color.r = 0.0
+        marker.color.g = 1.0
+        marker.color.b = 0.0
+        marker.color.a = 0.0
+        marker.lifetime.sec = 0
+        marker.lifetime.nanosec = 0
+
+        self._pub_rviz_start_pose_marker.publish(msg=marker)
+
+        self.start_pose_marker_id += 1
+        return
 
 def main():
     rclpy.init()

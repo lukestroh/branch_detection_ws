@@ -53,7 +53,13 @@ def far_plane_filter(
 
     fp_filter_zeroed_ts = fp_filter_ts - fp_filter_ts[0]
 
-    return {"ts": fp_filter_ts, "ts_zeroed": fp_filter_zeroed_ts, "data": fp_filter_data, "tof_arm_radius": 0.4891}
+    return {
+        "ts": fp_filter_ts,
+        "ts_zeroed": fp_filter_zeroed_ts,
+        "data": fp_filter_data,
+        "data_min": np.min(fp_filter_data),
+        "tof_arm_radius": 0.4891,
+    }
 
 
 def fit_ransac(
@@ -113,17 +119,20 @@ def process_window(
 
     idx_min = np.argmin(y_fit)
     timestamp_min = window_data["ts"][idx_min]
+    x_min = x_fit[idx_min]
+
     # node.warn(f"TIMESTAMP MIN: {timestamp_min}")
-    fit_min = float(y_fit[idx_min])
+    y_min = float(y_fit[idx_min])
 
     residuals = abs(data - y_fit)
     avg_residual = np.mean(residuals)
 
     window_data["coefficients"] = coefficients
     window_data["r2"] = fit_r2
-    window_data["theta_min"] = window_data["wrist_state"][idx_min]
+    # window_data["theta_min"] = window_data["wrist_state"][idx_min]
     window_data["ts_min"] = timestamp_min
-    window_data["fit_min"] = fit_min
+    window_data["x_min"] = x_min
+    window_data["y_min"] = y_min
     window_data["avg_residual"] = avg_residual
     window_data["x_fit"] = x_fit
     window_data["y_fit"] = y_fit
@@ -255,7 +264,7 @@ def parabola(x, a, b, c):
     return a * x**2 + b * x + c
 
 
-def find_parabola_height_and_width(window: dict, verbose: bool = False, node: Node = None) -> dict:
+def find_parabola_height_and_width(window: dict, node: Node = None) -> dict:
     """
     Given a parabola y = ax^2 + bx + c, find x values where y(x_min + w/2) = y(x_min) + h, where w is the width of the parabola and h is the height from y_min. We can solve directly for h given the desired point of h = w/2
 
@@ -264,43 +273,52 @@ def find_parabola_height_and_width(window: dict, verbose: bool = False, node: No
     :returns: An updated dictionary with parabolic fit width and height
     :rtype: dict
     """
+
+    def _k_parabola(x, a, b, c):
+        return 2 * np.abs(a) / (1 + (2 * a * x + b) ** 2) ** (3 / 2)
+
     a = window["coefficients"][2]
     b = window["coefficients"][1]
     c = window["coefficients"][0]
     r = window["tof_arm_radius"]
-    x_min = window["ts_min"] - window["ts"][0]
-    y_min = window["fit_min"]
+    # x_min = window["ts_min"] - window["ts"][0]
+    x_min = window["x_min"]
+    y_min = window["y_min"]
 
-    rotation_speed = window["rotation_speed"]
+    # rotation_speed = window["rotation_speed"]
+
+    k_circle_range = [1 / 0.001, 1 / 0.025]
+
+    # ks = _k_parabola(window['x_fit'], a, b, c)
+
+    # node.debug(k_circle_range)
+    # node.debug(ks)
+
+    # node.debug(np.where((ks <= k_circle_range[0]) & (ks >=k_circle_range[1])))
 
     # One root is always zero, the other is:
     h_root = (r**2 - r * (2 * a * x_min + b)) / a
-    hy_at_root = parabola(x=h_root, a=a, b=b, c=c)
-    height = abs(hy_at_root - y_min) * r
-    width = height * 2
-    d_theta = width / r
+    delta = h_root / r
+    # y_at_hroot = parabola(x=h_root, a=a, b=b, c=c)
+    y_at_delta = parabola(x=(x_min + delta), a=a, b=b, c=c)
+    # height = abs(y_at_hroot - y_min)
+    height = abs(y_at_delta - y_min)
+    width = abs(delta) * 2
 
-    if verbose:
-        if node is not None:
-            node.info(f"fit COEFS: {a}, {b}, {c}")
-            node.info(f"fit x_min: {x_min}")
-            node.info(f"fit y_min: {y_min}")
-            # node.info(f"h_func COEFS: {h_coefs}")
-            node.info(f"h_func ROOTS: {h_root}")
-            node.info(f"HEIGHTS: {height}")
-            node.info(f"WIDTHS: {width}")
-        else:
-            print(f"fit COEFS: {a}, {b}, {c}")
-            print(f"fit x_min: {x_min}")
-            print(f"fit y_min: {y_min}")
-            # print(f"h_func COEFS: {h_coefs}")
-            print(f"h_func ROOTS: {h_root}")
-            print(f"HEIGHTS: {height}")
-            print(f"WIDTHS: {width}")
+    # node.debug(f"theta_min: {x_min}")
+    # node.debug(f"y_min: {y_min}")
+    # node.debug(f"H_ROOT: {h_root}")
+    # # node.debug(f"y_at_hroot: {y_at_hroot}")
+    # node.debug(f"delta: {delta}")
+    # node.debug(f"y_at_delta: {y_at_delta}")
+    # # node.debug(f"HROOT - x_min: {h_root - x_min}")
+    # node.debug(f"HEIGHT: {height}")
+    # node.debug(f"WIDTH: {width}")
 
+    # assert np.isclose(height, width / 2, atol=0.001)
     window["height"] = height
     window["width"] = width
-    window['d_theta'] = d_theta
+    # window['curvatures'] = ks
     return window
 
 
@@ -322,8 +340,12 @@ def filter_parabola_by_max_diameter(window: dict, max_diameter: float = 0.0508):
     return window
 
 
-def filter_parabolas(windowed_data: dict) -> dict:
+def filter_parabolas(windowed_data: dict, node: Node = None) -> dict:
     filtered_window_data = {}
+
+    avg_resd = np.inf
+    branch_candidate = None
+    branch_candidate_idx = None
     for window_idx, window in windowed_data.items():
         coefs = window["coefficients"]
         r2 = window["r2"]
@@ -334,22 +356,25 @@ def filter_parabolas(windowed_data: dict) -> dict:
         if r2 is not None and r2 < 0:
             continue
 
-        # derivative = [2 * coefs[2], coefs[1]]
-        # roots = np.roots(p=derivative)
-        # root = roots[0]  # quadratic derivative should just have 1 root
-        # if the root falls outside of the window, remove it
-        # if (root < window["start_ts"]) or (root > window["start_ts"] + window["window_size"]):
-        #     # print("REJECTED!")
+        window = find_parabola_height_and_width(window=window, node=node)
+        # window = filter_parabola_by_max_diameter(window=window, max_diameter=0.0508)
+
+        derivative = [2 * coefs[2], coefs[1]]
+        roots = np.roots(p=derivative)
+        root = roots[0]
+        if root > min(window["wrist_state"]) and root < max(window["wrist_state"]):
+            if window["avg_residual"] < avg_resd:
+                avg_resd = window["avg_residual"]
+                branch_candidate_idx = window_idx
+                branch_candidate = window
+
+        # if not window["branch_candidate"]:
         #     continue
 
-        window = find_parabola_height_and_width(window=window, verbose=False)
-        window = filter_parabola_by_max_diameter(window=window, max_diameter=0.0508)
-        if not window["branch_candidate"]:
-            continue
+        # filtered_window_data.update({window_idx: window})
 
-        filtered_window_data.update({window_idx: window})
-
-    # pp.pprint(filtered_window_data)
+    if branch_candidate is not None:
+        filtered_window_data.update({branch_candidate_idx: branch_candidate})
 
     return filtered_window_data
 
@@ -362,15 +387,17 @@ def _error_result(window_id, start_time, window_size):
         "ts": None,
         "ts_zeroed": None,
         "data": None,
+        "data_min": None,
         "coefficients": None,
         "r2": None,
         "ts_min": None,
-        "fit_min": None,
+        "x_min": None,
+        "y_min": None,
         "t_fit": None,
         "y_fit": None,
-        'height': None,
-        'width': None,
-        'd_theta': None,
+        "height": None,
+        "width": None,
+        # 'd_theta': None,
         "inlier_mask": None,
         "avg_residual": None,
         "tof_arm_radius": None,
@@ -434,8 +461,8 @@ def get_branch_center_time_and_distance(
     filter_far_plane: float,
     sensor_name: str,
     debug_plot: bool = False,
-    save_plot: bool = False,
-    save_plot_path: str = None,
+    save_fig: bool = False,
+    save_fig_path: str = None,
     window_size: float = 0.75,
     window_step_size: float = 0.25,
     window_overlap_ratio: float = 1 / 3,
@@ -450,23 +477,16 @@ def get_branch_center_time_and_distance(
     3. Fit ransac to the distance vs. joint state
     """
     best_window = None
+    windowed_data = None
+    filtered_window_data = None
     try:
         raw_ts = df_dict[f"{sensor_name}_raw"][f"{sensor_name}_raw_ts"]
         raw_data = df_dict[f"{sensor_name}_raw"][f"{sensor_name}_raw_data"]
         maf_ts = df_dict[f"{sensor_name}_filtered"][f"{sensor_name}_filtered_ts"]
         maf_data = df_dict[f"{sensor_name}_filtered"][f"{sensor_name}_filtered_data"]
 
-        ####################################################################################
-        # # TODO: DELETE FOR LIVE RUN
-        # sliced_ts = maf_ts[:len(maf_ts)//3]
-        # sliced_ts = sliced_ts[len(sliced_ts)//3:]
-        # sliced_data = maf_data[:len(maf_data)//3]
-        # sliced_data = sliced_data[len(sliced_data)//3:]
-
         fpf_data = far_plane_filter(filter_far_plane=filter_far_plane, ts=maf_ts, data=maf_data)
-        # fpf_data = far_plane_filter(filter_far_plane=filter_far_plane, ts=sliced_ts, data=sliced_data)
 
-        ###################################################################################
         if fpf_data is None:
             if node is not None:
                 node.error(f"{sensor_name}: Failed at fpf_filter()")
@@ -493,9 +513,7 @@ def get_branch_center_time_and_distance(
             node=node,
         )
 
-        # node.debug(f"{windowed_data}")
-
-        filtered_window_data = filter_parabolas(windowed_data=windowed_data)
+        filtered_window_data = filter_parabolas(windowed_data=windowed_data, node=node)
         if not filtered_window_data:
             if node is not None:
                 node.error(f"{sensor_name}: Failed at filter_parabolas()")
@@ -503,48 +521,100 @@ def get_branch_center_time_and_distance(
                 print(f"{sensor_name}: Failed at filter_parabolas()")
             return None
 
-        avg_residual_start = 0.0
+        avg_residual_start = np.inf
         for window in filtered_window_data.values():
-            if window["avg_residual"] > avg_residual_start:
+            if window["avg_residual"] < avg_residual_start:
                 best_window = window
                 avg_residual_start = window["avg_residual"]
-            # if node is not N
-            # print(best_window)
 
-        # grouped_window_data = group_overlapping_parabolas(window_data=filtered_window_data)
-        # if not grouped_window_data:
-        #     if node is not None:
-        #         node.warn(f"{sensor_name}: Failed at group_overlapping_parabolas()")
-        #     else:
-        #         print(f"{sensor_name}: Failed at group_overlapping_parabolas()")
-        #     return None
+        # Publish windowed results # TODO: make windowing a Behavior
+        if node is not None:
+            from final_approach_controller_msgs.msg import WindowedData
 
-        # refit_data = {}
-        # for group_id, group in grouped_window_data.items():
-        #     refit_data.update({group_id: refit_by_group(data=fpf_data, group=group, node=node)})
+            msg_windowed_data = WindowedData()
+            for window in windowed_data.values():
+                msg_windowed_data.window_id = window["window_id"]
+                msg_windowed_data.start_ts = window["start_ts"]
+                msg_windowed_data.window_size = window["window_size"]
 
-        # pp.pprint(filtered_window_data)
+                if window.get("height") is None:
+                    height = 0.0
+                    width = 0.0
+                else:
+                    height = window["height"]
+                    width = window["width"]
+
+                msg_windowed_data.ts = list(window["ts"])
+                msg_windowed_data.ts_zeroed = list(window["ts_zeroed"])
+                msg_windowed_data.wrist_state = list(window["wrist_state"])
+                msg_windowed_data.data = list(window["data"])
+                msg_windowed_data.fit_coefficients = list(window["coefficients"])
+                msg_windowed_data.x_fit = list(window["x_fit"])
+                msg_windowed_data.y_fit = list(window["y_fit"])
+                msg_windowed_data.inlier_mask = [bool(x) for x in window["inlier_mask"]]
+                msg_windowed_data.r2 = window["r2"]
+                msg_windowed_data.avg_residual = window["avg_residual"]
+                msg_windowed_data.ts_min = window["ts_min"]
+                msg_windowed_data.x_min = window["x_min"]
+                msg_windowed_data.y_min = window["y_min"]
+                msg_windowed_data.height = height
+                msg_windowed_data.width = width
+                msg_windowed_data.tof_arm_radius = window["tof_arm_radius"]
+                msg_windowed_data.angular_rotation_speed = window["rotation_speed"]
+
+                node._pub_windowed_data.publish(msg=msg_windowed_data)
+
     finally:
         if debug_plot:
-            fig = dplot.plot_maf_vs_joint_state(
-                data=fpf_data,
-                sensor_name=sensor_name,
-            )
-            for window in windowed_data.values():
-                fig = dplot.plot_ransac_tof_vs_joint_state(
-                    data=window, sensor_name=sensor_name, description="all_windows", fig=fig
-                )
-            fig.show()
 
-            fig = dplot.plot_maf_vs_joint_state(
-                data=fpf_data,
-                sensor_name=sensor_name,
-            )
-            for window_id, window in filtered_window_data.items():
-                fig = dplot.plot_ransac_tof_vs_joint_state(
-                    data=window, sensor_name=sensor_name, description="filtered_windows", fig=fig
+            if windowed_data is not None:
+                # fig = dplot.plot_raw_vs_joint_state(
+
+                # )
+                fig = dplot.plot_maf_vs_joint_state(
+                    data=fpf_data,
+                    sensor_name=sensor_name,
                 )
-            fig.show()
+                for window in windowed_data.values():
+                    if window["ts"] is None:
+                        continue
+                    fig = dplot.plot_ransac_tof_vs_joint_state(
+                        data=window,
+                        sensor_name=sensor_name,
+                        description="all_windows",
+                        fig=fig,
+                        save_fig=False,
+                        save_fig_path=save_fig_path,
+                    )
+                # fig.show()
+                if save_fig:
+                    pio.write_html(
+                        fig=fig, file=os.path.join(save_fig_path, f"{sensor_name}_all_windows.html"), auto_open=True
+                    )
+
+            if filtered_window_data is not None:
+                fig = dplot.plot_maf_vs_joint_state(
+                    data=fpf_data,
+                    sensor_name=sensor_name,
+                )
+                for window_id, window in filtered_window_data.items():
+                    if window["ts"] is None:
+                        continue
+                    fig = dplot.plot_ransac_tof_vs_joint_state(
+                        data=window,
+                        sensor_name=sensor_name,
+                        description="filtered_windows",
+                        fig=fig,
+                        save_fig=False,
+                        save_fig_path=save_fig_path,
+                    )
+                # fig.show()
+                if save_fig:
+                    pio.write_html(
+                        fig=fig,
+                        file=os.path.join(save_fig_path, f"{sensor_name}_filtered_windows.html"),
+                        auto_open=True,
+                    )
 
             if best_window is not None:
                 fig = dplot.plot_maf_vs_joint_state(
@@ -552,41 +622,20 @@ def get_branch_center_time_and_distance(
                     sensor_name=sensor_name,
                 )
                 fig = dplot.plot_ransac_tof_vs_joint_state(
-                    data=best_window, sensor_name=sensor_name, description="best_window", fig=fig
+                    data=best_window,
+                    sensor_name=sensor_name,
+                    description="best_window",
+                    fig=fig,
+                    save_fig=False,
+                    save_fig_path=save_fig_path,
                 )
-                fig.show()
+                # fig.show()
+                if save_fig:
+                    pio.write_html(
+                        fig=fig, file=os.path.join(save_fig_path, f"{sensor_name}_best_window.html"), auto_open=True
+                    )
 
-        # # final fit parabola
-        # fig = dplot.plot_ransac_quadratic_fit(
-        #     zeroed_ts=fpf_data["ts_zeroed"],
-        #     fp_filter_data=fpf_data["data"],
-        #     raw_ts=raw_ts,
-        #     raw_data=raw_data,
-        #     # mav_filter_ts=mav_filter_ts,
-        #     # mav_filter_data=mav_filter_data,
-        # )
-        # # for window_id, window in refit_data.items():
-        # #     fig = dplot.plot_ransac_quadratic_fit(t_fit=window["t_fit"], y_fit=window["y_fit"], fig=fig)
-        # if save_plot:
-        #     pio.write_image(fig=fig, file=os.path.join(save_plot_path, f"{sensor_name}_refit.svg"), format="svg")
-        #     pio.write_html(fig=fig, file=os.path.join(save_plot_path, f"{sensor_name}_refit.html"), auto_open=True)
+    t_min = best_window["ts_min"]
+    y_min = best_window["y_min"]
 
-    # # Get the lowest residual fit
-    # lowest_residual = np.inf
-    # lowest_residual_idx = None
-    # for refit_idx, refit in refit_data.items():
-    #     if refit["avg_residual"] is not None:
-    #         if refit["avg_residual"] < lowest_residual:
-    #             lowest_residual = refit["avg_residual"]
-    #             lowest_residual_idx = refit_idx
-
-    # if lowest_residual == np.inf or lowest_residual_idx is None:
-    #     return None
-    # else:
-    #     ts_min = refit_data[lowest_residual_idx]["ts_min"]
-    #     fit_min = refit_data[lowest_residual_idx]["fit_min"]
-
-    ts_min = best_window["ts_min"]
-    fit_min = best_window["fit_min"]
-
-    return ts_min, fit_min
+    return t_min, y_min

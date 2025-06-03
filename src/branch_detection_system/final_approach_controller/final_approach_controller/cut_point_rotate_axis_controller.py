@@ -108,7 +108,7 @@ class CutPointRotateAxisController(TFNode):
         self.controller_running = False
 
         #
-        self.tof_ranging_max = 1.2  # TODO: Get from params
+        self.tof_ranging_max = 1.6  # TODO: Get from params
         self.tof_name = self._param_tof_type
 
         return

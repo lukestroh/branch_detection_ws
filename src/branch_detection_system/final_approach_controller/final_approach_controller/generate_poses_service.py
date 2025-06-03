@@ -11,12 +11,13 @@ from rclpy.parameter import Parameter
 
 from final_approach_controller.tf_node import TFNode
 
-from final_approach_controller_msgs.action import GeneratePoses, GenerateCylindricalPoses
+from final_approach_controller_msgs.action import GeneratePoses, GenerateCylindricalPoses, GenerateRpyProjectedPoses
 from final_approach_controller_msgs.msg import GeneratedPoses
-from geometry_msgs.msg import Pose, PoseStamped, Point, TransformStamped
+from geometry_msgs.msg import Pose, PoseStamped, Point, Quaternion, TransformStamped
 from std_srvs.srv import Trigger
 
 from copy import deepcopy
+import itertools
 import numpy as np
 from scipy.spatial.transform import Rotation
 import secrets
@@ -43,7 +44,7 @@ class GeneratePosesServiceNode(TFNode):
         self._reentrant_cb_group = ReentrantCallbackGroup()
 
         # Action servers
-        self._action_srv_generate_uniform_poses = ActionServer(
+        self._action_server_generate_uniform_poses = ActionServer(
             node=self,
             action_name="/generate_uniform_poses",
             action_type=GeneratePoses,
@@ -60,6 +61,16 @@ class GeneratePosesServiceNode(TFNode):
             goal_callback=self._action_goal_cb_generate_uniform_cylindrical_poses,
             cancel_callback=self._action_cancel_cb_generate_uniform_cylindrical_poses,
             execute_callback=self._action_execute_cb_generate_uniform_cylindrical_poses,
+            callback_group=self._reentrant_cb_group,
+        )
+
+        self._action_server_generate_uniform_rpy_projected_poses = ActionServer(
+            node=self,
+            action_name="/generate_rpy_projected_poses",
+            action_type=GenerateRpyProjectedPoses,
+            goal_callback=self._action_goal_cb_generate_rpy_projected_poses,
+            cancel_callback=self._action_cancel_cb_generate_rpy_projected_poses,
+            execute_callback=self._action_execute_cb_generate_rpy_projected_poses,
             callback_group=self._reentrant_cb_group,
         )
 
@@ -234,10 +245,59 @@ class GeneratePosesServiceNode(TFNode):
         generate_poses_result.success = True
         return generate_poses_result
 
+    def _action_goal_cb_generate_rpy_projected_poses(self, goal_handle: ServerGoalHandle):
+        self.info("Received goal request")
+        return GoalResponse.ACCEPT
+
+    def _action_cancel_cb_generate_rpy_projected_poses(self, goal_handle: ServerGoalHandle):
+        self.info("Received cancel request")
+        goal_handle.canceled()
+        return CancelResponse.ACCEPT
+
+    def _action_execute_cb_generate_rpy_projected_poses(self, goal_handle: ServerGoalHandle):
+        self.start_pose = Pose()
+        generate_poses_goal: GenerateRpyProjectedPoses.Goal = goal_handle.request
+        generate_poses_result = GenerateRpyProjectedPoses.Result()
+
+        self.tf_start__tool0_to_base = self.lookup_transform(
+            source_frame=f"{self._param_robot_eef_part}__tool0",
+            target_frame=f"{self._param_robot_base_part}__base",
+            time=self.get_clock().now(),
+            sync=True,
+            as_matrix=True,
+        )
+
+        poses = self.generate_rpy_projected_poses(generate_poses_goal=generate_poses_goal)
+
+        for i, pose in enumerate(poses):
+            pose_xyz = [pose.position.x, pose.position.y, pose.position.z, 1]
+            pose_quat = [pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w]
+            pose_mat = Rotation.from_quat(pose_quat).as_matrix()
+
+            world_pose_xyz = self.tf_start__tool0_to_base @ pose_xyz
+            world_pose_orientation_mat = self.tf_start__tool0_to_base[:3, :3] @ pose_mat
+            world_pose_quat = Rotation.from_matrix(world_pose_orientation_mat).as_quat()
+
+            poses[i].position.x = world_pose_xyz[0]
+            poses[i].position.y = world_pose_xyz[1]
+            poses[i].position.z = world_pose_xyz[2]
+            poses[i].orientation.x = world_pose_quat[0]
+            poses[i].orientation.y = world_pose_quat[1]
+            poses[i].orientation.z = world_pose_quat[2]
+            poses[i].orientation.w = world_pose_quat[3]
+
+        generate_poses_result.poses = poses
+        generated_poses_msg = GeneratedPoses()
+        generated_poses_msg.poses = poses
+        self._pub_generated_poses.publish(generated_poses_msg)
+
+        goal_handle.succeed()
+        generate_poses_result.success = True
+        return generate_poses_result
+
     # ===============================
     #        Helper functions
     # ===============================
-
     def generate_uniform_cylindrical_position_poses(self, generate_poses_goal: GenerateCylindricalPoses.Goal):
         poses = []
 
@@ -291,14 +351,44 @@ class GeneratePosesServiceNode(TFNode):
 
         return poses
 
-    def generate_uniform_orientation_poses(self, start_pose: Pose | PoseStamped, ranges: tuple[float], num_poses: int):
-        """Orientations pointing at the same 'point' as the start_pose.
-        1. Translate to point
-        2. Rotate
-        3. Translate back to point
+    def generate_rpy_projected_poses(self, generate_poses_goal: GenerateRpyProjectedPoses.Goal):
+        poses = []
+        roll_range = generate_poses_goal.roll_range
+        pitch_range = generate_poses_goal.pitch_range
+        yaw_range = generate_poses_goal.yaw_range
+        z_range = generate_poses_goal.z_range
 
-        Set up for multiple radii?
-        """
+        rolls = np.linspace(*roll_range, generate_poses_goal.num_roll_poses)
+        pitches = np.linspace(*pitch_range, generate_poses_goal.num_pitch_poses)
+        yaws = np.linspace(*yaw_range, generate_poses_goal.num_yaw_poses)
+        zs = np.linspace(*zs, generate_poses_goal.num_z_poses)
+
+        rpy_grid = list(itertools.product(rolls, pitches, yaws))
+        rotations = Rotation.from_euler("zyx", [(y, p, r) for r, p, y in rpy_grid])
+        rot_quats = rotations.as_quat()
+
+        start_points = np.zeros(shape=(len(zs), 3))
+        start_points[:, 2] = zs
+
+        rotated_points = []
+        for point in start_points:
+            rotated_points.extend(rotations.apply(point))
+
+        rot_quats = rot_quats.repeat(zs.shape, axis=0)
+
+        for i in range(rotated_points.shape[0]):
+            poses.append(
+                Pose(
+                    position=Point(x=rotated_points[i][0], y=rotated_points[i][2], z=rotated_points[i][3]),
+                    orientation=Quaternion(x=rot_quats[i][0], y=rot_quats[i][1], z=rot_quats[i][2], w=rot_quats[i][3]),
+                )
+            )
+
+        return rotated_points
+
+
+"""
+    def generate_uniform_orientation_poses(self, start_pose: Pose | PoseStamped, ranges: tuple[float], num_poses: int):
         poses = []
 
         start_position = [start_pose.position.x, start_pose.position.x, start_pose.position.z]
@@ -352,6 +442,7 @@ class GeneratePosesServiceNode(TFNode):
             poses.append(pose)
 
         return poses
+"""
 
 
 def main():

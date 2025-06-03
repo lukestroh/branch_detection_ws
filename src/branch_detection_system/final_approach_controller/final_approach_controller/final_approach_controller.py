@@ -8,7 +8,7 @@ from rclpy.duration import Duration
 from rclpy.time import Time
 
 # from rclpy.node import Node
-
+from action_msgs.msg import GoalStatus
 from final_approach_controller.tf_node import TFNode
 
 from final_approach_controller_msgs.action import RunFinalApproach
@@ -29,10 +29,6 @@ import time
 class FinalApproachControllerNode(TFNode):
     def __init__(self):
         super().__init__(node_name="final_approach_controller_node")
-        self.info = lambda x: self.get_logger().info(f"{pp.pformat(x)}")
-        self.warn = lambda x: self.get_logger().warn(f"{pp.pformat(x)}")
-        self.error = lambda x: self.get_logger().error(f"{pp.pformat(x)}")
-
         # Callback group
         self.callback_group = ReentrantCallbackGroup()  # allows for subscriber to persist in service, action
         self._cb_group_servo_controller = MutuallyExclusiveCallbackGroup()
@@ -142,8 +138,9 @@ class FinalApproachControllerNode(TFNode):
         try:
             while self.controller_running:
                 if goal_handle.is_cancel_requested:
-                    goal_handle.canceled()
-                    self.info("FinalApproachControllerAction canceled")
+                    if goal_handle.status == GoalStatus.STATUS_EXECUTING:
+                        goal_handle.canceled()
+                    self.info("FinalApproachControllerAction aborted")
                     result.success = False
                     return result
                 if self.get_clock().now() - self.feedback_pub_prev_time >= Duration(seconds=1):
@@ -157,14 +154,14 @@ class FinalApproachControllerNode(TFNode):
 
                 # For safety purposes, set timeout
                 if self.get_clock().now() - self.start_servo_time > Duration(seconds=5):
-                    goal_handle.canceled()
+                    if goal_handle.status == GoalStatus.STATUS_EXECUTING:
+                        goal_handle.abort()
                     result.success = False
                     self.controller_running = False
                     self.error("FinalApproachControllerAction timed out.")
                     return result
 
             result.success = True
-
             goal_handle.succeed()
             return result
 
@@ -228,29 +225,6 @@ class FinalApproachControllerNode(TFNode):
     def _timer_cb_run_controller(self):
         dist, theta = self.get_cut_point_info()
         dist_cut_point_to_branch = dist - self.tf_cut_point_to_tof0[2, 3]
-
-        # if (
-        #     np.isclose(dist_cut_point_to_branch, 0, atol=self._dist_cut_point_to_branch_threshold)
-        #     or (dist_cut_point_to_branch) < 0
-        #     or self.d_tof0 < self._dist_cut_point_to_branch_threshold
-        #     or self.d_tof1 < self._dist_cut_point_to_branch_threshold
-        # ):
-        #     self.publish_zero_twist()
-
-        #     self.info(f"Reached terminating point at dist:{dist}, theta: {theta}")
-        #     self._timer_run_controller.cancel()
-        #     self.controller_running = False
-        #     return
-
-        # if servo_frame == "cart__base":
-        #     tf_cut_point_to_world = self.lookup_transform(
-        #         source_frame="mock_pruner__tool0",
-        #         target_frame="cart__base",
-        #         time=self.get_clock().now(),
-        #         sync=True,
-        #         as_matrix=True,
-        #     )
-        #     twist = self.get_twist(tf_world_to_eef=tf_cut_point_to_world, dist=dist)
 
         if dist - self.tf_cut_point_to_tof0[2, 3] <= 0:
             return np.zeros((6, 1))
