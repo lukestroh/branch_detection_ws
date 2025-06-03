@@ -15,11 +15,14 @@ find_package(rosidl_default_generators REQUIRED)
 rosidl_generate_interfaces(
   ${PROJECT_NAME}
   "msg/GeneratedPoses.msg"
+  "msg/TimestampTofMin.msg"
   "msg/ToFBranchFit.msg"
   "msg/ToFBranchFitStamped.msg"
+  "msg/WindowedData.msg"
   "srv/StartFinalApproach.srv"
   "action/GeneratePoses.action"
   "action/GenerateCylindricalPoses.action"
+  "action/GenerateRpyProjectedPoses.action"
   "action/RunCutPointRotateAxis.action"
   "action/RunFinalApproach.action"
   "action/RunFindBranchRollWrist.action"

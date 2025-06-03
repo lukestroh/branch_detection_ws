@@ -1,0 +1,12 @@
+int64  num_roll_poses
+int64  num_pitch_poses
+int64  num_yaw_poses
+int64 num_z_poses
+float64[] roll_range
+float64[] pitch_range
+float64[] yaw_range
+float64[] z_range
+---
+bool success
+geometry_msgs/Pose[] poses
+---
