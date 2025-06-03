@@ -39,8 +39,10 @@ def main():
         min_samples=10,
         max_trials=20,
         residual_threshold=0.008,
-        window_overlap_ratio=9/10,
+        window_overlap_ratio=9 / 10,
         window_size=2.0,
+        # save_fig=True,
+        # save_fig_path=
     )
 
     # pp.pprint(tof0_time_and_dist)

@@ -11,7 +11,7 @@ import plotly.subplots
 
 from branch_detection_system_analysis.bag_reader.bag_reader import BagReader
 from branch_detection_system_analysis.bag_reader.ros_constants import TransitionStates
-from final_approach_controller_msgs.msg import GeneratedPoses
+from final_approach_controller_msgs.msg import GeneratedPoses, TimestampTofMin
 from geometry_msgs.msg import WrenchStamped
 from lifecycle_msgs.msg import TransitionEvent, State
 from ism330dhcx_msgs.msg import Ism330dhcxStamped
@@ -27,7 +27,7 @@ import pprint as pp
 
 import rclpy.logging
 
-logger = rclpy.logging.get_logger("plot")
+logger = rclpy.logging.get_logger("warehouser")
 
 
 ws_path = os.path.abspath(os.path.join("/home/luke/branch_detection_ws"))
@@ -165,6 +165,25 @@ def get_controller_success(br: BagReader, controller_name: str, topic: str) -> d
         controller_success = []
     return {"controller_success": controller_success}
 
+"""
+'/fbrw_controller/ts_tof_min',
+
+"""
+def get_ts_tof_min(br: BagReader) -> dict:
+    try:
+        _ts_tof_min = list(br.query(topic_name='/fbrw_controller/ts_tof_min'))
+        ts_ts_tof_min = [d[0] for d in _ts_tof_min]
+        ts_tof_min: list[TimestampTofMin] = [d[1] for d in _ts_tof_min]
+        sensor_id, ts_min, data_min = zip(*map(lambda t: [t.sensor_id, t.timestamp, t.data], ts_tof_min))
+    except (KeyError, ValueError):
+        ts_ts_tof_min = sensor_id = ts_min = data_min = []
+    return {
+        "msg_stamp": ts_ts_tof_min,
+        "sensor_id": sensor_id,
+        "ts_min": ts_min,
+        "data_min": data_min
+    }
+
 
 def get_wrench_data(br: BagReader) -> dict:
     # FT-wrench data
@@ -299,6 +318,7 @@ def get_dfs_from_bag_reader(br: BagReader) -> dict:
     start_poses_data = get_generated_start_poses_data(br=br)
     fbwr_controller_localization_success_data = get_controller_success(br=br, controller_name="fbrw", topic="alignment")
     fbwr_controller_alignment_success_data = get_controller_success(br=br, controller_name="fbrw", topic="localization")
+    ts_tof_min_data = get_ts_tof_min(br=br)
     fpc_transition_events_data = get_controller_events(br=br, controller_name="forward_position_controller")
     sjtc_transition_events_data = get_controller_events(br=br, controller_name="scaled_joint_trajectory_controller")
 
@@ -313,8 +333,9 @@ def get_dfs_from_bag_reader(br: BagReader) -> dict:
         "tf": tf_data,
         "tf_static": tf_static_data,
         "start_poses": start_poses_data,
-        "fbwr_controller_localization_success": fbwr_controller_localization_success_data,
-        "fbwr_controller_alignment_success": fbwr_controller_alignment_success_data,
+        "fbrw_controller_localization_success": fbwr_controller_localization_success_data,
+        "fbrw_controller_alignment_success": fbwr_controller_alignment_success_data,
+        "ts_tof_min": ts_tof_min_data,
         "fpc_transition_events": fpc_transition_events_data,
         "sjtc_transition_events": sjtc_transition_events_data,
     }
@@ -386,14 +407,25 @@ def warehouse_df(df: pd.DataFrame, topic_name: str, db_name: str):
     return
 
 
-def is_already_warehoused(db_name: str) -> bool:
-    warehouse_parent = Path(Path(db_name).stem).stem
+def is_already_warehoused(compressed_db_name: str) -> bool:
+    warehouse_parent = Path(Path(compressed_db_name).stem).stem
     p = os.path.join(warehouse_path, warehouse_parent)
     if os.path.exists(p):
         logger.warn(f"Warehouse {p} already exists, skipping file.")
         return True
     else:
         return False
+    
+
+def get_metadata_and_debug_files(compressed_db_name: str) -> list[str]:
+    warehouse_parent = Path(Path(compressed_db_name).stem).stem
+    p = os.path.join(warehouse_path, warehouse_parent)
+    glob_ignored_files = ('.zstd', '.db3')
+    all_files = glob.glob(p+'/*')
+
+    files = [file for file in all_files if not file.endswith(glob_ignored_files)]
+
+    return files
 
 
 def main():
@@ -409,14 +441,14 @@ def main():
     dbs = get_dbs_by_loc(location="arm_farm")
     # sys.exit()
 
-    trial_file_name = "bds__arm_farm__20250519_15-27-56"
+    # trial_file_name = "bds__arm_farm__20250519_15-27-56"
 
     # dbs = pb.get_files_by_trial_name(warehouse_path=warehouse_path, name=trial_file_name)
     # print(dbs)
     for db_name in dbs:
         # if trial_file_name not in db_name:
         #     continue
-        if is_already_warehoused(db_name):
+        if is_already_warehoused(compressed_db_name=db_name):
             continue
         else:
             try:

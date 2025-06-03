@@ -77,9 +77,20 @@ def plot_branch_projection(
             color="red",
             anchor="tail",
         )
-        fig.update_layout(title=dict(text="Projected branch detection points"), scene=dict(aspectmode="data"))
+
+        eye_offset = np.array([-1, 2, 2])
+        eye_pos = branch_center_pos - eye_offset
+        fig.update_layout(
+            title=dict(text="Projected branch detection points"),
+            scene=dict(
+                aspectmode="data",
+                camera=dict(
+                    eye=dict(x=eye_pos[0], y=eye_pos[1], z=eye_pos[2]),
+                ),
+            ),
+        )
         if save_fig:
-            pio.write_image(fig=fig, file=os.path.join(save_fig_dir, "projections.svg"), format="svg")
+            # pio.write_image(fig=fig, file=os.path.join(save_fig_dir, "projections.svg"), format="svg")
             pio.write_html(fig=fig, file=os.path.join(save_fig_dir, "projections.html"), auto_open=True)
 
     return fig
@@ -91,46 +102,94 @@ def plot_maf_vs_joint_state(
     if fig is None:
         fig = go.Figure()
 
+    if data is None:
+        return fig
 
     fig.add_trace(
         go.Scatter(
             x=data["wrist_state"],
             y=data["data"],
             mode="lines",
+            # customdata=np.column_stack((data['ts'])),
             text=data["ts"],
-            hovertemplate="theta: %{x}<br>d: %{y}<br>time: %{text}<br>r2: %{r2}<extra></extra>",
+            hovertemplate="theta: %{x}<br>d: %{y}<br>time: %{text}<br><extra></extra>",
         )
     )
+
+    fig.update_xaxes(title="wrist3 position (rad)")
+    fig.update_yaxes(title="Distance (m)")
+    fig.update_layout(title=dict(text=f"{sensor_name} filtered and windowed fits vs. Wrist 3 joint state"))
 
     return fig
 
 
-def plot_ransac_tof_vs_joint_state(
-    data: dict, sensor_name: str, fig: go.Figure = None, save_fig: bool = False, save_path: str = ""
-):
-    # if data['']
+def plot_raw_vs_joint_state(data: dict, sensor_name: str, fig: go.Figure) -> go.Figure:
     if fig is None:
         fig = go.Figure()
 
-    # print(data)
-    
+    if data is None:
+        return fig
+    return
+
+
+def plot_ransac_tof_vs_joint_state(
+    data: dict,
+    sensor_name: str,
+    fig: go.Figure = None,
+    description: str = "",
+    save_fig: bool = False,
+    save_fig_path: str = "",
+):
+    if fig is None:
+        fig = go.Figure()
+
+    try:
+        height = data["height"]
+        width = data["width"]
+    except KeyError:
+        height = np.nan
+        width = np.nan
 
     fig.add_trace(
         go.Scatter(
             x=data["wrist_state"],
             y=data["y_fit"],
             name=sensor_name,
-            text=data["ts"],
-            hovertemplate="theta: %{x}<br>d: %{y}<br>time: %{text}<extra></extra>",
+            customdata=np.column_stack(
+                (
+                    np.full(len(data["ts"]), data["window_id"]),
+                    data["ts"],
+                    data["ts_zeroed"],
+                    np.full(len(data["ts"]), data["coefficients"][2]),
+                    np.full(len(data["ts"]), data["coefficients"][1]),
+                    np.full(len(data["ts"]), data["coefficients"][0]),
+                    np.full(len(data["ts"]), data["r2"]),
+                    np.full(len(data["ts"]), data["avg_residual"]),
+                    np.full(len(data["ts"]), height),
+                    np.full(len(data["ts"]), width),
+                )
+            ),
+            hovertemplate=(
+                "id: %{customdata[0]}<br>"
+                "theta: %{x}<br>"
+                "d: %{y}<br>"
+                "time: %{customdata[1]}<br>"
+                "time_zeroed: %{customdata[2]}<br>"
+                "y = %{customdata[3]}x<sup>2</sup> + %{customdata[4]}x + %{customdata[5]}<br>"
+                "r<sup>2</sup>: %{customdata[6]}<br>"
+                "avg_res: %{customdata[7]}<br>"
+                "height: %{customdata[8]}<br>"
+                "width: %{customdata[9]}<br>"
+                "<extra></extra>"
+            ),
         )
     )
 
-    fig.update_xaxes(title="wrist3 position (rad)")
-    fig.update_yaxes(title="Distance (m)")
-    fig.update_layout(title=dict(text="ToF raw, filtered, and windowed fits vs. Wrist 3 joint state"))
+    if description:
+        fig.update_layout(title=dict(text=f"{sensor_name} {description} vs. Wrist 3 joint state"))
 
     if save_fig:
-        pio.write_html(fig=fig, file=save_path)
+        pio.write_html(fig=fig, file=os.path.join(save_fig_path, f"{sensor_name}_{description}.html"), auto_open=True)
 
     return fig
 

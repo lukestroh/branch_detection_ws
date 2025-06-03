@@ -35,13 +35,19 @@ def plot_vector(
     return fig
 
 
-def plot_3d_coordinate_frame(fig: go.Figure, position: np.ndarray, orientation: np.ndarray, name: str = "origin"):
-    # if name in self.coordinate_frames:
-    #     raise ValueError(f"Coordinate frame with name '{name}' already exists.")
-    # else:
-    #     self.coordinate_frames = [name]
+def plot_3d_coordinate_frame(fig: go.Figure, position: np.ndarray, orientation: np.ndarray, axis_length: float = 0.05, cone_scale: float = 0.25, name: str = "", parent_frame: str = ""):
+    """
+    Plots a 
+    """
     zoom_scale = 0.05
     cone_scale = 0.25
+    colors = {'x': 'red', 'y': 'green', 'z': 'blue'}
+    unit_vectors = {
+        'x': np.array([1,0,0]),
+        'y': np.array([0,1,0]),
+        'z': np.array([0,0,1])
+    }
+    """
     axes = {
         "x-axis": {
             "x": np.array([position[0], position[0] + zoom_scale]),
@@ -73,6 +79,7 @@ def plot_3d_coordinate_frame(fig: go.Figure, position: np.ndarray, orientation: 
     }
 
     for axis, val in axes.items():
+
         fig.add_trace(
             go.Scatter3d(
                 x=axes[axis]["x"],
@@ -107,6 +114,46 @@ def plot_3d_coordinate_frame(fig: go.Figure, position: np.ndarray, orientation: 
                 # hovertemplate=None
             )
         )
+    """
+
+    for axis_name, unit_vec in unit_vectors.items():
+        direction = orientation @ unit_vec
+        pos_end = position + axis_length * direction
+        
+        fig.add_trace(
+            go.Scatter3d(
+                x=[position[0], pos_end[0]],
+                y=[position[1], pos_end[1]],
+                z=[position[2], pos_end[2]],
+                mode='lines',
+                line=dict(width=3, color=colors[axis_name]),
+                name=f"{name}__{axis_name}-axis",
+                legendgroup=f"{name}_{axis_name}",
+                legendgrouptitle=dict(text=name)
+            )
+        )
+
+        fig.add_trace(
+            go.Cone(
+                x=[pos_end[0]],
+                y=[pos_end[1]],
+                z=[pos_end[2]],
+                u=[cone_scale * direction[0]],
+                v=[cone_scale * direction[1]],
+                w=[cone_scale * direction[2]],
+                anchor="tail",
+                sizemode="scaled",
+                sizeref=0.1 * cone_scale,
+                showscale=False,
+                colorscale=[[0, colors[axis_name]], [1, colors[axis_name]]],
+                name=f"{name}__{axis_name}-axis",
+                legendgroup=f"{name}_{axis_name}",
+                legendgrouptitle=dict(text=name),
+                showlegend=False
+            )
+        )       
+
+    
     return fig
 
 
