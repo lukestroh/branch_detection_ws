@@ -9,20 +9,20 @@ from rclpy.node import Node
 from rclpy.parameter import Parameter
 from rclpy.time import Time
 
+from branch_detection_system_bringup.logger_node import LoggerNode
+
 from ros2bag_msgs.srv import StartRecord, StopRecord
 from std_msgs.msg import String
 
 import datetime as dt
+import signal
 import subprocess
 import os
 
 
-class RecordBagNode(Node):
+class RecordBagNode(LoggerNode):
     def __init__(self):
         super().__init__(node_name="record_bag_node")
-        self.info = lambda x: self.get_logger().info(f"{x}")
-        self.warn = lambda x: self.get_logger().warn(f"{x}")
-        self.error = lambda x: self.get_logger().error(f"{x}")
 
         # Parameters
         self._param_record_bag = (
@@ -61,7 +61,7 @@ class RecordBagNode(Node):
         # self.debug_timer = self.create_timer(timer_period_sec=1.0, callback=self.debug_timer_cb)
 
         # Subprocesses
-        self.bag_process: subprocess.Popen
+        self.bag_process: subprocess.Popen = None
 
         return
 
@@ -115,6 +115,7 @@ class RecordBagNode(Node):
                 ],
                 stderr=subprocess.PIPE,
                 stdout=subprocess.PIPE,
+                preexec_fn=os.setsid
             )
             response.success = True
         else:
@@ -122,13 +123,24 @@ class RecordBagNode(Node):
         return response
 
     def _service_srv_cb_stop_bag_record(self, request: StopRecord.Request, response: StopRecord.Response):
-        self.bag_process.terminate()
-        terminate_success = self.bag_process.wait()
-
-        if terminate_success == 0:
-            response.success = True
+        if self.bag_process is not None:
+            # self.bag_process.send_signal(sig=signal.SIGINT)
+            os.killpg(os.getpgid(self.bag_process.pid), signal.SIGINT)
+            try:
+                ret_code = self.bag_process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                self.warn("ros2 bag did not exit in time, forcefully terminating...")
+                # self.bag_process.terminate()
+                os.killpg(os.getpgid(self.bag_process.pid), signal.SIGTERM)
+                ret_code = self.bag_process.wait()
+                
+            if ret_code == 0:
+                response.success = True
+            else:
+                response.success = False
         else:
             response.success = False
+            
         return response
 
 
