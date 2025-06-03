@@ -17,11 +17,13 @@ from rclpy.parameter import Parameter
 
 from tof_msgs.msg import TofStamped
 from geometry_msgs.msg import Pose
+from visualization_msgs.msg import Marker
 
 from behavior_trees_python.behaviors.cut_point_rotate_axis_behavior import CutPointRotateAxisControllerBehavior
 from behavior_trees_python.behaviors.final_approach_controller_behavior import FinalApproachControllerBehavior
 from behavior_trees_python.behaviors.find_branch_roll_wrist_behavior import FindBranchRollWristControllerBehavior
 from behavior_trees_python.behaviors.generate_poses_behavior import GeneratePosesBehavior
+from behavior_trees_python.behaviors.generate_rpy_projected_poses import GenerateRpyProjectedPosesBehavior
 from behavior_trees_python.behaviors.generate_uniform_cylindrical_poses_behavior import (
     GenerateUniformCylindricalPosesBehavior,
 )
@@ -39,14 +41,6 @@ class ResetTestTreeNode(Node):
         self.warn = lambda x: self.get_logger().warn(f"\n{x}")
         self.error = lambda x: self.get_logger().error(f"\n{x}")
         self.fatal = lambda x: self.get_logger().fatal(f"\n{x}")
-
-        # Thread locks
-        # self._bb_tof_data_lock = Lock()
-
-        # Parameters
-        # self._param_record_loc = (
-        #     self.declare_parameter(name="record_loc", value=Parameter.Type.STRING).get_parameter_value().string_value
-        # )
 
         # Blackboard setup
         self.bb = py_trees.blackboard.Client(name="ResetTreeBlackboard")
@@ -66,16 +60,12 @@ class ResetTestTreeNode(Node):
         self.snapshot_visitor = py_trees.visitors.SnapshotVisitor()
         self.tree.add_post_tick_handler(ft.partial(self.post_tick_handler, self.snapshot_visitor))
         self.tree.add_visitor(self.snapshot_visitor)
-
         self.last_tree_snapshot = None
 
         # Subscribers
         self._sub_tof_filtered = self.create_subscription(
             TofStamped, "/vl53l4cd/filtered", self._sub_cb_tof_filtered, 10
         )
-
-        # self._last_log_time = self.get_clock().now()
-
         return
 
     def _sub_cb_tof_filtered(self, msg: TofStamped):
@@ -123,6 +113,7 @@ class ResetTestTreeNode(Node):
         generate_uniform_cylindrical_poses_behavior = GenerateUniformCylindricalPosesBehavior(
             name="generate_uniform_cylindrical_poses_behavior"
         )
+        generate_rpy_projected_poses_behavior = GenerateRpyProjectedPosesBehavior(name="generate_rpy_projected_poses_behavior")
         iterate_poses_behavior = IteratePosesBehavior(name="iterate_poses_behavior")
         check_continue_experiment_behavior = CheckContinueExperimentBehavior(name="check_continue_experiment_behavior")
         reset_test_behavior = ResetTestBehavior(name="reset_test_behavior")
@@ -131,7 +122,7 @@ class ResetTestTreeNode(Node):
         start_bag_record_behavior = StartBagRecordBehavior(name="start_bag_record_behavior")
         stop_bag_record_behavior = StopBagRecordBehavior(name="stop_bag_record_behavior")
 
-        # Find branch roll wrist
+        
         find_branch_roll_wrist_behavior = FindBranchRollWristControllerBehavior(
             name="find_branch_roll_wrist_behavior",
         )
@@ -140,36 +131,24 @@ class ResetTestTreeNode(Node):
             child=find_branch_roll_wrist_behavior,
             num_failures=1,
         )
-        # find_branch_roll_wrist_blackboard = py_trees.decorators.StatusToBlackboard(
-        #     name='find_branch_roll_wrist_blackboard',
-        #     child=find_branch_roll_wrist_retry,
-        #     variable_name='find_branch_roll_wrist'
-        # )
-
         find_branch_selector = py_trees.composites.Selector(
             name="find_branch_controller_selector",
             memory=True,
         )
-
-        # Find branch selector
         find_branch_selector.add_children([find_branch_roll_wrist_retry])
-        # Align and approach sequence
         align_and_approach_sequence = py_trees.composites.Sequence(
             name="align_and_approach_sequence",
             memory=True,
             children=[cut_point_rotate_axis_behavior, final_approach_behavior],
         )
-
         grouped_controller_sequence = py_trees.composites.Sequence(
             name="grouped_controller_sequence",
             memory=True,
             children=[find_branch_selector, align_and_approach_sequence],
         )
-
         grouped_controller_failure_is_success = py_trees.decorators.FailureIsSuccess(
             name="grouped_controller_failure_is_success", child=grouped_controller_sequence
         )
-
         iterate_trials_sequence = py_trees.composites.Sequence(
             name="iterate_trials_sequence",
             memory=True,
@@ -182,17 +161,9 @@ class ResetTestTreeNode(Node):
                 iterate_poses_behavior,
             ],
         )
-        # iterate_trials_failure_is_running = py_trees.decorators.FailureIsRunning(
-        #     name="iterate_trials_failure_is_running", child=iterate_trials_sequence
-        # )
         iterate_trials_success_is_running = py_trees.decorators.SuccessIsRunning(
             name="iterate_trials_success_is_running", child=iterate_trials_sequence
         )
-        # iterate_poses_retry = py_trees.decorators.Retry(
-        #     name='iterate_poses_retry',
-        #     child=iterate_poses_success_is_running,
-        #     num_failures=31
-        # )
 
         #####################
         # Root sequence

@@ -32,6 +32,8 @@ class ResetTestBehavior(pt.behaviour.Behaviour):
         )
         self._action_client_run_test_reset.wait_for_server()
 
+        
+
         self.goal_status = None
         self._goal_handle = None
         self._result_future = None
