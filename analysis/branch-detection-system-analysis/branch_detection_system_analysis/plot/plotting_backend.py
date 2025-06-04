@@ -13,6 +13,10 @@ from typing import Callable
 import pprint as pp
 
 
+class FileManager:
+    def __init__(self):
+        return
+
 # ================================
 #    Data collection functions
 # ================================
@@ -23,9 +27,7 @@ class PlotFig(go.Figure):
         return
 
 
-class FileManager:
-    def __init__(self):
-        return
+
 
 
 def get_files_by_trial_name(warehouse_path: str, name: str) -> list[str]:

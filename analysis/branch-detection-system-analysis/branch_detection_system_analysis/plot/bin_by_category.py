@@ -39,11 +39,12 @@ def main():
     grouped_metadata = pb.group_metadata(list(metadata_cache.values()), "datetime", "topic")
 
     data_iterator = iter_grouped_metadata(grouped_metadata=grouped_metadata)
-
+    
     binned_results = {
         'success': 0,
         'failure': 0,
-        'undetermined': 0
+        'aligned_no_localization': 0,
+        'localized_no_alignment': 0
     }
     dataless_quantity = 0
     undetermined_names = []
@@ -62,9 +63,13 @@ def main():
         
         if alignment_success and localization_success:
             binned_results['success'] += 1
-        elif (alignment_success and not localization_success) or (not alignment_success and localization_success):
-            binned_results['undetermined'] += 1
+        elif (alignment_success and not localization_success):
+            binned_results['aligned_no_localization'] += 1
             undetermined_names.append(datetime)
+
+        elif (not alignment_success and localization_success):
+            binned_results['localized_no_alignment'] += 1
+            
         elif not alignment_success and not localization_success:
             binned_results["failure"] += 1
         
