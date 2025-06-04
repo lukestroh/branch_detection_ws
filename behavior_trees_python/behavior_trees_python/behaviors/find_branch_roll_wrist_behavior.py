@@ -43,12 +43,14 @@ class FindBranchRollWristControllerBehavior(pt.behaviour.Behaviour):
 
         self.blackboard = pt.blackboard.Client(name=self.name)
         self.blackboard.register_key(key="current_pose_index", access=pt.common.Access.WRITE)
+        self.blackboard.register_key(key='initial_joint_position', access=pt.common.Access.WRITE)
         return
 
     def initialise(self):
         """Send the action server a goal at the first tick."""
         self.goal_status = None
         self.goal = RunFindBranchRollWrist.Goal()
+        self.goal.initial_joint_position = self.blackboard.initial_joint_position
         self._send_goal_future: Future = self.client.send_goal_async(
             goal=self.goal,
         )

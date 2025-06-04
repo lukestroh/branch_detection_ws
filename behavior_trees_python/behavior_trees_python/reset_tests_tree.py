@@ -1,4 +1,15 @@
 #!/usr/bin/env python3
+import rclpy
+from rclpy.callback_groups import ReentrantCallbackGroup
+from rclpy.duration import Duration
+from rclpy.executors import SingleThreadedExecutor, ExternalShutdownException
+from rclpy.node import Node
+from rclpy.parameter import Parameter
+
+from geometry_msgs.msg import Pose
+from sensor_msgs.msg import JointState
+from tof_msgs.msg import TofStamped
+from visualization_msgs.msg import Marker
 
 import argparse
 import functools as ft
@@ -9,16 +20,7 @@ import sys
 from threading import Lock
 import pprint as pp
 
-import rclpy
-from rclpy.duration import Duration
-from rclpy.executors import SingleThreadedExecutor, ExternalShutdownException
-from rclpy.node import Node
-from rclpy.parameter import Parameter
-
-from tof_msgs.msg import TofStamped
-from geometry_msgs.msg import Pose
-from visualization_msgs.msg import Marker
-
+from behavior_trees_python.behaviors.check_continue_experiment_behavior import CheckContinueExperimentBehavior
 from behavior_trees_python.behaviors.cut_point_rotate_axis_behavior import CutPointRotateAxisControllerBehavior
 from behavior_trees_python.behaviors.final_approach_controller_behavior import FinalApproachControllerBehavior
 from behavior_trees_python.behaviors.find_branch_roll_wrist_behavior import FindBranchRollWristControllerBehavior
@@ -28,7 +30,6 @@ from behavior_trees_python.behaviors.generate_uniform_cylindrical_poses_behavior
     GenerateUniformCylindricalPosesBehavior,
 )
 from behavior_trees_python.behaviors.iterate_poses_behavior import IteratePosesBehavior
-from behavior_trees_python.behaviors.check_continue_experiment_behavior import CheckContinueExperimentBehavior
 from behavior_trees_python.behaviors.reset_test_behavior import ResetTestBehavior
 from behavior_trees_python.behaviors.start_bag_record_behavior import StartBagRecordBehavior
 from behavior_trees_python.behaviors.stop_bag_record_behavior import StopBagRecordBehavior
@@ -51,6 +52,7 @@ class ResetTestTreeNode(Node):
         self.bb.register_key(key="current_pose_index", access=py_trees.common.Access.WRITE)
         self.bb.current_pose_index = 0
         self.bb.register_key(key="current_pose", access=py_trees.common.Access.WRITE)
+        self.bb.register_key(key='initial_joint_position', access=py_trees.common.Access.WRITE)
         self.bb.register_key(key="poses", access=py_trees.common.Access.WRITE)
         self.bb.current_pose = Pose()
         self.bb.register_key(key="poses_in_queue", access=py_trees.common.Access.WRITE)
@@ -62,10 +64,24 @@ class ResetTestTreeNode(Node):
         self.tree.add_visitor(self.snapshot_visitor)
         self.last_tree_snapshot = None
 
+        # Callback groups
+        self._reentrant_cb_group = ReentrantCallbackGroup()
+
         # Subscribers
         self._sub_tof_filtered = self.create_subscription(
             TofStamped, "/vl53l4cd/filtered", self._sub_cb_tof_filtered, 10
         )
+        self._sub_joint_states = self.create_subscription(
+            msg_type=JointState,
+            topic="joint_states",
+            callback=self._sub_cb_joint_states,
+            callback_group=self._reentrant_cb_group,
+            qos_profile=1,
+        )
+
+        # Class attributes
+        self._initial_joint_position = None
+        self._initial_pose = None
         return
 
     def _sub_cb_tof_filtered(self, msg: TofStamped):
@@ -73,6 +89,12 @@ class ResetTestTreeNode(Node):
             self.bb.d_tof0 = msg.data[0]
         elif msg.dev_id == 1:
             self.bb.d_tof1 = msg.data[0]
+        return
+    
+    def _sub_cb_joint_states(self, msg: JointState):
+        if self._initial_joint_position is None:
+            self._initial_joint_position = msg.position
+            self.bb.initial_joint_position = self._initial_joint_position
         return
 
     def description(self):

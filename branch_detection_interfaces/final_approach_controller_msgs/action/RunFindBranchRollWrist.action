@@ -1,3 +1,4 @@
+float64[] initial_joint_position
 ---
 bool success
 ---

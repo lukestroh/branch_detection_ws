@@ -273,6 +273,9 @@ class FindBranchRollWristController(TFNode):
         # Let the tofs settle
         self.get_clock().sleep_for(Duration(seconds=1.0))
 
+        trials_initial_joint_position: RunFindBranchRollWrist.Goal = goal_handle.request
+        wrist_3_initial_position = trials_initial_joint_position.initial_joint_position[2]
+
         # feedback_msg = RunFindBranchRollWrist.Feedback()
         _result = RunFindBranchRollWrist.Result()
         self.controller_running = True
@@ -311,7 +314,7 @@ class FindBranchRollWristController(TFNode):
                 tof0_branch_found, tof1_branch_found = self.check_if_branch_found()
 
                 if not self.rotations_complete:
-                    self.actuate_wrist()
+                    self.actuate_wrist(wrist3_initial_pos=wrist_3_initial_position)
                 else:
                     if self.tof0_time_center is None or self.tof1_time_center is None:  # TODO: Check and/or logic here
                         if not goal_handle.status == GoalStatus.STATUS_ABORTED:
@@ -327,7 +330,6 @@ class FindBranchRollWristController(TFNode):
                         self._pub_localization_success.publish(msg=Bool(data=True))
                         if rclpy.ok():
                             await self.stop_servo()
-
                             await self.switch_controllers(
                                 activate_controllers=self._move_group_controller,
                                 deactivate_controllers=self._servo_controller,
@@ -339,11 +341,9 @@ class FindBranchRollWristController(TFNode):
                         branch_center_point, branch_vec_normalized, tof0_vec_base_frame, tof1_vec_base_frame = (
                             self.get_branch_vec_from_tof(return_frames=self.debug_plot)
                         )
-
                         desired_eef_xyz = self.get_desired_position_from_branch_vec(
                             branch_center_point=branch_center_point, branch_vec=branch_vec_normalized
                         )
-
                         desired_orientation_quat, desired_orientation_vec = (
                             self.get_desired_orientation_from_branch_vec(
                                 branch_center_point=branch_center_point,
@@ -365,8 +365,7 @@ class FindBranchRollWristController(TFNode):
                                 save_fig=True,
                                 save_fig_dir=self.bag_record_path,
                             )
-
-                        #####################################################
+                        ######################################################################################
                         self.info(f"Moving to pose {desired_eef_xyz}, {desired_orientation_vec}")
                         self.move_to_pose_req.goal.position.x = desired_eef_xyz[0]
                         self.move_to_pose_req.goal.position.y = desired_eef_xyz[1]
@@ -633,35 +632,26 @@ class FindBranchRollWristController(TFNode):
             self.info("Branch readings found for both ToFs!")
         return (tof0_branch_found, tof1_branch_found)
 
-    def actuate_wrist(self):
-        ##############################################################################################
-        # Make this a behavior?
-        if not self.neg_rot_complete:
+    def actuate_wrist(self, wrist3_initial_pos):
+        """Determine direction of actuation, assign rotation speed to twist message. If rotation has reached termination point, set flag."""
+        if self.start_joint_states[2] > wrist3_initial_pos:
             angular_z = -1 * self.max_angular_vel
-            if np.isclose(self.start_joint_states[2] - self.joint_states[2], np.pi / 2, atol=0.05):
-                # TODO: (long term) make sure wrist mount config is standard
-                self.publish_zero_twist()
-                self.neg_rot_complete = True
-                self.run_quadratic_fit()
-                ##############################################################################################
-                self.reset_data_caches()
-        elif not self.pos_rot_complete:
-            # if self.joint_states[-1] > 0 and self.joint_states[-1] < np.pi:
-            # positive angular rotation
+            theta_limit = np.pi
+        else:
             angular_z = self.max_angular_vel
-            if np.isclose(self.start_joint_states[2] - self.joint_states[2], -np.pi / 2, atol=0.05):
-                self.publish_zero_twist()
-                self.pos_rot_complete = True
-                self.run_quadratic_fit()
-        with self._servo_msg_lock:
-            self._msg_twist.twist.angular.z = angular_z
-            self._msg_twist.header.stamp = self.get_clock().now().to_msg()
-        if self.neg_rot_complete and self.pos_rot_complete:
+            theta_limit = -np.pi
+        
+        if np.isclose(self.start_joint_states[2] - self.joint_states[2], theta_limit, atol=0.05):
             self.publish_zero_twist()
-            self.rotations_complete = True
             with self._timer_lock:
                 if not self._timer_pub_servo.is_canceled():
                     self._timer_pub_servo.cancel()
+            self.rotations_complete = True
+            self.run_quadratic_fit()
+            return
+        with self._servo_msg_lock:
+            self._msg_twist.twist.angular.z = angular_z
+            self._msg_twist.header.stamp = self.get_clock().now().to_msg()    
         return
 
     def run_quadratic_fit(self):
