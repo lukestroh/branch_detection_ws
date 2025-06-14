@@ -17,6 +17,7 @@ class FileManager:
     def __init__(self):
         return
 
+
 # ================================
 #    Data collection functions
 # ================================
@@ -25,9 +26,6 @@ class PlotFig(go.Figure):
         layout = dict(legend_title_font_size=20)
         super().__init__(layout=layout)
         return
-
-
-
 
 
 def get_files_by_trial_name(warehouse_path: str, name: str) -> list[str]:
@@ -93,7 +91,7 @@ def extract_file_metadata(filename: str) -> dict:
         "filename": filename,
         "location": location_datetime_match.group("location") if location_datetime_match else None,
         "datetime": location_datetime_match.group("datetime") if location_datetime_match else None,
-        "topic": topic_match.group(1) if topic_match else None
+        "topic": topic_match.group(1) if topic_match else None,
     }
 
 
@@ -104,9 +102,10 @@ def group_metadata(metadata: list[dict], *grouping_keys: str | Callable[[dict], 
     """
     Groups metadata by one or more keys. Keys can be strings or callables.
     """
+
     def _get_group_value(entry, key):
         return key(entry) if callable(key) else entry.get(key)
-    
+
     def _recursive_group(entries, keys):
         if not keys:
             if len(entries) == 1:
@@ -117,9 +116,9 @@ def group_metadata(metadata: list[dict], *grouping_keys: str | Callable[[dict], 
             val = _get_group_value(entry=entry, key=key_fn)
             grouped[val].append(entry)
         return {k: _recursive_group(v, keys[1:]) for k, v in grouped.items()}
-    
+
     return _recursive_group(entries=metadata, keys=grouping_keys)
-    
+
 
 def group_files_by_datetime(files: list[str]) -> defaultdict[str, str]:
     grouped_by_datetime = defaultdict(list)
@@ -143,7 +142,7 @@ def group_files_by_datetime_by_topic(files: list[str]) -> defaultdict[str, defau
         topic_match = topic_pattern.search(file)
 
         if datetime_match and topic_match:
-            datetime_str = datetime_match.group(0).strip('_')
+            datetime_str = datetime_match.group(0).strip("_")
             topic_str = topic_match.group(1)
             grouped_by_datetime_by_topic[datetime_str][topic_str].append(file)
     return group_files_by_datetime_by_topic
@@ -185,6 +184,48 @@ def get_df_rows_at_closest_timestamp(df_dict: dict, topic_name: str, timestamps:
     closest_idxs = np.where(prev_diff < next_diff, idxs - 1, idxs)
 
     return df.iloc[closest_idxs].reset_index(drop=True)
+
+
+def get_list_rows_at_closest_timestamps(data_dict: dict, topic_name: str, timestamps: ArrayLike) -> np.ndarray:
+    topic_dict = data_dict[topic_name]
+    ts = np.asarray(topic_dict[f"{topic_name}_ts"])
+    data = np.asarray(topic_dict[f"{topic_name}_pos"])
+    idxs = np.searchsorted(ts, timestamps)
+
+    # Clip to avoid index errors)
+    idxs = np.clip(idxs, 1, len(ts) - 1)
+
+    # Compare to previous timestamp for closeness
+    _prev = ts[idxs - 1]
+    _next = ts[idxs]
+    prev_diff = np.abs(_prev - timestamps)
+    next_diff = np.abs(_next - timestamps)
+
+    closest_idxs = np.where(prev_diff < next_diff, idxs - 1, idxs)
+
+    return (ts[closest_idxs], data[closest_idxs])
+
+def get_joint_angles_at_closest_timestamps(joint_angle_dict: dict, timestamps: ArrayLike) -> np.ndarray:
+    ts = np.asarray(joint_angle_dict["ts"])
+    data = np.asarray(joint_angle_dict["data"])
+    idxs = np.searchsorted(ts, timestamps)
+
+    # print(timestamps)
+
+    # Clip to avoid index errors)
+    idxs = np.clip(idxs, 1, len(ts) - 1)
+
+    # Compare to previous timestamp for closeness
+    _prev = ts[idxs - 1]
+    _next = ts[idxs]
+    prev_diff = np.abs(_prev - timestamps)
+    next_diff = np.abs(_next - timestamps)
+
+    closest_idxs = np.where(prev_diff < next_diff, idxs - 1, idxs)
+
+
+
+    return (ts[closest_idxs], data[closest_idxs])
 
 
 # ==========================

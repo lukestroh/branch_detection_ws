@@ -165,24 +165,22 @@ def get_controller_success(br: BagReader, controller_name: str, topic: str) -> d
         controller_success = []
     return {"controller_success": controller_success}
 
+
 """
 '/fbrw_controller/ts_tof_min',
 
 """
+
+
 def get_ts_tof_min(br: BagReader) -> dict:
     try:
-        _ts_tof_min = list(br.query(topic_name='/fbrw_controller/ts_tof_min'))
+        _ts_tof_min = list(br.query(topic_name="/fbrw_controller/ts_tof_min"))
         ts_ts_tof_min = [d[0] for d in _ts_tof_min]
         ts_tof_min: list[TimestampTofMin] = [d[1] for d in _ts_tof_min]
         sensor_id, ts_min, data_min = zip(*map(lambda t: [t.sensor_id, t.timestamp, t.data], ts_tof_min))
     except (KeyError, ValueError):
         ts_ts_tof_min = sensor_id = ts_min = data_min = []
-    return {
-        "msg_stamp": ts_ts_tof_min,
-        "sensor_id": sensor_id,
-        "ts_min": ts_min,
-        "data_min": data_min
-    }
+    return {"msg_stamp": ts_ts_tof_min, "sensor_id": sensor_id, "ts_min": ts_min, "data_min": data_min}
 
 
 def get_wrench_data(br: BagReader) -> dict:
@@ -415,13 +413,13 @@ def is_already_warehoused(compressed_db_name: str) -> bool:
         return True
     else:
         return False
-    
+
 
 def get_metadata_and_debug_files(compressed_db_name: str) -> list[str]:
     warehouse_parent = Path(Path(compressed_db_name).stem).stem
     p = os.path.join(warehouse_path, warehouse_parent)
-    glob_ignored_files = ('.zstd', '.db3')
-    all_files = glob.glob(p+'/*')
+    glob_ignored_files = (".zstd", ".db3")
+    all_files = glob.glob(p + "/*")
 
     files = [file for file in all_files if not file.endswith(glob_ignored_files)]
 

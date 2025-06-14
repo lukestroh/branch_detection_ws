@@ -4,6 +4,7 @@ import py_trees as pt
 
 from rclpy.action import ActionClient
 from rclpy.action.client import ClientGoalHandle
+from rclpy.duration import Duration
 from rclpy.node import Node
 from rclpy.task import Future
 
@@ -50,7 +51,13 @@ class FindBranchRollWristControllerBehavior(pt.behaviour.Behaviour):
         """Send the action server a goal at the first tick."""
         self.goal_status = None
         self.goal = RunFindBranchRollWrist.Goal()
-        self.goal.initial_joint_position = self.blackboard.initial_joint_position
+        try:
+            self.goal.initial_joint_position = self.blackboard.initial_joint_position
+        except KeyError as e:
+            self.node.get_logger().info(f"{e}, initial joint position not yet on blackboard.")
+            self.node.get_clock().sleep_for(Duration(seconds=1.0))
+            self.initialise()
+            
         self._send_goal_future: Future = self.client.send_goal_async(
             goal=self.goal,
         )

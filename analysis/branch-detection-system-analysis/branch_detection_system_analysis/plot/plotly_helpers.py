@@ -2,6 +2,7 @@
 
 import plotly.graph_objects as go
 import numpy as np
+from numpy.typing import ArrayLike
 
 
 def plot_vector(
@@ -35,18 +36,22 @@ def plot_vector(
     return fig
 
 
-def plot_3d_coordinate_frame(fig: go.Figure, position: np.ndarray, orientation: np.ndarray, axis_length: float = 0.05, cone_scale: float = 0.25, name: str = "", parent_frame: str = ""):
+def plot_3d_coordinate_frame(
+    fig: go.Figure,
+    position: np.ndarray,
+    orientation: np.ndarray,
+    axis_length: float = 0.05,
+    cone_scale: float = 0.25,
+    name: str = "",
+    parent_frame: str = "",
+):
     """
-    Plots a 
+    Plots a
     """
     zoom_scale = 0.05
     cone_scale = 0.25
-    colors = {'x': 'red', 'y': 'green', 'z': 'blue'}
-    unit_vectors = {
-        'x': np.array([1,0,0]),
-        'y': np.array([0,1,0]),
-        'z': np.array([0,0,1])
-    }
+    colors = {"x": "red", "y": "green", "z": "blue"}
+    unit_vectors = {"x": np.array([1, 0, 0]), "y": np.array([0, 1, 0]), "z": np.array([0, 0, 1])}
     """
     axes = {
         "x-axis": {
@@ -119,17 +124,17 @@ def plot_3d_coordinate_frame(fig: go.Figure, position: np.ndarray, orientation: 
     for axis_name, unit_vec in unit_vectors.items():
         direction = orientation @ unit_vec
         pos_end = position + axis_length * direction
-        
+
         fig.add_trace(
             go.Scatter3d(
                 x=[position[0], pos_end[0]],
                 y=[position[1], pos_end[1]],
                 z=[position[2], pos_end[2]],
-                mode='lines',
+                mode="lines",
                 line=dict(width=3, color=colors[axis_name]),
                 name=f"{name}__{axis_name}-axis",
                 legendgroup=f"{name}_{axis_name}",
-                legendgrouptitle=dict(text=name)
+                legendgrouptitle=dict(text=name),
             )
         )
 
@@ -149,11 +154,34 @@ def plot_3d_coordinate_frame(fig: go.Figure, position: np.ndarray, orientation: 
                 name=f"{name}__{axis_name}-axis",
                 legendgroup=f"{name}_{axis_name}",
                 legendgrouptitle=dict(text=name),
-                showlegend=False
+                showlegend=False,
             )
-        )       
+        )
 
-    
+    return fig
+
+
+def plot_circle(center: ArrayLike, radius: float, name: str = "", color: str = "black", fig: go.Figure = None):
+    if fig is None:
+        fig = go.Figure()
+
+    theta = np.linspace(0, 2 * np.pi, 360)
+    x = center[0] + radius * np.cos(theta)
+    y = center[1] + radius * np.sin(theta)
+
+    fig.add_trace(go.Scatter(x=x, y=y, mode="lines", line=dict(color=color), name=name))
+    return fig
+
+
+def plot_circle_3d(center: ArrayLike, radius: float, name: str = "", color: str = "black", fig: go.Figure = None):
+    if fig is None:
+        fig = go.Figure()
+
+    theta = np.linspace(0, 2 * np.pi, 360)
+    x = center[0] + radius * np.cos(theta)
+    y = center[1] + radius * np.sin(theta)
+
+    fig.add_trace(go.Scatter3d(x=x, y=y, z=np.full(len(x), 0.0), mode="lines", line=dict(color=color), name=name))
     return fig
 
 
