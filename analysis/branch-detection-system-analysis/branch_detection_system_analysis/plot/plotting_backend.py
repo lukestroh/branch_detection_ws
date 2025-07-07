@@ -155,7 +155,7 @@ def get_topic_name_from_filename(filename: str):
     return filename.split("__")[-2]
 
 
-def build_df_dict_from_files(data_dict: dict | None, files: list[str]) -> None:
+def build_df_dict_from_files(data_dict: dict | None, files: list[str]) -> dict:
     if data_dict is None:
         data_dict = {}
     for file in files:
@@ -205,6 +205,7 @@ def get_list_rows_at_closest_timestamps(data_dict: dict, topic_name: str, timest
 
     return (ts[closest_idxs], data[closest_idxs])
 
+
 def get_joint_angles_at_closest_timestamps(joint_angle_dict: dict, timestamps: ArrayLike) -> np.ndarray:
     ts = np.asarray(joint_angle_dict["ts"])
     data = np.asarray(joint_angle_dict["data"])
@@ -223,13 +224,11 @@ def get_joint_angles_at_closest_timestamps(joint_angle_dict: dict, timestamps: A
 
     closest_idxs = np.where(prev_diff < next_diff, idxs - 1, idxs)
 
-
-
     return (ts[closest_idxs], data[closest_idxs])
 
 
 # ==========================
-#    Plotting functions
+#    Plotting functions TODO: move to helpers
 # ==========================
 def plot_imu_data(imu_df: pd.DataFrame, fig: go.Figure = None) -> go.Figure:
     if fig is None:
@@ -253,58 +252,3 @@ def plot_linear_wrench_data(wrench_df: pd.DataFrame, fig: go.Figure = None) -> g
 
 def plot_tof_vs_timestamp():
     return
-
-
-def plot_tof_vs_joint_state(df_dict: dict, tof_name: str, fig: go.Figure = None) -> go.Figure:
-    if fig is None:
-        fig = go.Figure()
-
-    tof_df = df_dict[f"{tof_name}_filtered"]
-
-    timestamps = tof_df[f"{tof_name}_filtered_ts"].to_numpy()
-
-    joint_states_ts_filtered_df = get_df_rows_at_closest_timestamp(
-        df_dict=df_dict, topic_name="joint_states", timestamps=timestamps
-    )
-
-    wrist_3_pos = np.vstack(joint_states_ts_filtered_df["joint_states_pos"])[:, 2]
-
-    fig.add_trace(
-        go.Scatter(
-            x=wrist_3_pos,
-            y=tof_df[f"{tof_name}_filtered_data"],
-            mode="markers",
-        )
-    )
-
-    fig.update_layout(
-        title=dict(text=f"{tof_name} MAF readings vs. ur5e__wrist_3 position"),
-        xaxis=dict(title="Wrist-3 position"),
-        yaxis=dict(title="Distance (m)"),
-    )
-
-    fig.show()
-
-    return fig
-
-
-"""
-# def plot_tof_trial(
-#     data: pd.DataFrame, topic_name: str, trial_num: int, start_time: float = 0.0, fig: go.Figure = None
-# ) -> go.Figure:
-#     if fig is None:
-#         fig = go.Figure()
-
-#     fig.add_trace(
-#         go.Scatter(
-#             x=data[f"{topic_name}_ts"] - start_time,
-#             y=data[f"{topic_name}_data"],
-#             mode="markers",
-#             name=f"{topic_name}__{trial_num}",
-#         )
-#     )
-#     fig.update_layout(title=dict(text=f"{topic_name}__{trial_num}"))
-#     fig.update_xaxes(title_text="Time (s)")
-#     fig.update_yaxes(title_text="Distance (m)")
-#     return fig
-"""

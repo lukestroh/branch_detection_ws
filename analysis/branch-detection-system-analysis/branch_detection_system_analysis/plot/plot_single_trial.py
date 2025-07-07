@@ -25,14 +25,18 @@ from branch_detection_system_analysis.plot import debug_plots as dplot
 ws_path = os.path.abspath(os.path.join("/home/luke/branch_detection_ws"))
 warehouse_path = os.path.join(ws_path, "bags", "2025_ToFBranchDetection", "warehouse")
 
+sunlight_trial_file_name = "bds__prosser_allen_t1.1.4__20250220_14-26-43"
+
 # trial_file_name = "bds__prosser_allen_t3.3.3__20250220_16-53-40"
 trial_file_name = "bds__arm_farm__20250519_15-27-56"  # NOTE: Excellent edge case
 # trial_file_name = "bds__arm_farm__20250519_14-47-40"
 
 # trial_file_name = "bds__arm_farm__20250519_16-01-01" # NOTE: Generic case
 
+
 def angular_distance(a, b):
     return np.abs(np.arctan2(np.sin(a - b), np.cos(a - b)))
+
 
 def filter_minima_by_angle_proximity(joint_states, distances, valley_idxs, angle_thresh=0.1):
     # Sort valley indices by angle
@@ -68,7 +72,7 @@ def filter_minima_by_angle_proximity(joint_states, distances, valley_idxs, angle
     return np.array(filtered_idxs)
 
 
-def main():
+def main1():
 
     def _wrap_angles_to_circle(angles: np.ndarray | float):
         return (angles + np.pi) % (2 * np.pi) - np.pi
@@ -129,17 +133,16 @@ def main():
     )
 
     filtered_valley_idxs = filter_minima_by_angle_proximity(
-        joint_states=all_data_dict["joint_states_data"][:,2],
-        distances=all_data_dict['tof_data'],
+        joint_states=all_data_dict["joint_states_data"][:, 2],
+        distances=all_data_dict["tof_data"],
         valley_idxs=valley_idxs,
-        angle_thresh=np.radians(30)
+        angle_thresh=np.radians(30),
     )
 
     assert len(filtered_valley_idxs) == 2
 
-    wrist3_joint_angles = all_data_dict['joint_states_data'][:,2]
+    wrist3_joint_angles = all_data_dict["joint_states_data"][:, 2]
     minimum_angles = wrist3_joint_angles[filtered_valley_idxs]
-    
 
     if np.any(np.isclose(np.pi, np.abs(minimum_angles), atol=0.1)):
         print("close to pi/-pi overlap")
@@ -149,7 +152,7 @@ def main():
         # Find closest index in joint_states_data to this midpoint
         angular_diffs = np.abs(angular_distance(a=wrist3_joint_angles, b=angle_midpoint))
         mid_idx = np.where(angular_diffs == np.min(angular_diffs))[0][0]
-        
+
         if filtered_valley_idxs[0] < filtered_valley_idxs[1]:
             section1 = wrist3_joint_angles[:mid_idx]
             section2 = wrist3_joint_angles[mid_idx:]
@@ -158,8 +161,6 @@ def main():
             section2 = wrist3_joint_angles[:mid_idx]
 
         return section1, section2, mid_idx
-    
-
 
     if False:
         parabola_fig = dplot.plot_tof_vs_joint_state(data=sensor_data_dict["tof0"], name="tof0")
@@ -179,13 +180,13 @@ def main():
             parabola_fig.add_trace(
                 go.Scatter(
                     x=[all_data_dict["joint_states_data"][idx][2]],
-                    y=[all_data_dict['tof_data'][idx]],
-                    mode='markers',
-                    name='minimum',
+                    y=[all_data_dict["tof_data"][idx]],
+                    mode="markers",
+                    name="minimum",
                     marker=dict(size=20, color="LightSkyBlue"),
                     showlegend=showlegend,
                     legendgroup="minima",
-                    legendgrouptitle=dict(text="minima")
+                    legendgrouptitle=dict(text="minima"),
                 )
             )
         for i, idx in enumerate(filtered_valley_idxs):
@@ -196,16 +197,15 @@ def main():
             parabola_fig.add_trace(
                 go.Scatter(
                     x=[all_data_dict["joint_states_data"][idx][2]],
-                    y=[all_data_dict['tof_data'][idx]],
-                    mode='markers',
-                    name='filtered_minimum',
+                    y=[all_data_dict["tof_data"][idx]],
+                    mode="markers",
+                    name="filtered_minimum",
                     marker=dict(size=20, color="orange"),
                     showlegend=showlegend,
                     legendgroup="filtered_minima",
-                    legendgrouptitle=dict(text="filtered_minima")
+                    legendgrouptitle=dict(text="filtered_minima"),
                 )
             )
-        
 
         parabola_fig.show()
         proj_2d_fig.show()
@@ -239,6 +239,100 @@ def main():
 
     # fig = pb.plot_tof_vs_joint_state(df_dict=df_dict, tof_name="tof1")
 
+    return
+
+
+def main():
+    trial_files = pb.get_files_by_trial_name(warehouse_path=warehouse_path, name=sunlight_trial_file_name)
+    df_dict = pb.build_df_dict_from_files(data_dict=None, files=trial_files)
+
+    pp.pprint(df_dict)
+
+    data_dict = {}
+    # data_dict['tof0_filtered'] = df_dict['tof0_filtered'].to_dict(orient='list').keys()
+    data_dict["tof0_raw"] = df_dict["tof0_raw"].to_dict(orient="list")
+    data_dict["tof1_raw"] = df_dict["tof1_raw"].to_dict(orient="list")
+    data_dict["tof0_filtered"] = df_dict["tof0_filtered"].to_dict(orient="list")
+    data_dict["tof1_filtered"] = df_dict["tof1_filtered"].to_dict(orient="list")
+    data_dict["joint_states"] = df_dict["joint_states"].to_dict(orient="list")
+
+    ######################################################################################################3
+    # Separated Data
+    ##########################
+    # _tof0_js_ts, joint_states_tof0_data = pb.get_list_rows_at_closest_timestamps(
+    #     data_dict=data_dict, topic_name="joint_states", timestamps=data_dict["tof0_filtered"]["tof0_filtered_ts"]
+    # )
+    # _tof1_js_ts, joint_states_tof1_data = pb.get_list_rows_at_closest_timestamps(
+    #     data_dict=data_dict, topic_name="joint_states", timestamps=data_dict["tof1_filtered"]["tof1_filtered_ts"]
+    # )
+    _tof0_js_ts, joint_states_raw_tof0_data = pb.get_list_rows_at_closest_timestamps(
+        data_dict=data_dict, topic_name="joint_states", timestamps=data_dict["tof0_raw"]["tof0_raw_ts"]
+    )
+    _tof1_js_ts, joint_states_raw_tof1_data = pb.get_list_rows_at_closest_timestamps(
+        data_dict=data_dict, topic_name="joint_states", timestamps=data_dict["tof1_raw"]["tof1_raw_ts"]
+    )
+    _tof0_js_ts, joint_states_tof0_data = pb.get_list_rows_at_closest_timestamps(
+        data_dict=data_dict, topic_name="joint_states", timestamps=data_dict["tof0_filtered"]["tof0_filtered_ts"]
+    )
+    _tof1_js_ts, joint_states_tof1_data = pb.get_list_rows_at_closest_timestamps(
+        data_dict=data_dict, topic_name="joint_states", timestamps=data_dict["tof1_filtered"]["tof1_filtered_ts"]
+    )
+
+    sensor_data_dict = {"tof0": {}, "tof1": {}}
+    sensor_data_dict["tof0"]["raw_tof_ts"] = data_dict["tof0_raw"]["tof0_raw_ts"]
+    sensor_data_dict["tof0"]["raw_tof_data"] = data_dict["tof0_raw"]["tof0_raw_data"]
+    sensor_data_dict["tof0"]["tof_ts"] = data_dict["tof0_filtered"]["tof0_filtered_ts"]
+    sensor_data_dict["tof0"]["tof_data"] = data_dict["tof0_filtered"]["tof0_filtered_data"]
+    # sensor_data_dict["tof0"]["joint_states_ts"] = _tof0_js_ts
+    sensor_data_dict["tof0"]["joint_states_raw_data"] = joint_states_raw_tof0_data + np.pi / 2
+    sensor_data_dict["tof0"]["joint_states_data"] = joint_states_tof0_data + np.pi / 2
+
+    sensor_data_dict["tof1"]["raw_tof_ts"] = data_dict["tof1_raw"]["tof1_raw_ts"]
+    sensor_data_dict["tof1"]["raw_tof_data"] = data_dict["tof1_raw"]["tof1_raw_data"]
+    sensor_data_dict["tof1"]["tof_ts"] = data_dict["tof1_filtered"]["tof1_filtered_ts"]
+    sensor_data_dict["tof1"]["tof_data"] = data_dict["tof1_filtered"]["tof1_filtered_data"]
+    # sensor_data_dict["tof1"]["joint_states_ts"] = _tof1_js_ts
+    sensor_data_dict["tof1"]["joint_states_raw_data"] = joint_states_raw_tof1_data - np.pi / 2
+    sensor_data_dict["tof1"]["joint_states_data"] = joint_states_tof1_data - np.pi / 2
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=sensor_data_dict["tof0"]["joint_states_raw_data"][:, 2],
+            y=sensor_data_dict["tof0"]["raw_tof_data"],
+            name="tof0_raw",
+            mode="markers",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=sensor_data_dict["tof1"]["joint_states_raw_data"][:, 2],
+            y=sensor_data_dict["tof1"]["raw_tof_data"],
+            name="tof1_raw",
+            mode="markers",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=sensor_data_dict["tof0"]["joint_states_data"][:, 2],
+            y=sensor_data_dict["tof0"]["tof_data"],
+            name="tof0_filtered",
+            mode="lines",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=sensor_data_dict["tof1"]["joint_states_data"][:, 2],
+            y=sensor_data_dict["tof1"]["tof_data"],
+            name="tof1_filtered",
+            mode="lines",
+        )
+    )
+
+    fig.show()
+
+    # pp.pprint(sensor_data_dict)
+    print(sensor_data_dict)
     return
 
 

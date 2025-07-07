@@ -7,6 +7,8 @@ import os
 import plotly.graph_objects as go
 import plotly.io as pio
 
+import scipy.signal as ssi
+
 import pprint as pp
 
 _colors_dict = {"tof0": "#d8071f", "tof1": "#26a4d2", "all_data": "#85ce73", "s0": "#63b499", "s1": "#9c4ba7"}
@@ -22,7 +24,6 @@ def plot_tof_vs_joint_state(
     if fig is None:
         fig = go.Figure()
         fig.update_layout(title_text=f"{name}: tof vs. joint state")
-
 
     fig.add_trace(
         go.Scatter(
@@ -40,6 +41,22 @@ def plot_tof_vs_joint_state(
             hovertemplate="theta: %{x}<br>d: %{y}<br>time: %{customdata[0]}<br><extra>%{customdata[1]}</extra>",
         )
     )
+    # fig.add_trace(
+    #     go.Scatter(
+    #         x=data["joint_states_data"][:, 2],
+    #         y=data["raw_tof_data"],
+    #         mode="markers",
+    #         name=name,
+    #         line=dict(color=_colors_dict[name]),
+    #         customdata=np.column_stack(
+    #             (
+    #                 data["tof_ts"],
+    #                 np.full(len(data["tof_ts"]), name),
+    #             )
+    #         ),
+    #         hovertemplate="theta: %{x}<br>d: %{y}<br>time: %{customdata[0]}<br><extra>%{customdata[1]}</extra>",
+    #     )
+    # )
     return fig
 
 
@@ -48,7 +65,7 @@ def plot_2d_tof_projection(
 ):
     radius = 0.04891
     center = (0, 0)
-    far_plane_filter = 0.20
+    far_plane_filter = 0.25
 
     if fig is None:
         fig = go.Figure()
@@ -67,6 +84,7 @@ def plot_2d_tof_projection(
     # Rotate the points to get them into eef view point
     x = radius * np.cos(joint_states)
     y = radius * np.sin(joint_states)
+
     xy = np.column_stack((x, y))
     rot_mat = np.array([[0, -1], [1, 0]])
     rotated_points = xy @ rot_mat
@@ -103,11 +121,11 @@ def plot_3d_tof_projection(
             title_text=f"{name}: 3d projection from ToF plane frame",
             xaxis=dict(title="x"),
             yaxis=dict(title="y"),
-            # scene=dict(aspectmode="data"),
+            scene=dict(aspectmode="data"),
             # plot_bgcolor="rgba(0,0,0,0)"
         )
 
-    far_plane_filter = 0.20
+    far_plane_filter = 0.25
 
     joint_states = np.where(np.asarray(data["tof_data"]) < far_plane_filter, data["joint_states_data"][:, 2], np.nan)
     joint_states = joint_states[~np.isnan(joint_states)]
@@ -145,6 +163,7 @@ def plot_3d_tof_projection(
             ),
         )
     )
+
     return fig
 
 
@@ -242,15 +261,13 @@ def plot_branch_projection(
     return fig
 
 
-def plot_maf_vs_joint_state(
-    data: dict, name: str, fig: go.Figure = None, save_fig: bool = False, save_path: str = ""
-):
+def plot_maf_vs_joint_state(data: dict, name: str, fig: go.Figure = None, save_fig: bool = False, save_path: str = ""):
     if fig is None:
         fig = go.Figure()
 
     if data is None:
         return fig
-    
+
     # pp.pprint(data)
 
     fig.add_trace(

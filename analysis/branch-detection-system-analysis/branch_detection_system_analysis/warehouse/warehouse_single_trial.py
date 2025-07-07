@@ -72,7 +72,7 @@ def get_tof_raw_data(br: BagReader) -> tuple[dict]:
                 if tof.dev_id == 1
             ]
         )
-    except KeyError:
+    except (KeyError, ValueError):
         tof0_raw_ts = tof0_raw_data = tof1_raw_ts = tof1_raw_data = []
 
     return (
@@ -107,7 +107,7 @@ def get_tof_filtered_data(br: BagReader) -> tuple[dict]:
                 if tof.dev_id == 1
             ]
         )
-    except KeyError:
+    except (KeyError, ValueError):
         tof0_filtered_ts = tof0_filtered_data = tof1_filtered_ts = tof1_filtered_data = []
 
     return (
@@ -152,7 +152,7 @@ def get_generated_start_poses_data(br: BagReader) -> dict:
         _generated_start_poses = list(br.query(topic_name=f"/generated_start_poses"))
         generated_start_poses: list[GeneratedPoses] = [d[1] for d in _generated_start_poses]
         start_poses = zip(*map(lambda g: g.poses, generated_start_poses))
-    except KeyError:
+    except (KeyError, ValueError):
         start_poses = []
     return {"start_poses": start_poses}
 
@@ -161,7 +161,7 @@ def get_controller_success(br: BagReader, controller_name: str, topic: str) -> d
     try:
         _controller_success = list(br.query(topic_name=f"/{controller_name}_controller/{topic}_success"))
         controller_success: list[bool] = [d[1].data for d in _controller_success]
-    except KeyError:
+    except (KeyError, ValueError):
         controller_success = []
     return {"controller_success": controller_success}
 
@@ -185,10 +185,18 @@ def get_ts_tof_min(br: BagReader) -> dict:
 
 def get_wrench_data(br: BagReader) -> dict:
     # FT-wrench data
-    data_ft_wrench = list(br.query(topic_name="/force_torque_sensor_broadcaster/wrench"))
-    wrench_data: list[WrenchStamped] = [d[1] for d in data_ft_wrench]
-    wrench_data_ts, wrench_data_fx, wrench_data_fy, wrench_data_fz, wrench_data_tx, wrench_data_ty, wrench_data_tz = (
-        zip(
+    try:
+        data_ft_wrench = list(br.query(topic_name="/force_torque_sensor_broadcaster/wrench"))
+        wrench_data: list[WrenchStamped] = [d[1] for d in data_ft_wrench]
+        (
+            wrench_data_ts,
+            wrench_data_fx,
+            wrench_data_fy,
+            wrench_data_fz,
+            wrench_data_tx,
+            wrench_data_ty,
+            wrench_data_tz,
+        ) = zip(
             *map(
                 lambda w: [
                     w.header.stamp.sec + w.header.stamp.nanosec * 1e-9,
@@ -202,7 +210,10 @@ def get_wrench_data(br: BagReader) -> dict:
                 wrench_data,
             )
         )
-    )
+    except (KeyError, ValueError):
+        wrench_data_ts = wrench_data_fx = wrench_data_fy = wrench_data_fz = wrench_data_tx = wrench_data_ty = (
+            wrench_data_tz
+        ) = []
     return {
         "wrench_ts": wrench_data_ts,
         "wrench_fx": wrench_data_fx,
@@ -215,12 +226,15 @@ def get_wrench_data(br: BagReader) -> dict:
 
 
 def get_joint_states_data(br: BagReader) -> dict:
-    joint_states = list(br.query(topic_name="/joint_states"))
-    joint_states_data: list[JointState] = [d[1] for d in joint_states]
+    try:
+        joint_states = list(br.query(topic_name="/joint_states"))
+        joint_states_data: list[JointState] = [d[1] for d in joint_states]
 
-    joint_states_ts, joint_states_pos = zip(
-        *map(lambda ja: [ja.header.stamp.sec + ja.header.stamp.nanosec * 1e-9, ja.position], joint_states_data)
-    )
+        joint_states_ts, joint_states_pos = zip(
+            *map(lambda ja: [ja.header.stamp.sec + ja.header.stamp.nanosec * 1e-9, ja.position], joint_states_data)
+        )
+    except (KeyError, ValueError):
+        joint_states_ts = joint_states_pos = []
 
     return {"joint_states_ts": joint_states_ts, "joint_states_pos": np.array(joint_states_pos)}
 
@@ -240,28 +254,32 @@ def get_tf_data(br: BagReader, static=False) -> dict:
         topic_name = "tf_static"
     else:
         topic_name = "tf"
-    tf_msgs = list(br.query(topic_name=f"/{topic_name}"))
-    tf_data: list[TFMessage] = [d[1] for d in tf_msgs]
 
-    # Unpack all transforms from the list of transforms in each TFMessage
-    all_transforms = list(itertools.chain.from_iterable(map(lambda transform: transform.transforms, tf_data)))
-    tf_ts, tf_frame_id, tf_child_frame_id, tf_t_x, tf_t_y, tf_t_z, tf_r_x, tf_r_y, tf_r_z, tf_r_w = zip(
-        *map(
-            lambda tf: [
-                tf.header.stamp.sec + tf.header.stamp.nanosec * 1e-9,
-                tf.header.frame_id,
-                tf.child_frame_id,
-                tf.transform.translation.x,
-                tf.transform.translation.y,
-                tf.transform.translation.z,
-                tf.transform.rotation.x,
-                tf.transform.rotation.y,
-                tf.transform.rotation.z,
-                tf.transform.rotation.w,
-            ],
-            all_transforms,
+    try:
+        tf_msgs = list(br.query(topic_name=f"/{topic_name}"))
+        tf_data: list[TFMessage] = [d[1] for d in tf_msgs]
+
+        # Unpack all transforms from the list of transforms in each TFMessage
+        all_transforms = list(itertools.chain.from_iterable(map(lambda transform: transform.transforms, tf_data)))
+        tf_ts, tf_frame_id, tf_child_frame_id, tf_t_x, tf_t_y, tf_t_z, tf_r_x, tf_r_y, tf_r_z, tf_r_w = zip(
+            *map(
+                lambda tf: [
+                    tf.header.stamp.sec + tf.header.stamp.nanosec * 1e-9,
+                    tf.header.frame_id,
+                    tf.child_frame_id,
+                    tf.transform.translation.x,
+                    tf.transform.translation.y,
+                    tf.transform.translation.z,
+                    tf.transform.rotation.x,
+                    tf.transform.rotation.y,
+                    tf.transform.rotation.z,
+                    tf.transform.rotation.w,
+                ],
+                all_transforms,
+            )
         )
-    )
+    except (KeyError, ValueError):
+        tf_ts = tf_frame_id = tf_child_frame_id = tf_t_x = tf_t_y = tf_t_z = tf_r_x = tf_r_y = tf_r_z = tf_r_w = []
 
     return {
         f"{topic_name}_ts": tf_ts,
@@ -278,8 +296,8 @@ def get_tf_data(br: BagReader, static=False) -> dict:
 
 
 def get_controller_events(br: BagReader, controller_name: str) -> dict:
-    controller_events = list(br.query(topic_name=f"/{controller_name}/transition_event"))
     try:
+        controller_events = list(br.query(topic_name=f"/{controller_name}/transition_event"))
         controller_transition_events_ts, controller_events_data = zip(
             *map(lambda ctrlr: [ctrlr[0] * 1e-9, ctrlr[1]], controller_events)
         )
@@ -287,7 +305,7 @@ def get_controller_events(br: BagReader, controller_name: str) -> dict:
         controller_transition_start_state, controller_transition_goal_state = zip(
             *map(lambda ctrlr_t: [ctrlr_t.start_state.id, ctrlr_t.goal_state.id], controller_events_data)
         )
-    except ValueError:
+    except (KeyError, ValueError):
         controller_transition_events_ts = controller_transition_start_state = controller_transition_goal_state = []
 
     return {
@@ -435,8 +453,8 @@ def main():
     ws_path = os.path.abspath(os.path.join("/home/luke/branch_detection_ws"))
     warehouse_path = os.path.join(ws_path, "bags", "2025_ToFBranchDetection", "warehouse")
 
-    # dbs = get_dbs(location="prosser", farm="roza", date="20250219")
-    dbs = get_dbs_by_loc(location="arm_farm")
+    dbs = get_dbs(location="prosser", farm="allen", date="20250220")
+    # dbs = get_dbs_by_loc(location="arm_farm")
     # sys.exit()
 
     # trial_file_name = "bds__arm_farm__20250519_15-27-56"
