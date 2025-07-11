@@ -5,7 +5,6 @@ import numpy as np
 from numpy.typing import ArrayLike
 
 
-
 def plot_vector(
     fig: go.Figure,
     position: np.ndarray,
@@ -14,6 +13,7 @@ def plot_vector(
     color: str,
     anchor: str = "tail",
     name: str = "",
+    showlegend: bool = False,
 ):
 
     fig.add_trace(
@@ -28,7 +28,7 @@ def plot_vector(
             sizemode="scaled",
             sizeref=0.1 * scale,
             showscale=False,
-            showlegend=False,
+            showlegend=showlegend,
             anchor=anchor,
             colorscale=[[0, color], [1, color]],
         )
@@ -45,83 +45,15 @@ def plot_3d_coordinate_frame(
     cone_scale: float = 0.25,
     name: str = "",
     parent_frame: str = "",
+    showlegend: bool = False
 ):
     """
-    Plots a
+    Plots a set of orthonormal vectors in a 3d space.
+    
     """
-    # zoom_scale = 0.05
-    # cone_scale = 0.25
     colors = {"x": "red", "y": "green", "z": "blue"}
     unit_vectors = {"x": np.array([1, 0, 0]), "y": np.array([0, 1, 0]), "z": np.array([0, 0, 1])}
-    """
-    axes = {
-        "x-axis": {
-            "x": np.array([position[0], position[0] + zoom_scale]),
-            "y": np.array([position[1], position[1] + 0]),
-            "z": np.array([position[2], position[2] + 0]),
-            "u": np.array([zoom_scale * cone_scale]),
-            "v": np.array([0]),
-            "w": np.array([0]),
-            "color": "red",
-        },
-        "y-axis": {
-            "x": np.array([position[0], position[0] + 0]),
-            "y": np.array([position[1], position[1] + zoom_scale]),
-            "z": np.array([position[2], position[2] + 0]),
-            "u": np.array([0]),
-            "v": np.array([zoom_scale * cone_scale]),
-            "w": np.array([0]),
-            "color": "green",
-        },
-        "z-axis": {
-            "x": np.array([position[0], position[0] + 0]),
-            "y": np.array([position[1], position[1] + 0]),
-            "z": np.array([position[2], position[2] + zoom_scale]),
-            "u": np.array([0]),
-            "v": np.array([0]),
-            "w": np.array([zoom_scale * cone_scale]),
-            "color": "blue",
-        },
-    }
-
-    for axis, val in axes.items():
-
-        fig.add_trace(
-            go.Scatter3d(
-                x=axes[axis]["x"],
-                y=axes[axis]["y"],
-                z=axes[axis]["z"],
-                name=f"{name}_{axis}",
-                mode="lines",
-                line=dict(width=3, color=axes[axis]["color"]),
-                showlegend=False,
-                legendgroup=f"{name}_{axis}",
-                legendgrouptitle=dict(text=name),
-            )
-        )
-
-        fig.add_trace(
-            go.Cone(
-                x=[axes[axis]["x"][1]],
-                y=[axes[axis]["y"][1]],
-                z=[axes[axis]["z"][1]],
-                u=axes[axis]["u"],
-                v=axes[axis]["v"],
-                w=axes[axis]["w"],
-                name=axis,
-                showscale=False,
-                colorscale=[[0, axes[axis]["color"]], [1, axes[axis]["color"]]],
-                anchor="tail",
-                sizemode="scaled",
-                legendgroup=f"{name}_{axis}",
-                legendgrouptitle=dict(text=name),
-                showlegend=False,
-                # hoverinfo="skip",
-                # hovertemplate=None
-            )
-        )
-    """
-
+    
     for axis_name, unit_vec in unit_vectors.items():
         direction = orientation @ unit_vec
         pos_end = position + axis_length * direction
@@ -136,6 +68,7 @@ def plot_3d_coordinate_frame(
                 name=f"{name}__{axis_name}-axis",
                 legendgroup=f"{name}_{axis_name}",
                 legendgrouptitle=dict(text=name),
+                showlegend=showlegend
             )
         )
 
@@ -155,7 +88,7 @@ def plot_3d_coordinate_frame(
                 name=f"{name}__{axis_name}-axis",
                 legendgroup=f"{name}_{axis_name}",
                 legendgrouptitle=dict(text=name),
-                showlegend=False,
+                showlegend=showlegend,
             )
         )
 
@@ -195,7 +128,8 @@ def plot_cylinder(
     nt: int = 100,
     nh: int = 50,
     name: str = "",
-    color: str = "#ffffff",
+    color: str = "#000000",
+    opacity: float = 0.7, 
     fig: go.Figure = None,
 ) -> go.Figure:
     if fig is None:
@@ -245,7 +179,7 @@ def plot_cylinder(
             y=Y_global,
             z=Z_global,
             showscale=False,
-            opacity=0.7,
+            opacity=opacity,
             name=name,
             surfacecolor=np.ones_like(X_global),  # Constant color values
             colorscale=[[0, color], [1, color]],  # Single color
@@ -272,7 +206,18 @@ def plot_plane_from_point_and_normal_vec(
     z = compute_z_on_plane(x=x, y=y, norm=norm, point_on_plane=point)
 
     # Create the surface
-    fig.add_trace(go.Surface(x=x, y=y, z=z, opacity=0.6, colorscale=[[0, color], [1, color]], showscale=False, showlegend=True, name='branch_plane'))
+    fig.add_trace(
+        go.Surface(
+            x=x,
+            y=y,
+            z=z,
+            opacity=0.6,
+            colorscale=[[0, color], [1, color]],
+            showscale=False,
+            showlegend=True,
+            name="branch_plane",
+        )
+    )
 
     return fig
 
