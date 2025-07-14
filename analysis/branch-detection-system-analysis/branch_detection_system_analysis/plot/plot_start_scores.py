@@ -6,6 +6,7 @@ import branch_detection_system_analysis.plot.plot_start_points as psp
 
 import numpy as np
 import plotly.graph_objects as go
+import plotly.io as pio
 
 
 def make_cylindrical_plot():
@@ -131,6 +132,8 @@ def make_angles_plot():
         ),
     )
 
+
+    pio.write_image(fig=fig, file='./fig.pdf', format='pdf')
     fig.show()
 
     return
