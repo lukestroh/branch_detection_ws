@@ -2,7 +2,7 @@
 import rclpy
 from rclpy.action import ActionServer, CancelResponse, GoalResponse
 from rclpy.action.server import ServerGoalHandle
-from rclpy.callback_groups import ReentrantCallbackGroup
+from rclpy.callback_groups import ReentrantCallbackGroup, MutuallyExclusiveCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.duration import Duration
 from rclpy.parameter import Parameter
@@ -43,6 +43,7 @@ class CutPointRotateAxisController(TFNode):
 
         # Callback group
         self.callback_group = ReentrantCallbackGroup()  # allows for subscriber to persist in service, action
+        self._pub_servo_cb_group = MutuallyExclusiveCallbackGroup()
 
         # Actions
         self._action_svr_run_final_appoach = ActionServer(
@@ -79,7 +80,7 @@ class CutPointRotateAxisController(TFNode):
         self._pub_servo = self.create_publisher(
             msg_type=TwistStamped,
             topic="/servo_node/delta_twist_cmds",
-            callback_group=self.callback_group,
+            callback_group=self._pub_servo_cb_group,
             qos_profile=1,
         )
 
@@ -131,7 +132,7 @@ class CutPointRotateAxisController(TFNode):
 
         if self._timer_run_controller is None:
             self._timer_run_controller = self.create_timer(
-                timer_period_sec=1 / 30, callback=self._timer_cb_run_controller, callback_group=self.callback_group
+                timer_period_sec=1 / 30, callback=self._timer_cb_run_controller, callback_group=self._pub_servo_cb_group
             )
         else:
             self._timer_run_controller.reset()
@@ -174,7 +175,8 @@ class CutPointRotateAxisController(TFNode):
                 self.info(f"Servo stopped.")
             else:
                 self.error(f"Servo failed to stop.")
-            self._timer_run_controller.cancel()
+            # self._timer_run_controller.cancel()
+            self.destroy_timer(self._timer_run_controller)
         return result
 
     def _action_goal_cb_run_final_approach(self, goal_handle: ServerGoalHandle):
@@ -229,7 +231,7 @@ class CutPointRotateAxisController(TFNode):
             self.error(
                 f"{self.tof_name} sensor(s) are returning unreliable data, aborting controller. Data: {self.d_tof0}, {self.d_tof1}"
             )
-            self._timer_run_controller.cancel()
+            self.destroy_timer(self._timer_run_controller)
             self.controller_running = False
             self.publish_zero_twist()
             return
@@ -246,7 +248,7 @@ class CutPointRotateAxisController(TFNode):
 
         if np.isclose(theta, 0.0, atol=np.radians(1)):
             self.info(f"Reached terminating point at:\ndist:{dist_cut_point_to_branch}, theta: {theta}")
-            self._timer_run_controller.cancel()
+            self.destroy_timer(self._timer_run_controller)
             self.controller_running = False
             self.publish_zero_twist()
             return

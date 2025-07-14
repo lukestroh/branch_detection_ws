@@ -52,7 +52,7 @@ def far_plane_filter(
         # print(f"Could not find any data points less than the filter's far plane of {filter_far_plane}")
         return None
 
-    fp_filter_zeroed_ts = fp_filter_ts - fp_filter_ts[0]
+    fp_filter_zeroed_ts = fp_filter_ts - np.min(fp_filter_ts)
 
     return {
         "ts": fp_filter_ts,
@@ -73,6 +73,7 @@ def fit_ransac(
     quadratic = skpp.PolynomialFeatures(degree=2)
     x = window_data["wrist_state"]
     # print(x   )
+    # node.info(x)
     try:
         x_quad = quadratic.fit_transform(X=x[:, np.newaxis])
 
@@ -210,7 +211,7 @@ def window_ransac(
     ts_window_start = 0.0
     ts_window_end = ts_window_start + window_size
 
-    ts_trial_end = data["ts_zeroed"][-1]
+    ts_trial_end = np.max(data["ts_zeroed"])
 
     window_idx = 0
     last_window_reached = False
@@ -352,7 +353,7 @@ def filter_parabolas(windowed_data: dict, node: Node = None) -> dict:
         r2 = window["r2"]
         if coefs is None:
             continue
-        if coefs[2] < 0:
+        if coefs[2] < 0.10:
             continue
         if r2 is not None and r2 < 0:
             continue
@@ -475,6 +476,8 @@ def get_branch_center_time_and_distance(
     best_window = None
     windowed_data = None
     filtered_window_data = None
+
+    
 
     try:
         maf_ts = data["tof_ts"]

@@ -79,21 +79,11 @@ class VL53L4CDFilterNode(Node):
             # msg_type=ToFData,
             topic="/microROS/vl53l4cd/data",
             callback=self._sub_cb_vl53l4cd_distance_raw,
-            qos_profile=20,
+            qos_profile=50,
         )
 
         # Publishers
-        self._pub_tof_filtered = self.create_publisher(msg_type=TofStamped, topic="/vl53l4cd/filtered", qos_profile=20)
-        # self._pub_tof0_filtered = self.create_publisher(
-        #     msg_type=TofStamped,
-        #     topic="/vl53l4cd/tof0/filtered",
-        #     qos_profile=20,
-        # )
-        # self._pub_tof1_filtered = self.create_publisher(
-        #     msg_type=TofStamped,
-        #     topic="/vl53l4cd/tof1/filtered",
-        #     qos_profile=20,
-        # )
+        self._pub_tof_filtered = self.create_publisher(msg_type=TofStamped, topic="/vl53l4cd/filtered", qos_profile=50)
 
         # Messages
         self.filtered_msg = TofStamped()
@@ -107,12 +97,6 @@ class VL53L4CDFilterNode(Node):
         self.filtered_msg.far_plane = self.depth_far_plane
 
         # Initialize variables
-        # json_covariances = json.load(
-        #     open(os.path.join(get_package_share_directory("vl53l4cd_bringup"), "config/covariances.json"), "r")
-        # )
-        # self.vl53l4cd_msg_raw = Vl53l4cdStamped()
-        # self.vl53l4cd_msg_filtered = Vl53l4cdStamped()
-
         self.deque_size = 10
         self.deques = [deque([self.RANGING_MAX] * self.deque_size), deque([self.RANGING_MAX] * self.deque_size)]
 

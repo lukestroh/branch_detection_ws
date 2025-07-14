@@ -129,8 +129,8 @@ class FinalApproachControllerNode(TFNode):
                 callback=self._timer_cb_run_controller,
                 callback_group=self._cb_group_servo_controller,
             )
-        else:
-            self._timer_run_controller.reset()
+        # else:
+        #     self._timer_run_controller.reset()
 
         feedback_msg = RunFinalApproach.Feedback()
         result = RunFinalApproach.Result()
@@ -170,7 +170,8 @@ class FinalApproachControllerNode(TFNode):
             goal_handle.abort()
             result.success = False
         finally:
-            self._timer_run_controller.cancel()
+            # self._timer_run_controller.cancel()
+            self.destroy_timer(self._timer_run_controller)
             stop_servo_resp: Trigger.Response = self._srv_client_stop_servo.call(request=Trigger.Request())
             if stop_servo_resp.success:
                 self.info(f"Servo stopped.")
