@@ -43,26 +43,9 @@ class ResetTestTreeNode(Node):
         self.error = lambda x: self.get_logger().error(f"\n{x}")
         self.fatal = lambda x: self.get_logger().fatal(f"\n{x}")
 
-        # Blackboard setup
-        self.bb = py_trees.blackboard.Client(name="ResetTreeBlackboard")
-        self.bb.register_key(key="trials_done", access=py_trees.common.Access.WRITE)
-        self.bb.trials_done = False
-        self.bb.register_key(key="d_tof0", access=py_trees.common.Access.WRITE)
-        self.bb.register_key(key="d_tof1", access=py_trees.common.Access.WRITE)
-        self.bb.register_key(key="current_pose_index", access=py_trees.common.Access.WRITE)
-        self.bb.current_pose_index = 0
-        self.bb.register_key(key="current_pose", access=py_trees.common.Access.WRITE)
-        self.bb.register_key(key='initial_joint_position', access=py_trees.common.Access.WRITE)
-        self.bb.register_key(key="poses", access=py_trees.common.Access.WRITE)
-        self.bb.current_pose = Pose()
-        self.bb.register_key(key="poses_in_queue", access=py_trees.common.Access.WRITE)
-
-        # Behavior tree setup
-        self.tree: py_trees_ros.trees.BehaviourTree = self.create_behavior_tree_ros()
-        self.snapshot_visitor = py_trees.visitors.SnapshotVisitor()
-        self.tree.add_post_tick_handler(ft.partial(self.post_tick_handler, self.snapshot_visitor))
-        self.tree.add_visitor(self.snapshot_visitor)
-        self.last_tree_snapshot = None
+        # ROS Parameters
+        self._param_record_bag = self.declare_parameter(name="record_bag", value=Parameter.Type.BOOL).get_parameter_value().bool_value
+        # self._param_record_loc = self.declare_parameter(name="record_loc", value=Parameter.Type.STRING).get_parameter_value().string_value
 
         # Callback groups
         self._reentrant_cb_group = ReentrantCallbackGroup()
@@ -78,6 +61,27 @@ class ResetTestTreeNode(Node):
             callback_group=self._reentrant_cb_group,
             qos_profile=1,
         )
+
+        # Blackboard setup
+        self.bb = py_trees.blackboard.Client(name="ResetTreeBlackboard")
+        self.bb.register_key(key='initial_joint_position', access=py_trees.common.Access.WRITE)
+        self.bb.register_key(key="trials_done", access=py_trees.common.Access.WRITE)
+        self.bb.trials_done = False
+        self.bb.register_key(key="d_tof0", access=py_trees.common.Access.WRITE)
+        self.bb.register_key(key="d_tof1", access=py_trees.common.Access.WRITE)
+        self.bb.register_key(key="current_pose_index", access=py_trees.common.Access.WRITE)
+        self.bb.current_pose_index = 0
+        self.bb.register_key(key="current_pose", access=py_trees.common.Access.WRITE)
+        self.bb.register_key(key="poses", access=py_trees.common.Access.WRITE)
+        self.bb.current_pose = Pose()
+        self.bb.register_key(key="poses_in_queue", access=py_trees.common.Access.WRITE)
+
+        # Behavior tree setup
+        self.tree: py_trees_ros.trees.BehaviourTree = self.create_behavior_tree_ros()
+        self.snapshot_visitor = py_trees.visitors.SnapshotVisitor()
+        self.tree.add_post_tick_handler(ft.partial(self.post_tick_handler, self.snapshot_visitor))
+        self.tree.add_visitor(self.snapshot_visitor)
+        self.last_tree_snapshot = None
 
         # Class attributes
         self._initial_joint_position = None
@@ -141,8 +145,8 @@ class ResetTestTreeNode(Node):
         reset_test_behavior = ResetTestBehavior(name="reset_test_behavior")
         cut_point_rotate_axis_behavior = CutPointRotateAxisControllerBehavior(name="cut_point_rotate_axis_behavior")
         final_approach_behavior = FinalApproachControllerBehavior(name="final_approach_behavior_behavior")
-        start_bag_record_behavior = StartBagRecordBehavior(name="start_bag_record_behavior")
-        stop_bag_record_behavior = StopBagRecordBehavior(name="stop_bag_record_behavior")
+        start_bag_record_behavior = StartBagRecordBehavior(name="start_bag_record_behavior", record_bag=self._param_record_bag)
+        stop_bag_record_behavior = StopBagRecordBehavior(name="stop_bag_record_behavior", record_bag=self._param_record_bag)
 
         
         find_branch_roll_wrist_behavior = FindBranchRollWristControllerBehavior(

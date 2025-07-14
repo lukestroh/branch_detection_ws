@@ -13,9 +13,10 @@ from ros2bag_msgs.srv import StartRecord
 
 
 class StartBagRecordBehavior(pt.behaviour.Behaviour):
-    def __init__(self, name):
+    def __init__(self, name: str, record_bag: bool):
         super(StartBagRecordBehavior, self).__init__(name)
         self.name = name
+        self.record_bag = record_bag
         return
 
     def setup(self, node: Node):
@@ -35,11 +36,19 @@ class StartBagRecordBehavior(pt.behaviour.Behaviour):
 
         self.blackboard = pt.blackboard.Client(name=self.name)
 
+        
+
         return
 
     def initialise(self):
         """Call the start bag record service"""
-        self.goal_status = None
+        if self.record_bag == False:
+            self.goal_status = True
+        else:
+            self.goal_status = None
+
+        self.warn(f"RECORD BAG: {self.record_bag}")
+        self.warn(self.goal_status)
         start_record_req = StartRecord.Request()
         # start_record_req.record_bag = True
         # start_record_req.record_loc = self.node._param_record_loc

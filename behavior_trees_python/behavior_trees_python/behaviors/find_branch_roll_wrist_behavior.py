@@ -20,7 +20,7 @@ class FindBranchRollWristControllerBehavior(pt.behaviour.Behaviour):
         self.name = name
         return
 
-    def setup(self, node):
+    def setup(self, node: Node):
         self.node = node
         self.info = lambda x: self.node.get_logger().info(f"\n[{self.name}] {x}")
         self.warn = lambda x: self.node.get_logger().warn(f"\n[{self.name}] {x}")
@@ -45,6 +45,7 @@ class FindBranchRollWristControllerBehavior(pt.behaviour.Behaviour):
         self.blackboard = pt.blackboard.Client(name=self.name)
         self.blackboard.register_key(key="current_pose_index", access=pt.common.Access.WRITE)
         self.blackboard.register_key(key='initial_joint_position', access=pt.common.Access.WRITE)
+        # self.node.get_clock().sleep_for(Duration(seconds=0.1))
         return
 
     def initialise(self):
@@ -56,7 +57,7 @@ class FindBranchRollWristControllerBehavior(pt.behaviour.Behaviour):
         except KeyError as e:
             self.node.get_logger().info(f"{e}, initial joint position not yet on blackboard.")
             self.node.get_clock().sleep_for(Duration(seconds=1.0))
-            self.initialise()
+            # self.initialise()
             
         self._send_goal_future: Future = self.client.send_goal_async(
             goal=self.goal,

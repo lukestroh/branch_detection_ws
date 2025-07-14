@@ -51,7 +51,7 @@ class GenerateUniformCylindricalPosesBehavior(pt.behaviour.Behaviour):
         self.goal_status = None
         self.goal = GenerateCylindricalPoses.Goal()
         
-        debug = True
+        debug = False
         if debug:
             self.goal.num_radius_poses = 3
             self.goal.num_theta_poses = 15
@@ -64,7 +64,7 @@ class GenerateUniformCylindricalPosesBehavior(pt.behaviour.Behaviour):
             self.goal.num_radius_poses = 3
             self.goal.num_theta_poses = 15
             self.goal.num_z_poses = 3
-            self.goal.radius_range = [0.09, 0.12]
+            self.goal.radius_range = [0.05, 0.05]
             self.goal.theta_range = [0.0, 2 * np.pi]
             self.goal.z_range = [0.0, -0.10]
 
