@@ -183,7 +183,7 @@ test.urdf
 # Ryan's repo
 Ground_Truth_Ros
 
-*test.py
+test.py
 *test.urdf
 
 csv/

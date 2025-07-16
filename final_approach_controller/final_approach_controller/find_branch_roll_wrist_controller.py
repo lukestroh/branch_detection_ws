@@ -278,14 +278,20 @@ class FindBranchRollWristController(TFNode):
         self.info("Beginning controller, initializing sensors...")
         self.get_clock().sleep_for(Duration(seconds=2.0))
 
+        # feedback_msg = RunFindBranchRollWrist.Feedback()
+        _result = RunFindBranchRollWrist.Result()
+
         # Reset all caches, controller flags
         self.reset_controller()
 
         trials_initial_joint_position: RunFindBranchRollWrist.Goal = goal_handle.request
-        wrist_3_initial_position = trials_initial_joint_position.initial_joint_position[2]
-
-        # feedback_msg = RunFindBranchRollWrist.Feedback()
-        _result = RunFindBranchRollWrist.Result()
+        try:
+            wrist_3_initial_position = trials_initial_joint_position.initial_joint_position[2]
+        except IndexError:
+            self.fatal(f"Start joints array was not populated")
+            goal_handle.abort()
+            _result.success = False
+            return _result
 
         if not self.start_states_recorded:
             self.start_controller_tf = self.lookup_transform(
