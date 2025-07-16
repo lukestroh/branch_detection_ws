@@ -15,7 +15,7 @@ setup(
         # Launch files
         (os.path.join("share", package_name, "launch"), glob.glob("launch/*launch.py")),
     ],
-    install_requires=["setuptools"],
+    install_requires=["setuptools", "modern_robotics"],
     zip_safe=True,
     maintainer="lukestroh",
     maintainer_email="luke.strohbehn@gmail.com",

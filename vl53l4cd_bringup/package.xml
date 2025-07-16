@@ -7,7 +7,7 @@
   <maintainer email="luke.strohbehn@gmail.com">lukestroh</maintainer>
   <license>BSD-3-Clause</license>
 
-  <depend>vl534cd_msgs</depend>
+  <depend>vl53l4cd_msgs</depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

@@ -20,7 +20,7 @@ setup(
         # Plotjuggler
         (os.path.join("share", package_name, "plotjuggler"), glob.glob("plotjuggler/*.xml")),
     ],
-    install_requires=["setuptools"],
+    install_requires=["setuptools", "filterpy"],
     zip_safe=True,
     maintainer="lukestroh",
     maintainer_email="luke.strohbehn@gmail.com",
