@@ -52,12 +52,12 @@ class FindBranchRollWristControllerBehavior(pt.behaviour.Behaviour):
         """Send the action server a goal at the first tick."""
         self.goal_status = None
         self.goal = RunFindBranchRollWrist.Goal()
-        try:
-            self.goal.initial_joint_position = self.blackboard.initial_joint_position
-        except KeyError as e:
-            self.node.get_logger().info(f"{e}, initial joint position not yet on blackboard.")
-            self.node.get_clock().sleep_for(Duration(seconds=1.0))
-            # self.initialise()
+        # try:
+        #     self.goal.initial_joint_position = self.blackboard.initial_joint_position
+        # except KeyError as e:
+        #     self.node.get_logger().info(f"{e}, initial joint position not yet on blackboard.")
+        #     self.node.get_clock().sleep_for(Duration(seconds=1.0))
+        self.goal.initial_joint_position = [0.0,0.0,0.0,0.0,0.0,0.0] # TODO: Delete or make more robust
             
         self._send_goal_future: Future = self.client.send_goal_async(
             goal=self.goal,
