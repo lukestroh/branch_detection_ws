@@ -1,0 +1,35 @@
+#!/usr/bin/env python3
+
+import py_trees as pt
+
+
+class SaveStartPositionInfo(pt.behaviour.Behaviour):
+    def __init__(self, name):
+        super(SaveStartPositionInfo, self).__init__(name)
+        self.name = name
+        return
+
+    def setup(self, node):
+        self.node = node
+
+        self.blackboard = pt.blackboard.Client(name=self.name)
+        self.blackboard.register_key(key="initial_pose", access=pt.common.Access.WRITE)
+        self.blackboard.register_key(key="initial_joint_angles", access=pt.common.Access.WRITE)
+
+        # Subscribers
+
+        return
+
+    def initialise(self):
+        self.total_poses = len(self.blackboard.poses)
+        self.blackboard.poses_in_queue = self.total_poses - (self.blackboard.current_pose_index + 1)
+        return
+
+    def update(self):
+        self.blackboard.current_pose_index += 1
+        self.blackboard.poses_in_queue = self.total_poses - (self.blackboard.current_pose_index + 1)
+        if self.blackboard.current_pose_index >= len(self.blackboard.poses):
+            self.blackboard.trials_done = True
+        else:
+            self.blackboard.current_pose = self.blackboard.poses[self.blackboard.current_pose_index]
+        return pt.common.Status.SUCCESS

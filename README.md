@@ -1,9 +1,4 @@
-# Branch Detection Worksapce
-
-## TODO:
-1. For Contribution 2!!!: https://stackoverflow.com/questions/77134139/fit-3d-cylinder-in-a-point-cloud
-1. https://stackoverflow.com/questions/43784618/fit-a-cylinder-to-scattered-3d-xyz-point-data/44164662#44164662
-
+# Branch Detection Workspace
 
 This is a ROS2 workspace. Various packages have been provided for the development of ToF branch detection.
 
@@ -46,7 +41,7 @@ source install/local_setup.bash
 
 ### Running the microROS agent
 
-The agent is launched from the `teensy32_tof_bringup` package, but can be individually run using the following command:
+The agent is launched from the `tof_bringup` package but can be individually run using the following command:
 
 ```
 ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/ttyACM0 ROS_DOMAIN_ID=0

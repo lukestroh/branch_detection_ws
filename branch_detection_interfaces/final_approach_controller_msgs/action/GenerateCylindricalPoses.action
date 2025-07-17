@@ -1,0 +1,10 @@
+int64  num_radius_poses
+int64  num_theta_poses
+int64  num_z_poses
+float64[] radius_range
+float64[] theta_range
+float64[] z_range
+---
+bool success
+geometry_msgs/Pose[] poses
+---

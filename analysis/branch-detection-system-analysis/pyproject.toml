@@ -19,4 +19,8 @@ dependencies = [
     "numpy",
     "pandas",
     "plotly",
+    "scikit-learn",
+    "tables",
+    'pyyaml',
+    'zstandard',
 ]
