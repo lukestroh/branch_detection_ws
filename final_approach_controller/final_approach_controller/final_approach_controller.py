@@ -6,13 +6,13 @@ from rclpy.callback_groups import ReentrantCallbackGroup, MutuallyExclusiveCallb
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.duration import Duration
 from rclpy.parameter import Parameter
+from rclpy.task import Future
 from rclpy.time import Time
 
 # from rclpy.node import Node
 from action_msgs.msg import GoalStatus
+from controller_manager_msgs.srv import SwitchController
 from final_approach_controller.tf_node import TFNode
-
-from final_approach_controller.timer_state import TimerState
 from final_approach_controller_msgs.action import RunFinalApproach
 from final_approach_controller_msgs.srv import StartFinalApproach
 from geometry_msgs.msg import TwistStamped
@@ -20,6 +20,7 @@ from std_srvs.srv import Trigger
 from tof_msgs.msg import TofStamped
 from vl6180_msgs.msg import Vl6180FilteredStamped
 
+from final_approach_controller.timer_state import TimerState
 
 import modern_robotics as mr
 import numpy as np
@@ -145,14 +146,9 @@ class FinalApproachControllerNode(TFNode):
         self.info("Received cancel request")
         return CancelResponse.ACCEPT
 
-    def _action_exe_cb_run_final_approach(self, goal_handle: ServerGoalHandle):
+    async def _action_exe_cb_run_final_approach(self, goal_handle: ServerGoalHandle):
         self.controller_running = True
-        start_servo_resp: Trigger.Response = self._srv_client_start_servo.call(request=Trigger.Request())
-        self.start_servo_time = self.get_clock().now()
-        if start_servo_resp.success:
-            self.info(f"Servo started")
-        else:
-            self.error(f"Servo failed to start")
+        await self.start_servo()
 
         if self._timer_run_controller is None:
             self._timer_run_controller = self.create_timer(
@@ -196,11 +192,7 @@ class FinalApproachControllerNode(TFNode):
             result.success = False
         finally:
             self.stop_servo_pub_timer()
-            stop_servo_resp: Trigger.Response = self._srv_client_stop_servo.call(request=Trigger.Request())
-            if stop_servo_resp.success:
-                self.info(f"Servo stopped.")
-            else:
-                self.error(f"Servo failed to stop.")
+            await self.stop_servo()
             return result
 
     def _action_goal_cb_run_final_approach(self, goal_handle: ServerGoalHandle):
@@ -299,8 +291,60 @@ class FinalApproachControllerNode(TFNode):
         return response
 
     # ===============================
-    #       Controller methods
+    #      Controller methods
     # ===============================
+    def publish_zero_twist(self):
+        with self._servo_msg_lock:
+            self._msg_twist.twist.linear.x = 0.0
+            self._msg_twist.twist.linear.y = 0.0
+            self._msg_twist.twist.linear.z = 0.0
+            self._msg_twist.twist.angular.x = 0.0
+            self._msg_twist.twist.angular.y = 0.0
+            self._msg_twist.twist.angular.z = 0.0
+            self._msg_twist.header.frame_id = (
+                f"{self._param_robot_eef_part}__tool0"  # TODO: if changing to EEF, change ur_servo.yaml
+            )
+            self._msg_twist.header.stamp = self.get_clock().now().to_msg()
+            self._pub_servo.publish(self._msg_twist)
+        return
+
+    async def switch_controllers(self, activate_controllers, deactivate_controllers) -> None:
+        try:
+            switch_ctrlr_req = SwitchController.Request(
+                activate_controllers=[activate_controllers],
+                deactivate_controllers=[deactivate_controllers],
+                strictness=SwitchController.Request.STRICT,
+            )
+            SwitchController.Response()
+            switch_ctrlr_future: Future = self._srv_switch_ctrls.call_async(request=switch_ctrlr_req)
+            await switch_ctrlr_future
+            if switch_ctrlr_future.result().ok:
+                self.info(f"Successfully deactivated {deactivate_controllers}, activated {activate_controllers}")
+            else:
+                self.error("Failed to switch controllers,")
+        except Exception as e:
+            self.error(f"{e}")
+            pass
+        return
+
+    async def start_servo(self) -> None:
+        start_servo_future: Future = self._srv_client_start_servo.call_async(request=Trigger.Request())
+        await start_servo_future
+        if start_servo_future.result().success:
+            self.info(f"Servo started.")
+        else:
+            self.error(f"Servo failed to start.")
+        return
+
+    async def stop_servo(self) -> None:
+        stop_servo_future: Future = self._srv_client_stop_servo.call_async(request=Trigger.Request())
+        await stop_servo_future
+        if stop_servo_future.result().success:
+            self.info(f"Servo stopped.")
+        else:
+            self.error(f"Servo failed to stop.")
+        return
+    
     def get_cut_point_info(self) -> tuple:
         dist = (self.d_tof0 + self.d_tof1) / 2
         d_diff = self.d_tof0 - self.d_tof1
