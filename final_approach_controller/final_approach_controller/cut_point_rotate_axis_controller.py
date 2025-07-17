@@ -6,10 +6,12 @@ from rclpy.callback_groups import ReentrantCallbackGroup, MutuallyExclusiveCallb
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.duration import Duration
 from rclpy.parameter import Parameter
+from rclpy.task import Future
 from rclpy.time import Time
 
 from final_approach_controller.tf_node import TFNode
 
+from final_approach_controller.timer_state import TimerState
 from final_approach_controller_msgs.action import RunCutPointRotateAxis
 from geometry_msgs.msg import TwistStamped
 from std_srvs.srv import Trigger
@@ -20,15 +22,16 @@ import modern_robotics as mr
 import numpy as np
 from scipy.spatial.transform import Rotation
 import pprint as pp
-import time
+from threading import Lock
+
 
 
 class CutPointRotateAxisController(TFNode):
     def __init__(self) -> None:
         super().__init__(node_name="cut_point_rotate_axis_controller_node")
-        self.info = lambda x: self.get_logger().info(f"{pp.pformat(x)}")
-        self.warn = lambda x: self.get_logger().warn(f"{pp.pformat(x)}")
-        self.error = lambda x: self.get_logger().error(f"{pp.pformat(x)}")
+
+        # Locks
+        self._lock_timer_state_pub_servo = Lock()
 
         # Parameters
         self._param_robot_eef_part = (
@@ -86,8 +89,11 @@ class CutPointRotateAxisController(TFNode):
 
         # Timers
         self._timer_setup_tf_frames = self.create_timer(timer_period_sec=1.0, callback=self._timer_cb_setup_tf_frames)
-        self._timer_run_controller = None
-
+        self._timer_state_pub_servo = TimerState.STOPPED
+        self._timer_pub_servo = self.create_timer(
+                timer_period_sec=1 / 30, callback=self._timer_cb_run_controller, callback_group=self._pub_servo_cb_group
+            )
+        
         # Messages
         self.msg_twist = TwistStamped()
 
@@ -113,6 +119,18 @@ class CutPointRotateAxisController(TFNode):
         self.tof_name = self._param_tof_type
 
         return
+    
+    def stop_servo_pub_timer(self):
+        with self._lock_timer_state_pub_servo:
+            if self._timer_state_pub_servo == TimerState.RUNNING:
+                self._timer_state_pub_servo == TimerState.STOPPED
+        return
+    
+    def start_servo_pub_timer(self):
+        with self._lock_timer_state_pub_servo:
+            if self._timer_state_pub_servo == TimerState.STOPPED:
+                self._timer_state_pub_servo == TimerState.RUNNING
+        return
 
     # ===============================
     #        Action callbacks
@@ -121,39 +139,25 @@ class CutPointRotateAxisController(TFNode):
         self.info("Received cancel request")
         return CancelResponse.ACCEPT
 
-    def _action_exe_cb_run_cut_point_rotate_axis(self, goal_handle: ServerGoalHandle):
+    def _action_goal_cb_run_final_approach(self, goal_handle: ServerGoalHandle):
+        self.info("Received goal request")
+        return GoalResponse.ACCEPT
+
+    async def _action_exe_cb_run_cut_point_rotate_axis(self, goal_handle: ServerGoalHandle):
         """TODO: This is the same as final_approach_controller, let the high level controller do this in the future"""
         self.controller_running = True
-        start_servo_resp: Trigger.Response = self._srv_client_start_servo.call(request=Trigger.Request())
-        if start_servo_resp.success:
-            self.info(f"Servo started")
-        else:
-            self.error(f"Servo failed to start")
-
-        if self._timer_run_controller is None:
-            self._timer_run_controller = self.create_timer(
-                timer_period_sec=1 / 30, callback=self._timer_cb_run_controller, callback_group=self._pub_servo_cb_group
-            )
-        else:
-            self._timer_run_controller.reset()
-
+        await self.start_servo()
+        
         try:
-            feedback_msg = RunCutPointRotateAxis.Feedback()
             result = RunCutPointRotateAxis.Result()
 
             while self.controller_running:
                 if goal_handle.is_cancel_requested:
+                    self.stop_servo_pub_timer()
                     goal_handle.canceled()
                     self.info("CutPointRotateAxisController canceled.")
                     result.success = False
                     return result
-                feedback_msg.tof0 = self.d_tof0
-                feedback_msg.tof1 = self.d_tof1
-                feedback_msg.dist = (self.d_tof0 + self.d_tof1) / 2
-                d_diff = self.d_tof0 - self.d_tof1
-                feedback_msg.theta = np.degrees(np.arctan(d_diff / self._tof_linear_distance))
-                goal_handle.publish_feedback(feedback_msg)
-                time.sleep(1)
 
                 # if self.get_clock().now() - self.start_servo_time > Duration(seconds=5):
                 #     goal_handle.canceled()
@@ -163,34 +167,28 @@ class CutPointRotateAxisController(TFNode):
                 #     return result
 
             result.success = True
-
+            self.publish_zero_twist()
             goal_handle.succeed()
             return result
 
         except Exception as e:
-            self.get_logger().fatal(f"{e}")
+            self.fatal(f"{e}")
         finally:
-            stop_servo_resp: Trigger.Response = self._srv_client_stop_servo.call(request=Trigger.Request())
-            if stop_servo_resp.success:
-                self.info(f"Servo stopped.")
-            else:
-                self.error(f"Servo failed to stop.")
-            # self._timer_run_controller.cancel()
-            self.destroy_timer(self._timer_run_controller)
+            self.publish_zero_twist()
+            self.stop_servo_pub_timer()
+            await self.stop_servo()
         return result
 
-    def _action_goal_cb_run_final_approach(self, goal_handle: ServerGoalHandle):
-        self.info("Received goal request")
-        return GoalResponse.ACCEPT
+    
 
     # ===============================
     #         Timer callbacks
     # ===============================
     def _timer_cb_setup_tf_frames(self):
         frame_sets = [
-            {"parent": "mock_pruner__base", "child": "mock_pruner__tof0"},
-            {"parent": "mock_pruner__base", "child": "mock_pruner__tof1"},
-            {"parent": "mock_pruner__base", "child": "mock_pruner__tool0"},
+            {"parent": f"{self._param_robot_eef_part}__base", "child": f"{self._param_robot_eef_part}__tof0"},
+            {"parent": f"{self._param_robot_eef_part}__base", "child": f"{self._param_robot_eef_part}__tof1"},
+            {"parent": f"{self._param_robot_eef_part}__base", "child": f"{self._param_robot_eef_part}__tool0"},
         ]
 
         transforms = []
@@ -225,22 +223,25 @@ class CutPointRotateAxisController(TFNode):
         return
 
     def _timer_cb_run_controller(self):
+        with self._lock_timer_state_pub_servo:
+            if self._timer_state_pub_servo != TimerState.RUNNING:
+                return
         if np.isclose(self.d_tof0, self.tof_ranging_max, atol=0.05) or np.isclose(
             self.d_tof1, self.tof_ranging_max, atol=0.05
         ):
             self.error(
                 f"{self.tof_name} sensor(s) are returning unreliable data, aborting controller. Data: {self.d_tof0}, {self.d_tof1}"
             )
-            self.destroy_timer(self._timer_run_controller)
+            self.stop_servo_pub_timer()
             self.controller_running = False
             self.publish_zero_twist()
             return
 
         if (
             self.d_tof0 > 0.4 or self.d_tof1 > 0.4
-        ):  # TODO: This is arbitrary, fix with better value (maybe based on calculated distance?)
+        ):  # TODO: This is arbitrary, fix with better value (maybe based on max desired far plane distance?)
             self.error(
-                f"{self.tof_name} sensor(s) are returning data beyond the calculated distance, aborting. Data: {self.d_tof0}, {self.d_tof1}"
+                f"{self.tof_name} sensor(s) are returning data beyond the 0.4m distance, aborting. Data: {self.d_tof0}, {self.d_tof1}"
             )
 
         dist, theta = self.get_cut_point_info()
@@ -248,7 +249,7 @@ class CutPointRotateAxisController(TFNode):
 
         if np.isclose(theta, 0.0, atol=np.radians(1)):
             self.info(f"Reached terminating point at:\ndist:{dist_cut_point_to_branch}, theta: {theta}")
-            self.destroy_timer(self._timer_run_controller)
+            self.stop_servo_pub_timer()
             self.controller_running = False
             self.publish_zero_twist()
             return
@@ -261,22 +262,10 @@ class CutPointRotateAxisController(TFNode):
                 tf_rot_axis_to_cut_point=tf_rot_axis_to_cut_point, angle_from_perpendicular=theta
             )
 
-            # tf_cut_point_to_world = self.lookup_transform(  # TODO: change to EEF frame, can use static transform!!!
-            #     target_frame="mock_pruner__tool0",
-            #     source_frame="cart__base",
-            #     time=self.get_clock().now(),
-            #     sync=True,
-            #     as_matrix=True,
-            # )
-
-            # linear_v_world_frame = np.linalg.inv(tf_cut_point_to_world[:3, :3]) @ twist_mp_tool0_frame[0:3, 0]
             linear_v_mp_tool0_frame = twist_mp_tool0_frame[0:3, 0]
             linear_v_mp_tool0_frame *= self.max_linear_speed
-            # linear_v_world_frame = linear_v_world_frame / np.linalg.norm(linear_v_world_frame) * self.max_linear_speed
 
-            # angular_v_world_frame = np.linalg.inv(tf_cut_point_to_world[:3, :3]) @ twist_mp_tool0_frame[3:6, 0]
             angular_v_mp_tool0_frame = twist_mp_tool0_frame[3:6, 0]
-            # angular_v_world_frame = angular_v_world_frame / np.linalg.norm(angular_v_world_frame) * self.
             angular_v_mp_tool0_frame *= self.max_angular_speed
 
             self.msg_twist.twist.linear.x = linear_v_mp_tool0_frame[0]
@@ -303,6 +292,24 @@ class CutPointRotateAxisController(TFNode):
     # ===============================
     #       Controller methods
     # ===============================
+    async def start_servo(self) -> None:
+        start_servo_future: Future = self._srv_client_start_servo.call_async(request=Trigger.Request())
+        await start_servo_future
+        if start_servo_future.result().success:
+            self.info(f"Servo started.")
+        else:
+            self.error(f"Servo failed to start.")
+        return
+    
+    async def stop_servo(self) -> None:
+        stop_servo_future: Future = self._srv_client_stop_servo.call_async(request=Trigger.Request())
+        await stop_servo_future
+        if stop_servo_future.result().success:
+            self.info(f"Servo stopped.")
+        else:
+            self.error(f"Servo failed to stop.")
+        return
+    
     def get_cut_point_info(self) -> tuple:
         dist = (self.d_tof0 + self.d_tof1) / 2
         d_diff = self.d_tof0 - self.d_tof1

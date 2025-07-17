@@ -150,7 +150,6 @@ class ResetTestNode(TFNode):
     
     async def switch_controllers(self, activate_controllers: list[str], deactivate_controllers: list[str]) -> None:
         # await self.list_controllers()
-
         switch_ctrlr_req = SwitchController.Request(
             activate_controllers=[activate_controllers],
             deactivate_controllers=[deactivate_controllers],
@@ -192,13 +191,10 @@ class ResetTestNode(TFNode):
     # ===============================
     def _action_cancel_cb_run_test_reset(self, goal_handle: ServerGoalHandle):
         self.info("Received cancel request")
-        self.info("Canceling quadratic fit timer")
         self.publish_zero_twist()
         with self._timer_lock:
             if self.destroy_timer(self._timer_pub_servo):
                 self._timer_pub_servo = None
-            # if not self._timer_run_quadratic_fit.is_canceled():
-            #     self._timer_run_quadratic_fit.cancel()
         goal_handle.canceled()
         self.reset_controller()
         return CancelResponse.ACCEPT
@@ -208,9 +204,7 @@ class ResetTestNode(TFNode):
         return GoalResponse.ACCEPT
     
     async def _action_execute_cb_run_test_reset(self, goal_handle: ServerGoalHandle):
-
         run_test_reset_req: RunTestReset.Goal = goal_handle.request
-
         run_test_reset_result = RunTestReset.Result()
 
         with self._timer_lock:

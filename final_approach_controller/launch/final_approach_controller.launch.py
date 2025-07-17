@@ -17,6 +17,7 @@ logger = rclpy.logging.get_logger("final_approach_controller.launch")
 
 
 def launch_setup(context, *args, **kwargs) -> list:
+    record_bag = LaunchConfiguration("record_bag")
     robot_base_part = LaunchConfiguration("robot_base_part")
     robot_eef_part = LaunchConfiguration("robot_eef_part")
     tof_sensor_type = LaunchConfiguration("tof_sensor_type")
@@ -57,6 +58,7 @@ def launch_setup(context, *args, **kwargs) -> list:
         name="find_branch_roll_wrist_controller",
         output="both",
         parameters=[
+            {"record_bag": record_bag},
             {"robot_base_part": robot_base_part},
             {"robot_eef_part": robot_eef_part},
             {"use_mock_hardware": use_mock_hardware},
@@ -103,6 +105,7 @@ def launch_setup(context, *args, **kwargs) -> list:
 def generate_launch_description():
 
     declared_configs = [
+        dict(name="record_bag", default_value='false', choices=['true', 'false']),
         dict(name="robot_base_part", default_value=""),
         dict(name="robot_eef_part", default_value=""),
         dict(name="tof_sensor_type", default_value=""),

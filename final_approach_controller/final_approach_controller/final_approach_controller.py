@@ -5,12 +5,14 @@ from rclpy.action.server import ServerGoalHandle
 from rclpy.callback_groups import ReentrantCallbackGroup, MutuallyExclusiveCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.duration import Duration
+from rclpy.parameter import Parameter
 from rclpy.time import Time
 
 # from rclpy.node import Node
 from action_msgs.msg import GoalStatus
 from final_approach_controller.tf_node import TFNode
 
+from final_approach_controller.timer_state import TimerState
 from final_approach_controller_msgs.action import RunFinalApproach
 from final_approach_controller_msgs.srv import StartFinalApproach
 from geometry_msgs.msg import TwistStamped
@@ -23,12 +25,28 @@ import modern_robotics as mr
 import numpy as np
 from scipy.spatial.transform import Rotation
 import pprint as pp
-import time
+from threading import Lock
 
 
 class FinalApproachControllerNode(TFNode):
     def __init__(self):
         super().__init__(node_name="final_approach_controller_node")
+        # Parameters
+        self._param_robot_base_part: str = (
+            self.declare_parameter(name="robot_base_part", value=Parameter.Type.STRING)
+            .get_parameter_value()
+            .string_value
+        )
+
+        self._param_robot_eef_part: str = (
+            self.declare_parameter(name="robot_eef_part", value=Parameter.Type.STRING)
+            .get_parameter_value()
+            .string_value
+        )
+
+        # Locks
+        self._lock_timer_state = Lock()
+
         # Callback group
         self.callback_group = ReentrantCallbackGroup()  # allows for subscriber to persist in service, action
         self._cb_group_servo_controller = MutuallyExclusiveCallbackGroup()
@@ -83,6 +101,7 @@ class FinalApproachControllerNode(TFNode):
         # Timers
         self._timer_setup_tf_frames = self.create_timer(timer_period_sec=1.0, callback=self._timer_cb_setup_tf_frames)
         self._timer_run_controller = None
+        self._timer_state = TimerState.STOPPED
 
         # Messages
         self.msg_twist = TwistStamped()
@@ -104,6 +123,18 @@ class FinalApproachControllerNode(TFNode):
         )
         self.controller_running = False
         self.feedback_pub_prev_time = self.get_clock().now()
+        return
+    
+    def stop_servo_pub_timer(self):
+        with self._lock_timer_state:
+            if self._timer_state == TimerState.RUNNING:
+                self._timer_state == TimerState.STOPPED
+        return
+    
+    def start_servo_pub_timer(self):
+        with self._lock_timer_state:
+            if self._timer_state == TimerState.STOPPED:
+                self._timer_state == TimerState.RUNNING
         return
 
     # ===============================
@@ -129,28 +160,21 @@ class FinalApproachControllerNode(TFNode):
                 callback=self._timer_cb_run_controller,
                 callback_group=self._cb_group_servo_controller,
             )
-        # else:
-        #     self._timer_run_controller.reset()
+            with self._lock_timer_state:
+                self._timer_state == TimerState.RUNNING
 
         feedback_msg = RunFinalApproach.Feedback()
         result = RunFinalApproach.Result()
 
         try:
             while self.controller_running:
+                self.start_servo_pub_timer()
                 if goal_handle.is_cancel_requested:
                     if goal_handle.status == GoalStatus.STATUS_EXECUTING:
                         goal_handle.canceled()
                     self.info("FinalApproachControllerAction aborted")
                     result.success = False
                     return result
-                if self.get_clock().now() - self.feedback_pub_prev_time >= Duration(seconds=1):
-                    feedback_msg.tof0 = self.d_tof0
-                    feedback_msg.tof1 = self.d_tof1
-                    feedback_msg.dist = (self.d_tof0 + self.d_tof1) / 2
-                    d_diff = self.d_tof0 - self.d_tof1
-                    feedback_msg.theta = np.arctan(d_diff / self._tof_linear_distance)
-                    goal_handle.publish_feedback(feedback_msg)
-                    self.feedback_pub_prev_time = self.get_clock().now()
 
                 # For safety purposes, set timeout
                 if self.get_clock().now() - self.start_servo_time > Duration(seconds=5):
@@ -158,6 +182,7 @@ class FinalApproachControllerNode(TFNode):
                         goal_handle.abort()
                     result.success = False
                     self.controller_running = False
+                    self.stop_servo_pub_timer()
                     self.error("FinalApproachControllerAction timed out.")
                     return result
 
@@ -170,8 +195,7 @@ class FinalApproachControllerNode(TFNode):
             goal_handle.abort()
             result.success = False
         finally:
-            # self._timer_run_controller.cancel()
-            self.destroy_timer(self._timer_run_controller)
+            self.stop_servo_pub_timer()
             stop_servo_resp: Trigger.Response = self._srv_client_stop_servo.call(request=Trigger.Request())
             if stop_servo_resp.success:
                 self.info(f"Servo stopped.")
@@ -189,9 +213,9 @@ class FinalApproachControllerNode(TFNode):
 
     def _timer_cb_setup_tf_frames(self):
         frame_sets = [
-            {"parent": "mock_pruner__base", "child": "mock_pruner__tof0"},
-            {"parent": "mock_pruner__base", "child": "mock_pruner__tof1"},
-            {"parent": "mock_pruner__base", "child": "mock_pruner__tool0"},
+            {"parent": f"{self._param_robot_eef_part}__base", "child": f"{self._param_robot_eef_part}__tof0"},
+            {"parent": f"{self._param_robot_eef_part}__base", "child": f"{self._param_robot_eef_part}__tof1"},
+            {"parent": f"{self._param_robot_eef_part}__base", "child": f"{self._param_robot_eef_part}__tool0"},
         ]
 
         transforms = []
@@ -224,6 +248,9 @@ class FinalApproachControllerNode(TFNode):
         return
 
     def _timer_cb_run_controller(self):
+        with self._lock_timer_state:
+            if self._timer_state != TimerState.RUNNING:
+                return
         dist, theta = self.get_cut_point_info()
         dist_cut_point_to_branch = dist - self.tf_cut_point_to_tof0[2, 3]
 

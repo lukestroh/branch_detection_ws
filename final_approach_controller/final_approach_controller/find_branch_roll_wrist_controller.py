@@ -29,6 +29,7 @@ import branch_detection_system_analysis.plot.debug_plots as dplot
 import branch_detection_system_analysis.plot.plotting_backend as pb
 import final_approach_controller.curve_fitting as cf
 from final_approach_controller.tf_node import TFNode
+from final_approach_controller.timer_state import TimerState
 
 import copy
 import modern_robotics as mr
@@ -77,6 +78,7 @@ class FindBranchRollWristController(TFNode):
         self._timer_lock = Lock()
         self._servo_msg_lock = Lock()
         self._rotations_complete_lock = Lock()
+        self._lock_timer_state_pub_servo = Lock()
 
         # Callback group
         self._reentrant_cb_group = ReentrantCallbackGroup()
@@ -204,7 +206,12 @@ class FindBranchRollWristController(TFNode):
 
         # Timers
         self._timer_setup_tf_frames = self.create_timer(timer_period_sec=3.0, callback=self._timer_cb_setup_tf_frames)
-        self._timer_pub_servo = None
+        self._timer_state_pub_servo = TimerState.STOPPED
+        self._timer_pub_servo = self.create_timer(
+            timer_period_sec=1 / 50,
+            callback=self._timer_cb_pub_servo,
+            callback_group=self._cb_group_pub_servo,
+        )
 
         # Messages
         self._msg_twist = TwistStamped()
@@ -253,6 +260,18 @@ class FindBranchRollWristController(TFNode):
         self.bag_record_path: str = ""
         self.debug_plot = True
         return
+    
+    def stop_servo_pub_timer(self):
+        with self._lock_timer_state_pub_servo:
+            if self._timer_state_pub_servo == TimerState.RUNNING:
+                self._timer_state_pub_servo == TimerState.STOPPED
+        return
+    
+    def start_servo_pub_timer(self):
+        with self._lock_timer_state_pub_servo:
+            if self._timer_state_pub_servo == TimerState.STOPPED:
+                self._timer_state_pub_servo == TimerState.RUNNING
+        return
 
     # ===============================
     #        Action callbacks
@@ -262,8 +281,7 @@ class FindBranchRollWristController(TFNode):
         self.info("Canceling quadratic fit timer")
         self.publish_zero_twist()
         with self._timer_lock:
-            if self.destroy_timer(self._timer_pub_servo):
-                self._timer_pub_servo = None
+            self.stop_servo_pub_timer()
         if goal_handle.is_cancel_requested:
             goal_handle.canceled()
         self.reset_controller()
@@ -285,6 +303,8 @@ class FindBranchRollWristController(TFNode):
         self.reset_controller()
 
         trials_initial_joint_position: RunFindBranchRollWrist.Goal = goal_handle.request
+        
+        
         try:
             wrist_3_initial_position = trials_initial_joint_position.initial_joint_position[2]
         except IndexError:
@@ -302,25 +322,21 @@ class FindBranchRollWristController(TFNode):
             )
             self.start_joint_states = copy.deepcopy(self.joint_states)
 
+        self.info(trials_initial_joint_position)
+        self.warn(self.start_joint_states)
+        
         await self.start_servo()
         self._pub_rotation_speed.publish(Float64(data=self.max_angular_vel))
-
-        with self._timer_lock:
-            if self._timer_pub_servo is None:
-                self._timer_pub_servo = self.create_timer(
-                    timer_period_sec=1 / 50,
-                    callback=self._timer_cb_pub_servo,
-                    callback_group=self._cb_group_pub_servo,
-                )
-            # else:
-            #     self._timer_pub_servo.reset()
 
         try:
             ##############################################################################################
             # Actuate wrist, collect data via subscriber callbacks
+            self.start_servo_pub_timer()
             while True:
                 with self._rotations_complete_lock:
                     if self.rotations_complete:
+                        self.stop_servo_pub_timer()
+                        self.publish_zero_twist()
                         break
                 # self.get_clock().sleep_for(Duration(seconds=0.004))  # loop runs too fast, slow it down!
                 if not self.check_action_goal_status(goal_handle=goal_handle):
@@ -453,10 +469,7 @@ class FindBranchRollWristController(TFNode):
     #        Future callbacks
     # ===============================
     def _done_cb_srv_cartesian_move_to_pose(self, future: Future):
-        # goal_handle: MoveToPose.Response = future.result()
-        # self.
         self.info("Move plan/execute finished.")
-        # self.info(f"Cartesian move to pose result: {goal_handle.result}.")
         return
 
     # ===============================
@@ -499,7 +512,10 @@ class FindBranchRollWristController(TFNode):
         self.info("Static TF frames acquired.")
         return
 
-    def _timer_cb_pub_servo(self):    
+    def _timer_cb_pub_servo(self):
+        with self._lock_timer_state:
+            if self._timer_state != TimerState.RUNNING:
+                return  
         with self._servo_msg_lock:
             self._pub_servo.publish(self._msg_twist)
         return
@@ -660,16 +676,9 @@ class FindBranchRollWristController(TFNode):
         return
 
     def check_action_goal_status(self, goal_handle: ServerGoalHandle) -> bool:
-        # if goal_handle.status == GoalStatus.STATUS_CANCELING:
-        #     goal_handle.canceled()
-        #     return False
-
         if goal_handle.status == GoalStatus.STATUS_CANCELED:
-            with self._timer_lock:
-                if self.destroy_timer(self._timer_pub_servo):
-                     self._timer_pub_servo = None
-                self.publish_zero_twist()
-                    
+            self.stop_servo_pub_timer()
+            self.publish_zero_twist()
             self.warn("FindBranchRollWristController canceled.")
             self._pub_localization_success.publish(msg=Bool(data=False))
             self._pub_alignment_success.publish(msg=Bool(data=False))
@@ -677,9 +686,8 @@ class FindBranchRollWristController(TFNode):
             return False
 
         if goal_handle.status == GoalStatus.STATUS_ABORTED:
-            with self._timer_lock:
-                if self.destroy_timer(self._timer_pub_servo):
-                    self._timer_pub_servo = None
+            self.stop_servo_pub_timer()
+            self.publish_zero_twist()
             self.error("FindBranchRollWristController aborted.")
             self._pub_localization_success.publish(msg=Bool(data=False))
             self._pub_alignment_success.publish(msg=Bool(data=False))
@@ -691,6 +699,7 @@ class FindBranchRollWristController(TFNode):
 
     def actuate_wrist(self, wrist3_initial_pos):
         """Determine direction of actuation, assign rotation speed to twist message. If rotation has reached termination point, set flag."""
+        
         if self.start_joint_states[2] > 0.0:
             angular_z = -1 * self.max_angular_vel
             delta_theta_limit = np.pi
@@ -698,14 +707,11 @@ class FindBranchRollWristController(TFNode):
             angular_z = self.max_angular_vel
             delta_theta_limit = -1 * np.pi
 
-        if np.isclose(self.start_joint_states[2] - self.joint_states[2], delta_theta_limit, atol=np.radians(0.1)):
+        if np.isclose(self.start_joint_states[2] - self.joint_states[2], delta_theta_limit, atol=np.radians(1)):
             with self._rotations_complete_lock:
                 self.rotations_complete = True
 
-            with self._timer_lock:
-                if self.destroy_timer(self._timer_pub_servo):
-                    self._timer_pub_servo = None
-
+            self.stop_servo_pub_timer()
             self.publish_zero_twist()
 
             return
