@@ -41,6 +41,7 @@ def plot_tof_vs_joint_state(
             hovertemplate="theta: %{x}<br>d: %{y}<br>time: %{customdata[0]}<br><extra>%{customdata[1]}</extra>",
         )
     )
+    
     # fig.add_trace(
     #     go.Scatter(
     #         x=data["joint_states_data"][:, 2],
@@ -317,7 +318,7 @@ def plot_ransac_tof_vs_joint_state(
 
     fig.add_trace(
         go.Scatter(
-            x=data["wrist_state"],
+            x=data["x_fit"],
             y=data["y_fit"],
             name=name,
             customdata=np.column_stack(
@@ -349,6 +350,10 @@ def plot_ransac_tof_vs_joint_state(
             ),
         )
     )
+
+    # fig.update_yaxes(
+    #    scaleanchor='x', scaleratio=1
+    # )
 
     if description:
         fig.update_layout(title=dict(text=f"{name} {description} vs. Wrist 3 joint state"))

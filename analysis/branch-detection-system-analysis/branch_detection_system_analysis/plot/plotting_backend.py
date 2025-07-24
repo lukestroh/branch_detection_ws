@@ -10,6 +10,8 @@ import plotly.graph_objects as go
 import re
 from typing import Callable
 
+from branch_detection_system_analysis.bag_reader.ros_constants import TransitionStates
+
 import pprint as pp
 
 
@@ -28,10 +30,13 @@ class PlotFig(go.Figure):
         return
 
 
+def get_db_by_trial_name(storage_path: str, name: str) -> list[str]:
+    files = glob.glob(os.path.join(storage_path, name) + f"/{name}_0.db3.zstd")
+    return files
+
 def get_files_by_trial_name(warehouse_path: str, name: str) -> list[str]:
     files = glob.glob(os.path.join(warehouse_path, name + "_0") + "/*.h5")
     return files
-
 
 def get_files_by_topic(warehouse_path: str, topic: str):
     return glob.glob(warehouse_path + f"/**/*{topic}*.h5")
@@ -54,9 +59,9 @@ def get_files_by_date(warehouse_path: str, date: str):
     return files
 
 
-# ==========================
-#    Filtering functions
-# ==========================
+# =============================
+#    File filtering functions
+# =============================
 def filter_files_by_trial_number(files: list[str], trial_number: int) -> list[str]:
     """WARNING: Only for multi-trial use"""
     return [file for file in files if file.endswith(f"{str(trial_number).zfill(3)}.h5")]
@@ -78,6 +83,49 @@ def filter_files_by_topics(files: list[str], topics: list[str]) -> list[str]:
     for topic in topics:
         _files.extend(filter_files_by_topic(files, topic))
     return _files
+
+# ===================================
+#    DataFrame filtering functions
+# ===================================
+def filter_transition_events_for_controller_deactivating(df: pd.DataFrame):
+    df_transition_events = df.loc[
+        (
+            df["controller_transition_goal_state"].fillna(-1).astype(int)
+            == TransitionStates.TRANSITION_STATE_DEACTIVATING.value
+        )
+    ].reset_index()
+
+    return df_transition_events
+
+def filter_transition_events_for_controller_inactive(df: pd.DataFrame):
+    df_transition_events = df.loc[
+        (
+            df["controller_transition_goal_state"].fillna(-1).astype(int)
+            == TransitionStates.PRIMARY_STATE_INACTIVE.value
+        )
+    ].reset_index()
+
+    return df_transition_events
+
+def filter_transition_events_for_controller_activating(df: pd.DataFrame):
+    df_transition_events = df.loc[
+        (
+            df["controller_transition_goal_state"].fillna(-1).astype(int)
+            == TransitionStates.TRANSITION_STATE_ACTIVATING.value
+        )
+    ].reset_index()
+
+    return df_transition_events
+
+def filter_transition_events_for_controller_active(df: pd.DataFrame):
+    df_transition_events = df.loc[
+        (
+            df["controller_transition_goal_state"].fillna(-1).astype(int)
+            == TransitionStates.PRIMARY_STATE_ACTIVE.value
+        )
+    ].reset_index()
+
+    return df_transition_events
 
 
 # ==========================
@@ -225,6 +273,8 @@ def get_joint_angles_at_closest_timestamps(joint_angle_dict: dict, timestamps: A
     closest_idxs = np.where(prev_diff < next_diff, idxs - 1, idxs)
 
     return (ts[closest_idxs], data[closest_idxs])
+
+
 
 
 # ==========================

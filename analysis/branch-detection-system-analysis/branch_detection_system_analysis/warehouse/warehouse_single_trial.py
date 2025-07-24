@@ -44,7 +44,7 @@ def get_dbs(location: str, farm: str, date: str = "") -> list[str]:
 
 
 def get_dbs_by_loc(location: str) -> list[str]:
-    files = glob.glob(bags_path + f"/**/*{location}*.zstd")
+    files = glob.glob(bags_path + f"/**/*__{location}__*.zstd")
     return files
 
 
@@ -423,7 +423,7 @@ def warehouse_df(df: pd.DataFrame, topic_name: str, db_name: str):
     return
 
 
-def is_already_warehoused(compressed_db_name: str) -> bool:
+def is_already_warehoused(warehouse_path: str, compressed_db_name: str) -> bool:
     warehouse_parent = Path(Path(compressed_db_name).stem).stem
     p = os.path.join(warehouse_path, warehouse_parent)
     if os.path.exists(p):
@@ -451,24 +451,36 @@ def main():
     import sys
 
     ws_path = os.path.abspath(os.path.join("/home/luke/branch_detection_ws"))
+    storage_path = warehouse_path = os.path.join(ws_path, "bags", "2025_ToFBranchDetection")
     warehouse_path = os.path.join(ws_path, "bags", "2025_ToFBranchDetection", "warehouse")
 
-    dbs = get_dbs(location="prosser", farm="allen", date="20250220")
+    # dbs = get_dbs(location="prosser", farm="allen", date="20250220")
     # dbs = get_dbs_by_loc(location="arm_farm")
     # sys.exit()
 
     # trial_file_name = "bds__arm_farm__20250519_15-27-56"
 
+    trial_file_name = "bds__arm_farm__20250722_22-32-22"
+
+    # dbs = get_dbs_by_loc(location='arm_farm')
+
+    dbs = pb.get_db_by_trial_name(storage_path=storage_path, name=trial_file_name)
     # dbs = pb.get_files_by_trial_name(warehouse_path=warehouse_path, name=trial_file_name)
+    # pp.pprint(dbs)
+
+    
     # print(dbs)
     for db_name in dbs:
         # if trial_file_name not in db_name:
         #     continue
-        if is_already_warehoused(compressed_db_name=db_name):
+
+        if is_already_warehoused(warehouse_path=warehouse_path, compressed_db_name=db_name):
             continue
         else:
             try:
                 br = get_bag_reader(db=db_name)
+                # print(br.topics())
+                return
             except sqlite3.DatabaseError as e:
                 logger.error(f"Database read error: {traceback.format_exc()}")
                 continue
