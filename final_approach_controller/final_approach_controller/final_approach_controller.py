@@ -125,17 +125,17 @@ class FinalApproachControllerNode(TFNode):
         self.controller_running = False
         self.feedback_pub_prev_time = self.get_clock().now()
         return
-    
+
     def stop_servo_pub_timer(self):
         with self._lock_timer_state:
             if self._timer_state == TimerState.RUNNING:
-                self._timer_state == TimerState.STOPPED
+                self._timer_state = TimerState.STOPPED
         return
-    
+
     def start_servo_pub_timer(self):
         with self._lock_timer_state:
             if self._timer_state == TimerState.STOPPED:
-                self._timer_state == TimerState.RUNNING
+                self._timer_state = TimerState.RUNNING
         return
 
     # ===============================
@@ -148,6 +148,7 @@ class FinalApproachControllerNode(TFNode):
 
     async def _action_exe_cb_run_final_approach(self, goal_handle: ServerGoalHandle):
         self.controller_running = True
+
         await self.start_servo()
 
         if self._timer_run_controller is None:
@@ -163,8 +164,10 @@ class FinalApproachControllerNode(TFNode):
         result = RunFinalApproach.Result()
 
         try:
+            self.start_servo_pub_timer()
+            start_servo_time = self.get_clock().now()
             while self.controller_running:
-                self.start_servo_pub_timer()
+
                 if goal_handle.is_cancel_requested:
                     if goal_handle.status == GoalStatus.STATUS_EXECUTING:
                         goal_handle.canceled()
@@ -173,7 +176,7 @@ class FinalApproachControllerNode(TFNode):
                     return result
 
                 # For safety purposes, set timeout
-                if self.get_clock().now() - self.start_servo_time > Duration(seconds=5):
+                if self.get_clock().now() - start_servo_time > Duration(seconds=5):
                     if goal_handle.status == GoalStatus.STATUS_EXECUTING:
                         goal_handle.abort()
                     result.success = False
@@ -344,7 +347,7 @@ class FinalApproachControllerNode(TFNode):
         else:
             self.error(f"Servo failed to stop.")
         return
-    
+
     def get_cut_point_info(self) -> tuple:
         dist = (self.d_tof0 + self.d_tof1) / 2
         d_diff = self.d_tof0 - self.d_tof1

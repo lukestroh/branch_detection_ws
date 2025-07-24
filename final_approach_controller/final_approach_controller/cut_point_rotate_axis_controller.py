@@ -25,7 +25,6 @@ import pprint as pp
 from threading import Lock
 
 
-
 class CutPointRotateAxisController(TFNode):
     def __init__(self) -> None:
         super().__init__(node_name="cut_point_rotate_axis_controller_node")
@@ -91,9 +90,9 @@ class CutPointRotateAxisController(TFNode):
         self._timer_setup_tf_frames = self.create_timer(timer_period_sec=1.0, callback=self._timer_cb_setup_tf_frames)
         self._timer_state_pub_servo = TimerState.STOPPED
         self._timer_pub_servo = self.create_timer(
-                timer_period_sec=1 / 30, callback=self._timer_cb_run_controller, callback_group=self._pub_servo_cb_group
-            )
-        
+            timer_period_sec=1 / 30, callback=self._timer_cb_run_controller, callback_group=self._pub_servo_cb_group
+        )
+
         # Messages
         self.msg_twist = TwistStamped()
 
@@ -119,17 +118,17 @@ class CutPointRotateAxisController(TFNode):
         self.tof_name = self._param_tof_type
 
         return
-    
+
     def stop_servo_pub_timer(self):
         with self._lock_timer_state_pub_servo:
             if self._timer_state_pub_servo == TimerState.RUNNING:
-                self._timer_state_pub_servo == TimerState.STOPPED
+                self._timer_state_pub_servo = TimerState.STOPPED
         return
-    
+
     def start_servo_pub_timer(self):
         with self._lock_timer_state_pub_servo:
             if self._timer_state_pub_servo == TimerState.STOPPED:
-                self._timer_state_pub_servo == TimerState.RUNNING
+                self._timer_state_pub_servo = TimerState.RUNNING
         return
 
     # ===============================
@@ -147,9 +146,11 @@ class CutPointRotateAxisController(TFNode):
         """TODO: This is the same as final_approach_controller, let the high level controller do this in the future"""
         self.controller_running = True
         await self.start_servo()
-        
+
         try:
             result = RunCutPointRotateAxis.Result()
+
+            self.start_servo_pub_timer()
 
             while self.controller_running:
                 if goal_handle.is_cancel_requested:
@@ -178,8 +179,6 @@ class CutPointRotateAxisController(TFNode):
             self.stop_servo_pub_timer()
             await self.stop_servo()
         return result
-
-    
 
     # ===============================
     #         Timer callbacks
@@ -300,7 +299,7 @@ class CutPointRotateAxisController(TFNode):
         else:
             self.error(f"Servo failed to start.")
         return
-    
+
     async def stop_servo(self) -> None:
         stop_servo_future: Future = self._srv_client_stop_servo.call_async(request=Trigger.Request())
         await stop_servo_future
@@ -309,7 +308,7 @@ class CutPointRotateAxisController(TFNode):
         else:
             self.error(f"Servo failed to stop.")
         return
-    
+
     def get_cut_point_info(self) -> tuple:
         dist = (self.d_tof0 + self.d_tof1) / 2
         d_diff = self.d_tof0 - self.d_tof1
