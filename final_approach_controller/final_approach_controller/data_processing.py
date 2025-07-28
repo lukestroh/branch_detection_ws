@@ -57,7 +57,7 @@ def filter_minima_by_angle_proximity(
     return np.asarray(filtered_idxs)
 
 
-def detect_sectioned_window_indices(node, joint_angles, filtered_valley_idxs, angle_thresh):
+def detect_sectioned_window_indices(node, tof_data, joint_angles, filtered_valley_idxs, angle_thresh):
 
     def get_idx_midpoint_from_joint_angles(joint_angles, idx0, idx1):
         # Find midpoint between the two minima
@@ -78,12 +78,12 @@ def detect_sectioned_window_indices(node, joint_angles, filtered_valley_idxs, an
         idx0, idx1 = sorted(filtered_valley_idxs)
 
         midpoint_idx = get_idx_midpoint_from_joint_angles(joint_angles=joint_angles, idx0=idx0, idx1=idx1)
-        node.info(f"MIDPOINT: {joint_angles[midpoint_idx]}")
+        # node.info(f"MIDPOINT: {joint_angles[midpoint_idx]}")
 
         # Create two sections
         section0_idxs = np.arange(0, midpoint_idx + 1)
         section1_idxs = np.arange(midpoint_idx, len(joint_angles))
-        return section0_idxs, section1_idxs
+        return section0_idxs, section1_idxs, (idx0, idx1)
 
     elif num_minima == 3:
         # Sort minima by their index position (not angle)
@@ -91,7 +91,7 @@ def detect_sectioned_window_indices(node, joint_angles, filtered_valley_idxs, an
 
         # Get the angles at these minima
         angles_at_minima = joint_angles[sorted_by_index]
-        node.error(angles_at_minima)
+        
 
         # Calculate distances between consecutive minima in angle space
         # But also consider wraparound distances
@@ -109,8 +109,8 @@ def detect_sectioned_window_indices(node, joint_angles, filtered_valley_idxs, an
             minima_midpoint0 = get_idx_midpoint_from_joint_angles(joint_angles=joint_angles, idx0=m0, idx1=m1)
             minima_midpoint1 = get_idx_midpoint_from_joint_angles(joint_angles=joint_angles, idx0=m1, idx1=m2)
 
-            node.info(f"MIDPOINT: {joint_angles[minima_midpoint0]}")
-            node.info(f"MIDPOINT: {joint_angles[minima_midpoint1]}")
+            # node.info(f"MIDPOINT: {joint_angles[minima_midpoint0]}")
+            # node.info(f"MIDPOINT: {joint_angles[minima_midpoint1]}")
 
             section0_idxs = np.concatenate(
                 [np.arange(0, minima_midpoint0 + 1), np.arange(minima_midpoint1, len(joint_angles))]
@@ -120,37 +120,48 @@ def detect_sectioned_window_indices(node, joint_angles, filtered_valley_idxs, an
             # Ensure indices are unique and sorted
             section0_idxs = np.unique(section0_idxs)
             section1_idxs = np.unique(section1_idxs)
-            return section0_idxs, section1_idxs
+            return section0_idxs, section1_idxs, (m0, m1, m2)
 
         else:
-            node.warn(f"No minima exceeded angular threshold difference of {angle_thresh}")
-            return None
+            # filter out false positives from extra minima that don't wrap around the circle
+            filtered_from_false_positives = np.argsort(tof_data[sorted_by_index][:2])
+            min_indices = sorted_by_index[filtered_from_false_positives]
+            midpoint_idx = get_idx_midpoint_from_joint_angles(joint_angles=joint_angles, idx0=min_indices[0], idx1=min_indices[1])
+            # node.info(f"MIDPOINT: {joint_angles[midpoint_idx]}")
 
+            # Create two sections
+            section0_idxs = np.arange(0, midpoint_idx + 1)
+            section1_idxs = np.arange(midpoint_idx, len(joint_angles))
+            return section0_idxs, section1_idxs, min_indices
+        
     return None
 
 
-def separate_tof_data_by_curve(node, all_data_dict: dict, save_fig: bool = False, save_fig_path: str = "", debug_plot: bool = True):
+def separate_tof_data_by_curve(node, all_data_dict: dict, save_fig: bool = False, save_fig_path: str = "", debug_plot: bool = True, show_fig: bool = True):
     """After concatenation, split the tof data into two parabolic shapes. If only one exists, failure?"""
     # Get minima. We are searching for two
     joint_angles = all_data_dict["joint_states_data"][:, 2]
+    tof_data = all_data_dict['tof_data']
 
     valley_idxs, heights_dict = ssi.find_peaks(
         x=(-1 * np.asarray(all_data_dict["tof_data"])),
-        height=(-1 * node.filter_far_plane),
+        height=(-1 * node._param_far_plane_filter),
         # prominence=0.5,
-        distance=50,
+        distance=40,
     )
 
-    # Step 2: Check endpoints manually
-    endpoint_minima = []
-    if joint_angles[0] < joint_angles[1]:
-        endpoint_minima.append(0)
-    if joint_angles[-1] < joint_angles[-2]:
-        endpoint_minima.append(len(joint_angles) - 1)
+    # Step 2: Add endpoints manually
+    # endpoint_minima = []
+    # if tof_data[0] < tof_data[1]:
+    #     endpoint_minima.append(0)
+    # if tof_data[-1] < tof_data[-2]:
+    #     endpoint_minima.append(len(joint_angles) - 1)
+    endpoint_minima = [0, len(joint_angles) - 1]
     valley_idxs = np.concatenate([valley_idxs, endpoint_minima]).astype(np.int64)
+    valley_idxs = np.unique(valley_idxs)
 
-    node.warn(valley_idxs)
-    node.warn(joint_angles[valley_idxs])
+    # node.warn(valley_idxs)
+    # node.warn(joint_angles[valley_idxs])
 
     angle_threshold = np.radians(30)
 
@@ -165,6 +176,14 @@ def separate_tof_data_by_curve(node, all_data_dict: dict, save_fig: bool = False
     # node.warn(filtered_valley_idxs)
     # node.warn(joint_angles[filtered_valley_idxs])
 
+    sectioned_idxs = detect_sectioned_window_indices(
+        node=node, tof_data=tof_data, joint_angles=joint_angles, filtered_valley_idxs=filtered_valley_idxs, angle_thresh=angle_threshold
+    )
+    if sectioned_idxs is not None:
+        section0_idxs, section1_idxs, split_idxs = sectioned_idxs
+    else:
+        return None
+    
     # TODO: Do debug plot here
     if debug_plot:
         fig = dplot.plot_tof_vs_joint_state(data=all_data_dict, name="all_data")
@@ -208,18 +227,11 @@ def separate_tof_data_by_curve(node, all_data_dict: dict, save_fig: bool = False
             pio.write_html(
                 fig=fig,
                 file=os.path.join(save_fig_path, "tof_vs_joint_state_all_data.html"),
-                auto_open=True,
+                auto_open=show_fig,
             )
         else:
-            fig.show()
-
-    sectioned_idxs = detect_sectioned_window_indices(
-        node=node, joint_angles=joint_angles, filtered_valley_idxs=filtered_valley_idxs, angle_thresh=angle_threshold
-    )
-    if sectioned_idxs is not None:
-        section0_idxs, section1_idxs = sectioned_idxs
-    else:
-        return None
+            if show_fig:
+                fig.show()
 
     separated_data_dict = {"s0": {}, "s1": {}}
     separated_data_dict["s0"]["raw_tof_ts"] = all_data_dict["raw_tof_ts"][section0_idxs]
@@ -247,10 +259,11 @@ def separate_tof_data_by_curve(node, all_data_dict: dict, save_fig: bool = False
             pio.write_html(
                 fig=fig,
                 file=os.path.join(save_fig_path, "tof_vs_joint_state_by_section.html"),
-                auto_open=True,
+                auto_open=show_fig,
             )
         else:
-            fig.show()
+            if show_fig:
+                fig.show()
 
     return separated_data_dict
 

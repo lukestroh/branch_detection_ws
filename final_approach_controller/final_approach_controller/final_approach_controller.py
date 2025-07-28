@@ -16,6 +16,7 @@ from final_approach_controller.tf_node import TFNode
 from final_approach_controller_msgs.action import RunFinalApproach
 from final_approach_controller_msgs.srv import StartFinalApproach
 from geometry_msgs.msg import TwistStamped
+from std_msgs.msg import Bool
 from std_srvs.srv import Trigger
 from tof_msgs.msg import TofStamped
 from vl6180_msgs.msg import Vl6180FilteredStamped
@@ -33,6 +34,9 @@ class FinalApproachControllerNode(TFNode):
     def __init__(self):
         super().__init__(node_name="final_approach_controller_node")
         # Parameters
+        self._param_far_plane_filter = (
+            self.declare_parameter("far_plane_filter", value=Parameter.Type.DOUBLE).get_parameter_value().double_value
+        )
         self._param_robot_base_part: str = (
             self.declare_parameter(name="robot_base_part", value=Parameter.Type.STRING)
             .get_parameter_value()
@@ -47,10 +51,11 @@ class FinalApproachControllerNode(TFNode):
 
         # Locks
         self._lock_timer_state = Lock()
+        self._lock_msg_twist = Lock()
 
         # Callback group
-        self.callback_group = ReentrantCallbackGroup()  # allows for subscriber to persist in service, action
-        self._cb_group_servo_controller = MutuallyExclusiveCallbackGroup()
+        self._reentrant_cb_group = ReentrantCallbackGroup()  # allows for subscriber to persist in service, action
+        self._cb_group_pub_servo = MutuallyExclusiveCallbackGroup()
 
         # Action servers
         self._action_svr_run_final_appoach = ActionServer(
@@ -61,7 +66,7 @@ class FinalApproachControllerNode(TFNode):
             cancel_callback=self._action_cancel_cb_run_final_approach,
             execute_callback=self._action_exe_cb_run_final_approach,
             # handle_accepted_callback=self._action_handle_accepted_cb_run_final_approach,
-            callback_group=self.callback_group,
+            callback_group=self._reentrant_cb_group,
         )
 
         # Service servers
@@ -69,16 +74,16 @@ class FinalApproachControllerNode(TFNode):
             srv_name="final_approach_controller/start_final_approach",
             srv_type=StartFinalApproach,
             callback=self._srv_server_cb_start_final_approach,
-            callback_group=self.callback_group,
+            callback_group=self._reentrant_cb_group,
         )
 
         # Service clients
         self._srv_client_start_servo = self.create_client(
-            srv_type=Trigger, srv_name="/servo_node/start_servo", callback_group=self.callback_group
+            srv_type=Trigger, srv_name="/servo_node/start_servo", callback_group=self._reentrant_cb_group
         )
         self._srv_client_start_servo.wait_for_service()
         self._srv_client_stop_servo = self.create_client(
-            srv_type=Trigger, srv_name="/servo_node/stop_servo", callback_group=self.callback_group
+            srv_type=Trigger, srv_name="/servo_node/stop_servo", callback_group=self._reentrant_cb_group
         )
         self._srv_client_stop_servo.wait_for_service()
 
@@ -87,7 +92,7 @@ class FinalApproachControllerNode(TFNode):
             msg_type=TofStamped,
             topic="/vl53l4cd/filtered",
             callback=self._sub_cb_tof_filtered,
-            callback_group=self.callback_group,
+            callback_group=self._reentrant_cb_group,
             qos_profile=1,
         )
 
@@ -95,17 +100,29 @@ class FinalApproachControllerNode(TFNode):
         self._pub_servo = self.create_publisher(
             msg_type=TwistStamped,
             topic="/servo_node/delta_twist_cmds",
-            callback_group=self.callback_group,
+            callback_group=self._reentrant_cb_group,
             qos_profile=1,
+        )
+        self._pub_controller_success = self.create_publisher(
+            msg_type=Bool,
+            topic="/fa_controller/controller_success",
+            callback_group=self._reentrant_cb_group,
+            qos_profile=1
         )
 
         # Timers
         self._timer_setup_tf_frames = self.create_timer(timer_period_sec=1.0, callback=self._timer_cb_setup_tf_frames)
-        self._timer_run_controller = None
+        self._timer_pub_servo = self.create_timer(
+                timer_period_sec=1 / 30,
+                callback=self._timer_cb_pub_servo,
+                callback_group=self._cb_group_pub_servo,
+            )
         self._timer_state = TimerState.STOPPED
 
         # Messages
-        self.msg_twist = TwistStamped()
+        self._msg_twist = TwistStamped()
+        self._msg_twist.header.frame_id = f"{self._param_robot_eef_part}__tool0"
+
 
         # Controller attributes
         self._goal_handle = None
@@ -119,11 +136,8 @@ class FinalApproachControllerNode(TFNode):
         self.tf_mp_cut_point_to_base = np.identity(4)
         self.tf_cut_point_to_tof0 = np.identity(4)
         self.tf_tof0_to_tof1 = np.identity(4)
-        self._dist_cut_point_to_branch_threshold = (
-            0.03  # This is bad, get better sensors? How to calibrate? save yaml from test, load here
-        )
-        self.controller_running = False
-        self.feedback_pub_prev_time = self.get_clock().now()
+        self._tof_to_cut_point_z_distance = 0.0
+
         return
 
     def stop_servo_pub_timer(self):
@@ -147,56 +161,77 @@ class FinalApproachControllerNode(TFNode):
         return CancelResponse.ACCEPT
 
     async def _action_exe_cb_run_final_approach(self, goal_handle: ServerGoalHandle):
-        self.controller_running = True
-
         await self.start_servo()
+            
+        with self._lock_timer_state:
+            self._timer_state == TimerState.RUNNING
 
-        if self._timer_run_controller is None:
-            self._timer_run_controller = self.create_timer(
-                timer_period_sec=1 / 30,
-                callback=self._timer_cb_run_controller,
-                callback_group=self._cb_group_servo_controller,
-            )
-            with self._lock_timer_state:
-                self._timer_state == TimerState.RUNNING
-
-        feedback_msg = RunFinalApproach.Feedback()
-        result = RunFinalApproach.Result()
+        _result = RunFinalApproach.Result()
 
         try:
             self.start_servo_pub_timer()
             start_servo_time = self.get_clock().now()
-            while self.controller_running:
+            while True:
 
                 if goal_handle.is_cancel_requested:
                     if goal_handle.status == GoalStatus.STATUS_EXECUTING:
                         goal_handle.canceled()
-                    self.info("FinalApproachControllerAction aborted")
-                    result.success = False
-                    return result
+                    self.info("FinalApproachControllerAction canceled")
+                    _result.success = False
+                    return _result
 
                 # For safety purposes, set timeout
                 if self.get_clock().now() - start_servo_time > Duration(seconds=5):
                     if goal_handle.status == GoalStatus.STATUS_EXECUTING:
                         goal_handle.abort()
-                    result.success = False
-                    self.controller_running = False
+                    _result.success = False
                     self.stop_servo_pub_timer()
                     self.error("FinalApproachControllerAction timed out.")
-                    return result
+                    return _result
+                
+                # Set twist info
+                dist, theta = self.get_cut_point_info()
+                dist_cut_point_to_branch = dist - self.tf_cut_point_to_tof0[2, 3]
 
-            result.success = True
-            goal_handle.succeed()
-            return result
+                if dist - self.tf_cut_point_to_tof0[2, 3] <= 0:
+                    return np.zeros((6, 1))
+                
+                if np.isclose(dist, self._tof_to_cut_point_z_distance, atol=0.001):
+                    self.stop_servo_pub_timer()
+                    self.publish_zero_twist()
+                    goal_handle.succeed()
+                    _result.success = True
+                    self._pub_controller_success.publish(msg=Bool(data=True))
+                    break
+
+                # Proportional controller
+                Kp = 1 / (dist - self.tf_cut_point_to_tof0[2, 3])
+
+                velocity = Kp * self.max_linear_speed * np.array([0, 0, 1])
+
+                twist = np.zeros(6)
+                twist[0:3] = velocity / np.linalg.norm(velocity) * self.max_linear_speed
+
+                with self._lock_msg_twist:
+                    self._msg_twist.twist.linear.x = twist[0]
+                    self._msg_twist.twist.linear.y = twist[1]
+                    self._msg_twist.twist.linear.z = twist[2]
+                    self._msg_twist.twist.angular.x = twist[3]
+                    self._msg_twist.twist.angular.y = twist[4]
+                    self._msg_twist.twist.angular.z = twist[5]
+
 
         except Exception as e:
             self.get_logger().fatal(f"{e}")
             goal_handle.abort()
-            result.success = False
+            _result.success = False
         finally:
             self.stop_servo_pub_timer()
+            self.publish_zero_twist()
             await self.stop_servo()
-            return result
+            if _result.success == False:
+                self._pub_controller_success.publish(msg=Bool(data=False))
+            return _result
 
     def _action_goal_cb_run_final_approach(self, goal_handle: ServerGoalHandle):
         self.info("Received goal request")
@@ -235,38 +270,25 @@ class FinalApproachControllerNode(TFNode):
         # Solve for additional transforms
         self.tf_mp_tof0_to_base, self.tf_mp_tof1_to_base, self.tf_mp_cut_point_to_base = transforms
         self.tf_cut_point_to_tof0 = mr.TransInv(self.tf_mp_cut_point_to_base) @ self.tf_mp_tof0_to_base
+        self.tf_cut_point_to_tof1 = mr.TransInv(self.tf_mp_cut_point_to_base) @ self.tf_mp_tof1_to_base
         self.tf_tof0_to_tof1 = mr.TransInv(self.tf_mp_tof1_to_base) @ self.tf_mp_tof0_to_base
         tof0_to_tof1_pos_vec = self.tf_tof0_to_tof1[:3, 3]
         self._tof_linear_distance = np.linalg.norm(tof0_to_tof1_pos_vec)
+        
         if not np.all(np.isclose(self.tf_tof0_to_tof1[:3, :3], np.identity(3), atol=1e-3)):
             raise ValueError("The two ToF frames are not aligned with each other.")
+        
+        self._tof_to_cut_point_z_distance = self.tf_cut_point_to_tof0[2,3]
         return
 
-    def _timer_cb_run_controller(self):
+    def _timer_cb_pub_servo(self):
         with self._lock_timer_state:
             if self._timer_state != TimerState.RUNNING:
                 return
-        dist, theta = self.get_cut_point_info()
-        dist_cut_point_to_branch = dist - self.tf_cut_point_to_tof0[2, 3]
-
-        if dist - self.tf_cut_point_to_tof0[2, 3] <= 0:
-            return np.zeros((6, 1))
-        Kp = 1 / (dist - self.tf_cut_point_to_tof0[2, 3])
-
-        velocity = Kp * self.max_linear_speed * np.array([0, 0, 1])
-
-        twist = np.zeros(6)
-        twist[0:3] = velocity / np.linalg.norm(velocity) * self.max_linear_speed
-
-        self.msg_twist.twist.linear.x = twist[0]
-        self.msg_twist.twist.linear.y = twist[1]
-        self.msg_twist.twist.linear.z = twist[2]
-        self.msg_twist.twist.angular.x = twist[3]
-        self.msg_twist.twist.angular.y = twist[4]
-        self.msg_twist.twist.angular.z = twist[5]
-        self.msg_twist.header.frame_id = "mock_pruner__tool0"
-        self.msg_twist.header.stamp = self.get_clock().now().to_msg()
-        self._pub_servo.publish(self.msg_twist)
+        
+        with self._lock_msg_twist:
+            self._msg_twist.header.stamp = self.get_clock().now().to_msg()
+            self._pub_servo.publish(self._msg_twist)
         return
 
     # ===============================
@@ -287,7 +309,7 @@ class FinalApproachControllerNode(TFNode):
     def _srv_server_cb_start_final_approach(self, request, response):
         self.controller_running = True
         self._timer_run_controller = self.create_timer(
-            timer_period_sec=1 / 30, callback=self._timer_cb_run_controller, callback_group=self.callback_group
+            timer_period_sec=1 / 30, callback=self._timer_cb_run_controller, callback_group=self._reentrant_cb_group
         )
         # self._timer_run_controller/
         response.success = True
@@ -369,15 +391,15 @@ class FinalApproachControllerNode(TFNode):
         return twist
 
     def publish_zero_twist(self, servo_frame="mock_pruner__tool0"):
-        self.msg_twist.twist.linear.x = 0.0
-        self.msg_twist.twist.linear.y = 0.0
-        self.msg_twist.twist.linear.z = 0.0
-        self.msg_twist.twist.angular.x = 0.0
-        self.msg_twist.twist.angular.y = 0.0
-        self.msg_twist.twist.angular.z = 0.0
-        self.msg_twist.header.frame_id = servo_frame  # TODO: if changing to EEF, change ur_servo.yaml
-        self.msg_twist.header.stamp = self.get_clock().now().to_msg()
-        self._pub_servo.publish(self.msg_twist)
+        self._msg_twist.twist.linear.x = 0.0
+        self._msg_twist.twist.linear.y = 0.0
+        self._msg_twist.twist.linear.z = 0.0
+        self._msg_twist.twist.angular.x = 0.0
+        self._msg_twist.twist.angular.y = 0.0
+        self._msg_twist.twist.angular.z = 0.0
+        self._msg_twist.header.frame_id = servo_frame  # TODO: if changing to EEF, change ur_servo.yaml
+        self._msg_twist.header.stamp = self.get_clock().now().to_msg()
+        self._pub_servo.publish(self._msg_twist)
         return
 
 

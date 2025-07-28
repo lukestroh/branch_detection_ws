@@ -14,7 +14,7 @@ from action_msgs.msg import GoalStatus
 from branch_detection_system_moveit_msgs.srv import MoveToPose
 from controller_manager_msgs.srv import SwitchController
 from final_approach_controller_msgs.action import RunFindBranchRollWrist
-from final_approach_controller_msgs.msg import ToFBranchFitStamped, WindowedData, TimestampTofMin
+from final_approach_controller_msgs.msg import ToFBranchFitStamped, WindowedData, TimestampTofMin, EventStamped
 from geometry_msgs.msg import TwistStamped, Pose, Point, Quaternion
 from moveit_msgs.action import MoveGroup
 from sensor_msgs.msg import JointState
@@ -50,9 +50,12 @@ import py_trees
 
 class FindBranchRollWristController(TFNode):
     def __init__(self):
-        super().__init__(node_name="find_branch_roll_wrist_controller", cache_time=Duration(seconds=35))
+        super().__init__(node_name="find_branch_roll_wrist_controller", cache_time=Duration(seconds=40))
 
         # Parameters
+        self._param_far_plane_filter = (
+            self.declare_parameter("far_plane_filter", value=Parameter.Type.DOUBLE).get_parameter_value().double_value
+        )
         _param_use_mock_hardware: bool = (
             self.declare_parameter(name="use_mock_hardware", value=Parameter.Type.BOOL).get_parameter_value().bool_value
         )
@@ -83,7 +86,6 @@ class FindBranchRollWristController(TFNode):
 
         # Callback group
         self._reentrant_cb_group = ReentrantCallbackGroup()
-        self._parabola_fitting_cb_group = MutuallyExclusiveCallbackGroup()
         self._cb_group_pub_servo = MutuallyExclusiveCallbackGroup()
 
         # Action servers
@@ -197,6 +199,18 @@ class FindBranchRollWristController(TFNode):
             callback_group=self._reentrant_cb_group,
             qos_profile=10,
         )
+        self._pub_rotation_started = self.create_publisher(
+            msg_type=EventStamped,
+            topic="/fbrw_controller/rotation_started",
+            callback_group=self._reentrant_cb_group,
+            qos_profile=1
+        )
+        self._pub_rotation_stopped = self.create_publisher(
+            msg_type=EventStamped,
+            topic="/fbrw_controller/rotation_stopped",
+            callback_group=self._reentrant_cb_group,
+            qos_profile=1
+        )
 
         # self._pub_fit = self.create_publisher(
         #     msg_type=ToFBranchFitStamped,
@@ -225,6 +239,8 @@ class FindBranchRollWristController(TFNode):
         # self.msg_tof_branch_fit = ToFBranchFitStamped()
         # self._msg_ts_tof_min = TimestampTofMin()
 
+        self._msg_event_stamped = EventStamped()
+
         # Action requests
         self.move_to_pose_req = MoveToPose.Request()
 
@@ -244,7 +260,6 @@ class FindBranchRollWristController(TFNode):
         else:
             self.max_angular_vel = np.pi / 8 * 10  # For some reason the UR5e scales down servoing movement very hard?
 
-        self.filter_far_plane = 0.25
 
         # self.eef_weight = 0.355  # TODO: measure again. Measured IRL
 
@@ -260,6 +275,7 @@ class FindBranchRollWristController(TFNode):
         # Debug parameters
         self.bag_record_path: str = ""
         self.debug_plot = True
+
         return
 
     def stop_servo_pub_timer(self):
@@ -327,17 +343,23 @@ class FindBranchRollWristController(TFNode):
 
         await self.start_servo()
         self._pub_rotation_speed.publish(Float64(data=self.max_angular_vel))
+        self.publish_zero_twist()
+        self.start_servo_pub_timer()
+        self._msg_event_stamped.event = "start_rotations"
+        self._msg_event_stamped.header.stamp = self.get_clock().now().to_msg()
+        self._pub_rotation_started.publish(msg=self._msg_event_stamped)
 
         try:
             ##############################################################################################
             # Actuate wrist, collect data via subscriber callbacks
-            self.start_servo_pub_timer()
-
             while True:
                 with self._rotations_complete_lock:
                     if self.rotations_complete:
                         self.stop_servo_pub_timer()
                         self.publish_zero_twist()
+                        self._msg_event_stamped.event = "stop_rotations"
+                        self._msg_event_stamped.header.stamp = self.get_clock().now().to_msg()
+                        self._pub_rotation_stopped.publish(msg=self._msg_event_stamped)
                         break
                 # self.get_clock().sleep_for(Duration(seconds=0.004))  # loop runs too fast, slow it down!
                 if not self.check_action_goal_status(goal_handle=goal_handle):
@@ -365,15 +387,7 @@ class FindBranchRollWristController(TFNode):
 
             else:
                 self._pub_localization_success.publish(msg=Bool(data=True))
-                if rclpy.ok():
-                    await self.stop_servo()
-                    await self.switch_controllers(
-                        activate_controllers=self._move_group_controller,
-                        deactivate_controllers=self._servo_controller,
-                    )
-                else:
-                    raise Exception("rclpy is not ok :(")
-
+                
                 # Get branch info, find desired xyz + quat
                 branch_center_point, branch_vec_normalized, tof0_vec_base_frame, tof1_vec_base_frame = (
                     self.get_branch_vec_from_tof(return_frames=self.debug_plot)
@@ -401,6 +415,14 @@ class FindBranchRollWristController(TFNode):
                         save_fig_dir=self.bag_record_path,
                     )
                 ######################################################################################
+
+                # Move to desired pose
+                await self.stop_servo()
+                await self.switch_controllers(
+                    activate_controllers=self._move_group_controller,
+                    deactivate_controllers=self._servo_controller,
+                )
+
                 self.info(f"Moving to pose {desired_eef_xyz}, {desired_orientation_vec}")
                 self.move_to_pose_req.goal.position.x = desired_eef_xyz[0]
                 self.move_to_pose_req.goal.position.y = desired_eef_xyz[1]
@@ -810,33 +832,39 @@ class FindBranchRollWristController(TFNode):
         return all_data_dict, sensor_data_dict
 
     def find_best_quadratic_fits(self):
-        all_data_dict, sensor_data_dict = dp.aggregate_tof_data(save_fig=True, save_fig_path=self.bag_record_path)
+        all_data_dict, sensor_data_dict = self.aggregate_tof_data(save_fig=True, save_fig_path=self.bag_record_path)
 
         separated_data_dict = dp.separate_tof_data_by_curve(
             node=self,
-            all_data_dict=all_data_dict, save_fig=True, save_fig_path=self.bag_record_path
+            all_data_dict=all_data_dict, save_fig=True, save_fig_path=self.bag_record_path, show_fig=True
         )
 
-        # self.warn(separated_data_dict['s0'])
-        # Shift s0 joint angles as needed if discontiunity exists
-        # self.info(separated_data_dict['s0']['joint_states_data'])
-        # self.info(separated_data_dict['s0']['indices'])
-        separated_data_dict["s0"]["joint_states_data"][:, 2] = dp.amend_joint_angle_discontinuity(
-            node=self,
-            joint_angles=separated_data_dict["s0"]["joint_states_data"][:, 2],
-            indices=separated_data_dict["s0"]["indices"],
-        )
+        # Shift section joint angles as needed if discontiunity exists
+        if separated_data_dict["s0"]["joint_states_data"][:, 2][0] < separated_data_dict["s1"]["joint_states_data"][:, 2][0]:
+            separated_data_dict["s0"]["joint_states_data"][:, 2] = dp.amend_joint_angle_discontinuity(
+                node=self,
+                joint_angles=separated_data_dict["s0"]["joint_states_data"][:, 2],
+                indices=separated_data_dict["s0"]["indices"],
+            )
+        else:
+            separated_data_dict["s1"]["joint_states_data"][:, 2] = dp.amend_joint_angle_discontinuity(
+                node=self,
+                joint_angles=separated_data_dict["s1"]["joint_states_data"][:, 2],
+                indices=separated_data_dict["s1"]["indices"],
+            )
 
+        # Curve fit 
         for section_name, section in separated_data_dict.items():
             self.time_and_center_res_dict[section_name] = {}
             sec_time_and_dist = cf.get_branch_center_time_and_distance(
                 data=section,
-                filter_far_plane=self.filter_far_plane,
+                far_plane_filter=self._param_far_plane_filter,
                 section_name=section_name,
                 debug_plot=True,
+                show_fig=False,
                 save_fig=True,
                 save_fig_path=self.bag_record_path,
-                window_size=2.5,
+                window_size=0.4,
                 window_overlap_ratio= 7 / 10,
                 min_samples=10,
                 max_trials=20,
