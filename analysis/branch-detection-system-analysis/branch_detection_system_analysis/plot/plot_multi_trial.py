@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 from branch_detection_system_analysis.bag_reader.ros_constants import TransitionStates
-from branch_detection_system_analysis.prosser2025 import curve_fitting as cf
 from branch_detection_system_analysis.plot import plotly_helpers as ph
+from branch_detection_system_analysis.plot import plotting_backend as pb
+from branch_detection_system_analysis.fit import curve_fitting_old as cf
 import glob
 import numpy as np
 import pandas as pd
@@ -64,75 +65,6 @@ def filter_files_by_trial_number(files: list[str], trial_number: int) -> list[st
 
 def get_topic_name_from_filename(filename: str):
     return filename.split("__")[-2]
-
-
-def build_df_dict_from_files(data_dict: dict, files: list[str]) -> None:
-    for file in files:
-        topic_name = get_topic_name_from_filename(filename=file)
-        df = pd.read_hdf(path_or_buf=file)
-        data_dict.update({topic_name: df})
-    return
-
-
-def get_tf_df_at_closest_timestamp(tf_df: pd.DataFrame, tf_static_df: pd.DataFrame, timestamp: float):
-    """Gets the closest set of TF frames at a given timestamp"""
-    ts_closest = tf_df.iloc[(tf_df["tf_ts"] - timestamp).abs().argsort()[:1]]
-    tf_dynamic_df = tf_df.loc[tf_df["tf_ts"] == ts_closest["tf_ts"].item()]
-    tf_all_links_df = pd.DataFrame(
-        data=np.vstack([tf_static_df.values, tf_dynamic_df.values]), columns=tf_dynamic_df.columns
-    )
-    return tf_all_links_df
-
-
-def get_tf_matrix_from_df(target_frame: str, source_frame: str, tf_df: pd.DataFrame) -> np.ndarray:
-    # NOTE: This only goes forwards right now.
-    # ur5e__base_link_inertia
-    # ur5e__ft_frame
-    transformation_mat = np.identity(4)
-    frame_to_frame_mat = np.identity(4)
-
-    source_frame_parent = tf_df.loc[tf_df["tf_child_frame_id"] == source_frame, ["tf_frame_id"]]["tf_frame_id"].iloc[0]
-    # print(source_frame_parent)
-
-    # print(tf_df)
-
-    while True:
-        try:
-            if target_frame == source_frame_parent:
-                tf_target_to_child_df = tf_df.loc[
-                    (tf_df["tf_frame_id"] == target_frame) & (tf_df["tf_child_frame_id"] == source_frame)
-                ]
-            else:
-                tf_target_to_child_df = tf_df.loc[
-                    (tf_df["tf_frame_id"] == target_frame)
-                    & (~tf_df["tf_child_frame_id"].isin(["ur5e__base", "ur5e__ft_frame"]))
-                ]
-
-            frame_to_frame_mat[:3, 3] = [
-                tf_target_to_child_df["tf_t_x"].iloc[0],
-                tf_target_to_child_df["tf_t_y"].iloc[0],
-                tf_target_to_child_df["tf_t_z"].iloc[0],
-            ]
-            frame_to_frame_mat[:3, :3] = Rotation.from_quat(
-                [
-                    tf_target_to_child_df["tf_r_x"].iloc[0],
-                    tf_target_to_child_df["tf_r_y"].iloc[0],
-                    tf_target_to_child_df["tf_r_z"].iloc[0],
-                    tf_target_to_child_df["tf_r_w"].iloc[0],
-                ]
-            ).as_matrix()
-
-            transformation_mat = transformation_mat @ frame_to_frame_mat
-
-            target_frame = tf_target_to_child_df["tf_child_frame_id"].iloc[0]
-            if target_frame == source_frame:
-                break
-
-        except Exception as e:
-            print(traceback.format_exc())
-            break
-
-    return transformation_mat
 
 
 def split_trial_by_fpc_deactivate(
@@ -316,7 +248,7 @@ def plot_multi_trial_branch_segment(data: list, name: str, fig: go.Figure = None
             z=plot_data[2],
             name=name,
             mode="markers",
-            marker=dict(size=4),
+            marker=dict(size=4, color="#6670F0"),
             hovertext=list(range(len(data))),
             hovertemplate="Index: %{hovertext}",
         )
@@ -500,11 +432,12 @@ def plot_quadratic_fit(t_vals: np.ndarray, coefs: np.ndarray, name: str = None, 
         fig = go.Figure()
 
     t_vals_plot = np.linspace(min(t_vals), max(t_vals), 100)
+
     # t_vals_plot = np.linspace(-1, 1, 500)
     x = coefs[0, 0] * t_vals_plot**2 + coefs[0, 1] * t_vals_plot + coefs[0, 2]
     y = coefs[1, 0] * t_vals_plot**2 + coefs[1, 1] * t_vals_plot + coefs[1, 2]
     z = coefs[2, 0] * t_vals_plot**2 + coefs[2, 1] * t_vals_plot + coefs[2, 2]
-    fig.add_trace(go.Scatter3d(x=x, y=y, z=z, mode="lines", name=f"{name}"))
+    fig.add_trace(go.Scatter3d(x=x, y=y, z=z, mode="lines", line=dict(color="#5A4735", width=20), name=f"{name}"))
 
     return fig
 
@@ -591,7 +524,7 @@ def main():
             try:
                 # For each trial number, build the data_dict
                 files_by_number = filter_files_by_trial_number(files=files_by_topics_by_trial_name, trial_number=i)
-                build_df_dict_from_files(data_dict=data_dict, files=files_by_number)
+                pb.build_df_dict_from_files(data_dict=data_dict, files=files_by_number)
 
                 # Separate the search from the actuation
                 search_data_dict = {}
@@ -658,10 +591,10 @@ def main():
                     continue
 
             # Get TF frames at a timestep
-            tf_df = get_tf_df_at_closest_timestamp(
+            tf_df = pb.get_tf_df_at_closest_timestamp(
                 tf_df=data_dict["tf"], tf_static_df=data_dict["tf_static"], timestamp=tof0_branch_center_time
             )
-            tf_tof0_to_base = get_tf_matrix_from_df(
+            tf_tof0_to_base = pb.get_tf_matrix_from_df(
                 target_frame="amiga__base", source_frame="mock_pruner__tof0", tf_df=tf_df
             )
 
@@ -680,7 +613,7 @@ def main():
             try:
                 # For each trial number, build the data_dict
                 files_by_number = filter_files_by_trial_number(files=files_by_topics_by_trial_name, trial_number=i)
-                build_df_dict_from_files(data_dict=data_dict, files=files_by_number)
+                pb.build_df_dict_from_files(data_dict=data_dict, files=files_by_number)
 
                 # Separate the search from the actuation
                 search_data_dict = {}
@@ -746,10 +679,10 @@ def main():
                     print(f"Error with fitting: {traceback.format_exc()}")
                     continue
 
-            tf_df = get_tf_df_at_closest_timestamp(
+            tf_df = pb.get_tf_df_at_closest_timestamp(
                 tf_df=data_dict["tf"], tf_static_df=data_dict["tf_static"], timestamp=tof1_branch_center_time
             )
-            tf_tof1_to_base = get_tf_matrix_from_df(
+            tf_tof1_to_base = pb.get_tf_matrix_from_df(
                 target_frame="amiga__base", source_frame="mock_pruner__tof1", tf_df=tf_df
             )
             # Put tof readings into world frame
@@ -812,8 +745,8 @@ def main():
     fig = plot_quadratic_fit(t_vals=quadratic_t_vals, coefs=coefs, fig=fig)
     fig = plot_quadratic_residuals(points=all_data, projected_points=quadratic_projected_points, fig=fig)
     # fig = ph.plot_vector(fig=fig, position=centroid, orientation=direction, scale=0.1, color="blue", name="Vt[0]")
-    fig = plot_linear_fit(t_vals=linear_t_vals, centroid=centroid, direction=direction, fig=fig)
-    fig = plot_linear_residuals(points=all_data, projected_points=linear_projected_points, fig=fig)
+    # fig = plot_linear_fit(t_vals=linear_t_vals, centroid=centroid, direction=direction, fig=fig)
+    # fig = plot_linear_residuals(points=all_data, projected_points=linear_projected_points, fig=fig)
     fig.update_layout(scene=dict(aspectmode="data"))
     fig.show()
     #####################################################################################################

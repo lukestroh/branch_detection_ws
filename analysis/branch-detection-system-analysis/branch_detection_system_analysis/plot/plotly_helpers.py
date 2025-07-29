@@ -45,15 +45,15 @@ def plot_3d_coordinate_frame(
     cone_scale: float = 0.25,
     name: str = "",
     parent_frame: str = "",
-    showlegend: bool = False
+    showlegend: bool = False,
 ):
     """
     Plots a set of orthonormal vectors in a 3d space.
-    
+
     """
     colors = {"x": "red", "y": "green", "z": "blue"}
     unit_vectors = {"x": np.array([1, 0, 0]), "y": np.array([0, 1, 0]), "z": np.array([0, 0, 1])}
-    
+
     for axis_name, unit_vec in unit_vectors.items():
         direction = orientation @ unit_vec
         pos_end = position + axis_length * direction
@@ -68,7 +68,7 @@ def plot_3d_coordinate_frame(
                 name=f"{name}__{axis_name}-axis",
                 legendgroup=f"{name}_{axis_name}",
                 legendgrouptitle=dict(text=name),
-                showlegend=showlegend
+                showlegend=showlegend,
             )
         )
 
@@ -129,7 +129,7 @@ def plot_cylinder(
     nh: int = 50,
     name: str = "",
     color: str = "#000000",
-    opacity: float = 0.7, 
+    opacity: float = 0.7,
     fig: go.Figure = None,
 ) -> go.Figure:
     if fig is None:

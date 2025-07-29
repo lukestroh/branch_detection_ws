@@ -9,10 +9,13 @@ import pandas as pd
 import plotly.graph_objects as go
 import re
 from typing import Callable
+from scipy.spatial.transform import Rotation
 
 from branch_detection_system_analysis.bag_reader.ros_constants import TransitionStates
 
 import pprint as pp
+
+import traceback
 
 
 class FileManager:
@@ -34,9 +37,11 @@ def get_db_by_trial_name(storage_path: str, name: str) -> list[str]:
     files = glob.glob(os.path.join(storage_path, name) + f"/{name}_0.db3.zstd")
     return files
 
+
 def get_files_by_trial_name(warehouse_path: str, name: str) -> list[str]:
     files = glob.glob(os.path.join(warehouse_path, name + "_0") + "/*.h5")
     return files
+
 
 def get_files_by_topic(warehouse_path: str, topic: str):
     return glob.glob(warehouse_path + f"/**/*{topic}*.h5")
@@ -84,6 +89,7 @@ def filter_files_by_topics(files: list[str], topics: list[str]) -> list[str]:
         _files.extend(filter_files_by_topic(files, topic))
     return _files
 
+
 # ===================================
 #    DataFrame filtering functions
 # ===================================
@@ -97,15 +103,14 @@ def filter_transition_events_for_controller_deactivating(df: pd.DataFrame):
 
     return df_transition_events
 
+
 def filter_transition_events_for_controller_inactive(df: pd.DataFrame):
     df_transition_events = df.loc[
-        (
-            df["controller_transition_goal_state"].fillna(-1).astype(int)
-            == TransitionStates.PRIMARY_STATE_INACTIVE.value
-        )
+        (df["controller_transition_goal_state"].fillna(-1).astype(int) == TransitionStates.PRIMARY_STATE_INACTIVE.value)
     ].reset_index()
 
     return df_transition_events
+
 
 def filter_transition_events_for_controller_activating(df: pd.DataFrame):
     df_transition_events = df.loc[
@@ -117,12 +122,10 @@ def filter_transition_events_for_controller_activating(df: pd.DataFrame):
 
     return df_transition_events
 
+
 def filter_transition_events_for_controller_active(df: pd.DataFrame):
     df_transition_events = df.loc[
-        (
-            df["controller_transition_goal_state"].fillna(-1).astype(int)
-            == TransitionStates.PRIMARY_STATE_ACTIVE.value
-        )
+        (df["controller_transition_goal_state"].fillna(-1).astype(int) == TransitionStates.PRIMARY_STATE_ACTIVE.value)
     ].reset_index()
 
     return df_transition_events
@@ -275,6 +278,65 @@ def get_joint_angles_at_closest_timestamps(joint_angle_dict: dict, timestamps: A
     return (ts[closest_idxs], data[closest_idxs])
 
 
+def get_tf_df_at_closest_timestamp(tf_df: pd.DataFrame, tf_static_df: pd.DataFrame, timestamp: float):
+    """Gets the closest set of TF frames at a given timestamp"""
+    ts_closest = tf_df.iloc[(tf_df["tf_ts"] - timestamp).abs().argsort()[:1]]
+    tf_dynamic_df = tf_df.loc[tf_df["tf_ts"] == ts_closest["tf_ts"].item()]
+    tf_all_links_df = pd.DataFrame(
+        data=np.vstack([tf_static_df.values, tf_dynamic_df.values]), columns=tf_dynamic_df.columns
+    )
+    return tf_all_links_df
+
+
+def get_tf_matrix_from_df(target_frame: str, source_frame: str, tf_df: pd.DataFrame) -> np.ndarray:
+    # NOTE: This only goes forwards right now.
+    # ur5e__base_link_inertia
+    # ur5e__ft_frame
+    transformation_mat = np.identity(4)
+    frame_to_frame_mat = np.identity(4)
+
+    source_frame_parent = tf_df.loc[tf_df["tf_child_frame_id"] == source_frame, ["tf_frame_id"]]["tf_frame_id"].iloc[0]
+    # print(source_frame_parent)
+
+    # print(tf_df)
+
+    while True:
+        try:
+            if target_frame == source_frame_parent:
+                tf_target_to_child_df = tf_df.loc[
+                    (tf_df["tf_frame_id"] == target_frame) & (tf_df["tf_child_frame_id"] == source_frame)
+                ]
+            else:
+                tf_target_to_child_df = tf_df.loc[
+                    (tf_df["tf_frame_id"] == target_frame)
+                    & (~tf_df["tf_child_frame_id"].isin(["ur5e__base", "ur5e__ft_frame"]))
+                ]
+
+            frame_to_frame_mat[:3, 3] = [
+                tf_target_to_child_df["tf_t_x"].iloc[0],
+                tf_target_to_child_df["tf_t_y"].iloc[0],
+                tf_target_to_child_df["tf_t_z"].iloc[0],
+            ]
+            frame_to_frame_mat[:3, :3] = Rotation.from_quat(
+                [
+                    tf_target_to_child_df["tf_r_x"].iloc[0],
+                    tf_target_to_child_df["tf_r_y"].iloc[0],
+                    tf_target_to_child_df["tf_r_z"].iloc[0],
+                    tf_target_to_child_df["tf_r_w"].iloc[0],
+                ]
+            ).as_matrix()
+
+            transformation_mat = transformation_mat @ frame_to_frame_mat
+
+            target_frame = tf_target_to_child_df["tf_child_frame_id"].iloc[0]
+            if target_frame == source_frame:
+                break
+
+        except Exception as e:
+            print(traceback.format_exc())
+            break
+
+    return transformation_mat
 
 
 # ==========================

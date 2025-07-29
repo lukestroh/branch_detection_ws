@@ -315,6 +315,22 @@ def get_controller_events(br: BagReader, controller_name: str) -> dict:
     }
 
 
+def get_rotation_event(br: BagReader, controller_event: str) -> dict:
+    try:
+        rotation_event = list(br.query(topic_name=f"/fbrw_controller/rotation_{controller_event}"))
+        rotation_event_data = [d[1] for d in rotation_event]
+        print(rotation_event_data)
+        rotation_event_ts, rotation_event_name = zip(
+            *map(
+                lambda rotev: [rotev.header.stamp.sec + rotev.header.stamp.nanosec * 1e-9, rotev.event],
+                rotation_event_data,
+            )
+        )
+    except (KeyError, ValueError):
+        rotation_event_ts = rotation_event_name = []
+    return {"rotation_event_ts": rotation_event_ts, "rotation_event_name": rotation_event_name}
+
+
 def create_df_from_data_dict(data: dict) -> pd.DataFrame:
     df = pd.DataFrame(data=list(itertools.zip_longest(*data.values(), fillvalue=np.nan)), columns=list(data.keys()))
     return df
@@ -337,6 +353,8 @@ def get_dfs_from_bag_reader(br: BagReader) -> dict:
     ts_tof_min_data = get_ts_tof_min(br=br)
     fpc_transition_events_data = get_controller_events(br=br, controller_name="forward_position_controller")
     sjtc_transition_events_data = get_controller_events(br=br, controller_name="scaled_joint_trajectory_controller")
+    rotation_started_data = get_rotation_event(br=br, controller_event="started")
+    rotation_stopped_data = get_rotation_event(br=br, controller_event="stopped")
 
     data_dict = {
         "tof0_raw": tof0_raw_data,
@@ -354,6 +372,8 @@ def get_dfs_from_bag_reader(br: BagReader) -> dict:
         "ts_tof_min": ts_tof_min_data,
         "fpc_transition_events": fpc_transition_events_data,
         "sjtc_transition_events": sjtc_transition_events_data,
+        "rotation_started": rotation_started_data,
+        "rotation_stopped": rotation_stopped_data,
     }
 
     df_dict = {k: create_df_from_data_dict(data=v) for k, v in data_dict.items()}
@@ -455,7 +475,8 @@ def main():
     warehouse_path = os.path.join(ws_path, "bags", "2025_ToFBranchDetection", "warehouse")
 
     # dbs = get_dbs(location="prosser", farm="allen", date="20250220")
-    # dbs = get_dbs_by_loc(location="arm_farm")
+    dbs = get_dbs_by_loc(location="arm_farm")
+    dbs = sorted(dbs)
     # sys.exit()
 
     # trial_file_name = "bds__arm_farm__20250519_15-27-56"
@@ -464,31 +485,22 @@ def main():
 
     # dbs = get_dbs_by_loc(location='arm_farm')
 
-    dbs = pb.get_db_by_trial_name(storage_path=storage_path, name=trial_file_name)
+    # dbs = pb.get_db_by_trial_name(storage_path=storage_path, name=trial_file_name)
     # dbs = pb.get_files_by_trial_name(warehouse_path=warehouse_path, name=trial_file_name)
-    # pp.pprint(dbs)
 
-    
-    # print(dbs)
     for db_name in dbs:
-        # if trial_file_name not in db_name:
-        #     continue
-
         if is_already_warehoused(warehouse_path=warehouse_path, compressed_db_name=db_name):
             continue
         else:
             try:
                 br = get_bag_reader(db=db_name)
                 # print(br.topics())
-                return
+                # return
             except sqlite3.DatabaseError as e:
                 logger.error(f"Database read error: {traceback.format_exc()}")
                 continue
-            # try:
+
             df_dict = get_dfs_from_bag_reader(br=br)
-            # except (ValueError, KeyError) as e:
-            #     logger.error(f"{traceback.format_exc()}")
-            #     continue
             br.cleanup()
 
             for topic_df_name, topic_df in df_dict.items():

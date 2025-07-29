@@ -236,7 +236,7 @@ def plot_cylindrical_start_points(
 
     for i, pt in enumerate(points_global):
         if i % 100 == 0:
-            print(f"Percentage done: {i/len(points_global) * 100}", end='\r')
+            print(f"Percentage done: {i/len(points_global) * 100}", end="\r")
         rotated_fov_pts = generate_cylindrical_pts(
             r_range=(0.04891, 0.04891),
             theta_range=(0, 2 * np.pi),
@@ -400,18 +400,18 @@ def plot_radial_start_points(
     yaw_vals /= 2
 
     generated_point_scores = np.zeros(shape=len(points_global), dtype=float)
-    
+
     for i, point in enumerate(points_global):
         new_z = branch_center - point
         new_z /= np.linalg.norm(new_z)
-        x_axis = np.cross([0,-1,0], new_z)
+        x_axis = np.cross([0, -1, 0], new_z)
         y_axis = np.cross(new_z, x_axis)
         r = np.column_stack((x_axis, y_axis, new_z))
 
         # yaw_orient = np.array([[np.cos(yaw_vals[i]), -np.sin(yaw_vals[i]), 0],
         #                        [np.sin(yaw_vals[i]), np.cos(yaw_vals[i]), 0],
         #                        [0, 0, 1]])
-        
+
         # orientation_mat = r @ yaw_orient
         # orientation = np.diag(orientation_mat)
         # fig = ph.plot_3d_coordinate_frame(
@@ -423,9 +423,7 @@ def plot_radial_start_points(
         #     showlegend=False
         # )
 
-        branch_plane_normal = compute_plane_from_pts_and_orientation(
-            p0=branch_center, p1=point, v0=branch_orientation
-        )
+        branch_plane_normal = compute_plane_from_pts_and_orientation(p0=branch_center, p1=point, v0=branch_orientation)
         branch_plane_normal /= np.linalg.norm(branch_plane_normal)
 
         eef_orientation = branch_center - point
@@ -441,7 +439,12 @@ def plot_radial_start_points(
         sigma_deg = sensor_fov_deg / 3
         v = np.cross(eef_orientation, branch_plane_normal)
         sampled_directions = sample_gaussian_cone(
-            u=eef_orientation, v=v, w=branch_plane_normal, sensor_fov_deg=sensor_fov_deg, sigma_deg=sigma_deg, num_samples=1000
+            u=eef_orientation,
+            v=v,
+            w=branch_plane_normal,
+            sensor_fov_deg=sensor_fov_deg,
+            sigma_deg=sigma_deg,
+            num_samples=1000,
         )
 
         # for direction in sampled_directions:
@@ -453,7 +456,7 @@ def plot_radial_start_points(
         #             mode='lines',
         #             showlegend=False
         #         )
-        #     )        
+        #     )
 
         # print(sampled_directions)
 
@@ -474,9 +477,9 @@ def plot_radial_start_points(
 
     fig.add_trace(
         go.Scatter3d(
-            x=points_global[:,0],
-            y=points_global[:,1],
-            z=points_global[:,2],
+            x=points_global[:, 0],
+            y=points_global[:, 1],
+            z=points_global[:, 2],
             mode="markers",
             marker=dict(size=4, color=generated_point_scores, colorscale="matter_r", opacity=0.4, showscale=True),
             name="generated_pts",
@@ -485,20 +488,19 @@ def plot_radial_start_points(
         )
     )
 
-    v = np.cross(branch_orientation, [1,0,0])
+    v = np.cross(branch_orientation, [1, 0, 0])
     fig.add_trace(
         go.Scatter3d(
             x=[branch_center[0] + v[0] * (branch_radius + 0.002)],
             y=[branch_center[1] + v[1] * (branch_radius + 0.002)],
             z=[branch_center[2] + v[2] * (branch_radius + 0.002)],
-            name='branch_center',
-            mode='markers',
-            marker=dict(color='orange', opacity=1.0)
+            name="branch_center",
+            mode="markers",
+            marker=dict(color="orange", opacity=1.0),
         )
     )
 
-    fig.update_layout(scene=dict(aspectmode='data'))
-
+    fig.update_layout(scene=dict(aspectmode="data"))
 
     return fig
 

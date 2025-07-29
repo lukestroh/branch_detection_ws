@@ -41,7 +41,7 @@ def plot_tof_vs_joint_state(
             hovertemplate="theta: %{x}<br>d: %{y}<br>time: %{customdata[0]}<br><extra>%{customdata[1]}</extra>",
         )
     )
-    
+
     # fig.add_trace(
     #     go.Scatter(
     #         x=data["joint_states_data"][:, 2],
@@ -244,7 +244,7 @@ def plot_branch_projection(
         anchor="tail",
     )
 
-    eye_offset = np.array([-1, 2, 2])
+    eye_offset = np.array([-1, 3, -1])
     eye_pos = branch_center_pos - eye_offset
     fig.update_layout(
         title=dict(text="Projected branch detection points"),

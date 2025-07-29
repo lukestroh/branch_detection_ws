@@ -132,8 +132,7 @@ def make_angles_plot():
         ),
     )
 
-
-    pio.write_image(fig=fig, file='./fig.pdf', format='pdf')
+    pio.write_image(fig=fig, file="./fig.pdf", format="pdf")
     fig.show()
 
     return
@@ -142,6 +141,7 @@ def make_angles_plot():
 if __name__ == "__main__":
     import time
     import os
+
     os.nice(10)
 
     start_time = time.process_time()
