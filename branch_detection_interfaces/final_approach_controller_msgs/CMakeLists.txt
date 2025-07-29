@@ -14,6 +14,7 @@ find_package(rosidl_default_generators REQUIRED)
 
 rosidl_generate_interfaces(
   ${PROJECT_NAME}
+  "msg/EventStamped.msg"
   "msg/GeneratedPoses.msg"
   "msg/TimestampTofMin.msg"
   "msg/ToFBranchFit.msg"
