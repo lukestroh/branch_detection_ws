@@ -124,8 +124,11 @@ def detect_sectioned_window_indices(node, tof_data, joint_angles, filtered_valle
 
         else:
             # filter out false positives from extra minima that don't wrap around the circle
-            filtered_from_false_positives = np.argsort(tof_data[sorted_by_index][:2])
+            print(tof_data[sorted_by_index])
+            filtered_from_false_positives = np.argsort(tof_data[sorted_by_index])[:2]
+            print(filtered_from_false_positives)
             min_indices = sorted_by_index[filtered_from_false_positives]
+            print(tof_data[min_indices])
             midpoint_idx = get_idx_midpoint_from_joint_angles(joint_angles=joint_angles, idx0=min_indices[0], idx1=min_indices[1])
             # node.info(f"MIDPOINT: {joint_angles[midpoint_idx]}")
 
@@ -223,6 +226,23 @@ def separate_tof_data_by_curve(node, all_data_dict: dict, save_fig: bool = False
                     legendgrouptitle=dict(text="filtered_minima"),
                 )
             )
+        for i, idx in enumerate(split_idxs):
+            if i == 0:
+                showlegend = True
+            else:
+                showlegend = False
+            fig.add_trace(
+                go.Scatter(
+                    x=[all_data_dict["joint_states_data"][idx][2]],
+                    y=[all_data_dict["tof_data"][idx]],
+                    mode="markers",
+                    name="split_idxs",
+                    marker=dict(size=20, color="purple"),
+                    showlegend=showlegend,
+                    legendgroup="split_idxs",
+                    legendgrouptitle=dict(text="split_idxs"),
+                )
+            )
         if save_fig:
             pio.write_html(
                 fig=fig,
@@ -238,17 +258,18 @@ def separate_tof_data_by_curve(node, all_data_dict: dict, save_fig: bool = False
     separated_data_dict["s0"]["raw_tof_data"] = all_data_dict["raw_tof_data"][section0_idxs]
     separated_data_dict["s0"]["tof_ts"] = all_data_dict["tof_ts"][section0_idxs]
     separated_data_dict["s0"]["tof_data"] = all_data_dict["tof_data"][section0_idxs]
+    separated_data_dict["s0"]["joint_states_ts"] = all_data_dict["joint_states_ts"][section0_idxs]
+    separated_data_dict["s0"]["joint_states_data"] = all_data_dict["joint_states_data"][section0_idxs]
+    separated_data_dict["s0"]["sensor_id"] = all_data_dict['sensor_id'][section0_idxs]
+    separated_data_dict["s0"]["indices"] = section0_idxs
+
     separated_data_dict["s1"]["raw_tof_ts"] = all_data_dict["raw_tof_ts"][section1_idxs]
     separated_data_dict["s1"]["raw_tof_data"] = all_data_dict["raw_tof_data"][section1_idxs]
     separated_data_dict["s1"]["tof_ts"] = all_data_dict["tof_ts"][section1_idxs]
     separated_data_dict["s1"]["tof_data"] = all_data_dict["tof_data"][section1_idxs]
-
-    separated_data_dict["s0"]["joint_states_ts"] = all_data_dict["joint_states_ts"][section0_idxs]
-    separated_data_dict["s0"]["joint_states_data"] = all_data_dict["joint_states_data"][section0_idxs]
     separated_data_dict["s1"]["joint_states_ts"] = all_data_dict["joint_states_ts"][section1_idxs]
     separated_data_dict["s1"]["joint_states_data"] = all_data_dict["joint_states_data"][section1_idxs]
-
-    separated_data_dict["s0"]["indices"] = section0_idxs
+    separated_data_dict["s1"]["sensor_id"] = all_data_dict['sensor_id'][section1_idxs]
     separated_data_dict["s1"]["indices"] = section1_idxs
 
     # TODO: another debug plot here

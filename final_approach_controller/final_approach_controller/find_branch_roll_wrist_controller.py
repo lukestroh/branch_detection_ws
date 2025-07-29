@@ -242,7 +242,7 @@ class FindBranchRollWristController(TFNode):
         self._msg_event_stamped = EventStamped()
 
         # Action requests
-        self.move_to_pose_req = MoveToPose.Request()
+        self._move_to_pose_req = MoveToPose.Request()
 
         # Transforms
         self.tf_mp_base_to_tof0 = np.identity(4)
@@ -424,17 +424,17 @@ class FindBranchRollWristController(TFNode):
                 )
 
                 self.info(f"Moving to pose {desired_eef_xyz}, {desired_orientation_vec}")
-                self.move_to_pose_req.goal.position.x = desired_eef_xyz[0]
-                self.move_to_pose_req.goal.position.y = desired_eef_xyz[1]
-                self.move_to_pose_req.goal.position.z = desired_eef_xyz[2]
-                self.move_to_pose_req.goal.orientation.x = desired_orientation_quat[0]
-                self.move_to_pose_req.goal.orientation.y = desired_orientation_quat[1]
-                self.move_to_pose_req.goal.orientation.z = desired_orientation_quat[2]
-                self.move_to_pose_req.goal.orientation.w = desired_orientation_quat[3]
+                self._move_to_pose_req.goal.position.x = desired_eef_xyz[0]
+                self._move_to_pose_req.goal.position.y = desired_eef_xyz[1]
+                self._move_to_pose_req.goal.position.z = desired_eef_xyz[2]
+                self._move_to_pose_req.goal.orientation.x = desired_orientation_quat[0]
+                self._move_to_pose_req.goal.orientation.y = desired_orientation_quat[1]
+                self._move_to_pose_req.goal.orientation.z = desired_orientation_quat[2]
+                self._move_to_pose_req.goal.orientation.w = desired_orientation_quat[3]
 
                 self.info("Sending goal")
 
-                move_group_future: Future = self._srv_cartesian_move_to_pose.call_async(request=self.move_to_pose_req)
+                move_group_future: Future = self._srv_cartesian_move_to_pose.call_async(request=self._move_to_pose_req)
                 move_group_future.add_done_callback(callback=self._done_cb_srv_cartesian_move_to_pose)
                 await move_group_future
 
@@ -751,6 +751,7 @@ class FindBranchRollWristController(TFNode):
             sensor_data_dict["tof0"]["raw_tof_data"] = list(self.d_tof0_raw_readings)
             sensor_data_dict["tof0"]["tof_ts"] = list(self.ts_tof0)
             sensor_data_dict["tof0"]["tof_data"] = list(self.d_tof0_readings)
+
             sensor_data_dict["tof1"]["raw_tof_ts"] = list(self.ts_tof1_raw)
             sensor_data_dict["tof1"]["raw_tof_data"] = list(self.d_tof1_raw_readings)
             sensor_data_dict["tof1"]["tof_ts"] = list(self.ts_tof1)
@@ -771,8 +772,11 @@ class FindBranchRollWristController(TFNode):
 
         sensor_data_dict["tof0"]["joint_states_ts"] = _tof0_js_ts
         sensor_data_dict["tof0"]["joint_states_data"] = joint_states_tof0_data
+        sensor_data_dict["tof0"]['sensor_id'] = [0] * len(sensor_data_dict['tof0']['tof_ts'])
+
         sensor_data_dict["tof1"]["joint_states_ts"] = _tof1_js_ts
         sensor_data_dict["tof1"]["joint_states_data"] = joint_states_tof1_data
+        sensor_data_dict["tof1"]['sensor_id'] = [1] * len(sensor_data_dict['tof1']['tof_ts'])
 
         # TODO: Debug plot here
         if self.debug_plot:
@@ -819,6 +823,9 @@ class FindBranchRollWristController(TFNode):
         all_data_dict["joint_states_data"] = np.concatenate(
             (sensor_data_dict["tof0"]["joint_states_data"], sensor_data_dict["tof1"]["joint_states_data"])
         )
+        all_data_dict['sensor_id'] = np.concatenate(
+            (sensor_data_dict["tof0"]['sensor_id'], sensor_data_dict["tof1"]['sensor_id'])
+        )
 
         # Sort all of my data by wrist 3 joint state
         sorted_indices = np.argsort(all_data_dict["joint_states_data"][:, 2])
@@ -828,6 +835,7 @@ class FindBranchRollWristController(TFNode):
         all_data_dict["tof_data"] = all_data_dict["tof_data"][sorted_indices]
         all_data_dict["joint_states_ts"] = all_data_dict["joint_states_ts"][sorted_indices]
         all_data_dict["joint_states_data"] = all_data_dict["joint_states_data"][sorted_indices]
+        all_data_dict['sensor_id'] = all_data_dict['sensor_id'][sorted_indices]
 
         return all_data_dict, sensor_data_dict
 
@@ -877,6 +885,7 @@ class FindBranchRollWristController(TFNode):
                 (
                     self.time_and_center_res_dict[section_name]["time"],
                     self.time_and_center_res_dict[section_name]["min_dist"],
+                    self.time_and_center_res_dict[section_name]["sensor_id"]
                 ) = sec_time_and_dist
 
         return
@@ -910,12 +919,12 @@ class FindBranchRollWristController(TFNode):
         tof0_vec_base_frame = self.get_tof_vec_base_frame(
             ts=self.time_and_center_res_dict["s0"]["time"],
             tof=self.time_and_center_res_dict["s0"]["min_dist"],
-            sensor_name="tof0",
+            sensor_name=f"tof{self.time_and_center_res_dict['s0']['sensor_id']}",
         )
         tof1_vec_base_frame = self.get_tof_vec_base_frame(
-            ts=self.time_and_center_res_dict["s0"]["time"],
+            ts=self.time_and_center_res_dict["s1"]["time"],
             tof=self.time_and_center_res_dict["s1"]["min_dist"],
-            sensor_name="tof1",
+            sensor_name=f"tof{self.time_and_center_res_dict['s1']['sensor_id']}",
         )
 
         # Get the centerpoint of these two points.

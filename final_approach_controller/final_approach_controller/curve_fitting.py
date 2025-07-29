@@ -24,8 +24,7 @@ import py_trees
 
 def filter_far_plane(
     far_plane_value: float,
-    ts: list,
-    data: list,
+    data: dict
 ) -> dict[str, np.ndarray] | None:
     """
     A low-pass filter, filters data points out beyond the `filter_far_plane` value. Resulting arrays are truncated.
@@ -41,12 +40,18 @@ def filter_far_plane(
     :rtype: dict
     """
     # filter readings beyond a distance
-    fp_filter_data = np.where(np.asarray(data) < far_plane_value, data, np.nan)
-    # Put all of those values beyond as np.nan
-    fp_filter_ts = np.where(np.isnan(fp_filter_data), np.nan, np.asarray(ts))
-    # Filter out the np.nan values
-    fp_filter_data = fp_filter_data[~np.isnan(fp_filter_data)]
-    fp_filter_ts = fp_filter_ts[~np.isnan(fp_filter_ts)]
+    fp_filter_idxs = np.where(np.asarray(data['tof_data']) < far_plane_value)
+
+    # fp_filter_data = np.where(np.asarray(data) < far_plane_value, data, np.nan)
+    # # Put all of those values beyond as np.nan
+    # fp_filter_ts = np.where(np.isnan(fp_filter_data), np.nan, np.asarray(ts))
+    # # Filter out the np.nan values
+    # fp_filter_data = fp_filter_data[~np.isnan(fp_filter_data)]
+    # fp_filter_ts = fp_filter_ts[~np.isnan(fp_filter_ts)]
+
+    fp_filter_data = data['tof_data'][fp_filter_idxs]
+    fp_filter_ts = data['tof_ts'][fp_filter_idxs]
+    fp_filter_sensor_ids = data['sensor_id'][fp_filter_idxs]
 
     if fp_filter_ts.size == 0:
         # print(f"Could not find any data points less than the filter's far plane of {filter_far_plane}")
@@ -58,7 +63,8 @@ def filter_far_plane(
         "ts": fp_filter_ts,
         "ts_zeroed": fp_filter_zeroed_ts,
         "data": fp_filter_data,
-        "data_min": np.min(fp_filter_data),
+        # "data_min": np.min(fp_filter_data),
+        "sensor_id": fp_filter_sensor_ids,
         "tof_arm_radius": 0.04891,
     }
 
@@ -140,6 +146,7 @@ def process_window(
     window_data["x_fit"] = x_fit
     window_data["y_fit"] = y_fit
     window_data["inlier_mask"] = ransac.inlier_mask_
+    window_data['sensor_id_min'] = window_data['sensor_id'][idx_min]
 
     return window_data
 
@@ -241,9 +248,10 @@ def window_ransac(
         window["ts_zeroed"] = data["ts_zeroed"][window_indices]
         window["data"] = data["data"][window_indices]
         window["wrist_state"] = data["wrist_state"][window_indices]
+        window['sensor_id'] = data['sensor_id'][window_indices]
         window["rotation_speed"] = np.pi / 8  # rad / s TODO: get from topic, publish from controller
         window["tof_arm_radius"] = 0.04891
-
+        
         window = fit_and_process_ransac(
             window_data=window,
             max_trials=max_trials,
@@ -482,10 +490,7 @@ def get_branch_center_time_and_distance(
     filtered_window_data = None
 
     try:
-        maf_ts = data["tof_ts"]
-        maf_data = data["tof_data"]
-
-        fpf_data = filter_far_plane(far_plane_value=far_plane_filter, ts=maf_ts, data=maf_data)
+        fpf_data = filter_far_plane(far_plane_value=far_plane_filter, data=data)
         if fpf_data is None:
             if node is not None:
                 node.error(f"{section_name}: Failed at fpf_filter()")
@@ -636,5 +641,6 @@ def get_branch_center_time_and_distance(
 
     t_min = best_window["ts_min"]
     y_min = best_window["y_min"]
+    sensor_id = best_window['sensor_id_min']
 
-    return t_min, y_min
+    return t_min, y_min, sensor_id
