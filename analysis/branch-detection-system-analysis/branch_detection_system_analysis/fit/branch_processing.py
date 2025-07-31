@@ -14,35 +14,33 @@ def get_tof_vec_base_frame(
 ):
     # If the eef is moving, we need a common frame, which should be world or <robot-part>__base
     # Get tof poses at calculated signal minimum times
-    timestamp = time_and_center_res_dict[section_name]['time']
-    dist = time_and_center_res_dict[section_name]['min_dist']
-    sensor_id = time_and_center_res_dict[section_name]['sensor_id']
+    timestamp = time_and_center_res_dict[section_name]["time"]
+    dist = time_and_center_res_dict[section_name]["min_dist"]
+    sensor_id = time_and_center_res_dict[section_name]["sensor_id"]
 
     tf_df = pb.get_tf_df_at_closest_timestamp(
         tf_df=data_dict["tf"], tf_static_df=data_dict["tf_static"], timestamp=timestamp
     )
 
     tf_tof_to_base = pb.get_tf_matrix_from_df(
-        target_frame=f"{node._param_robot_base_part}__base", source_frame=f"{node._param_robot_eef_part}__tof{sensor_id}", tf_df=tf_df
+        target_frame=f"{node._param_robot_base_part}__base",
+        source_frame=f"{node._param_robot_eef_part}__tof{sensor_id}",
+        tf_df=tf_df,
     )
-    vec = tf_tof_to_base @ [0,0,dist,1]
+    vec = tf_tof_to_base @ [0, 0, dist, 1]
 
     return vec
 
 
-def get_branch_vec_from_tof(node, data_dict: dict[pd.DataFrame], time_and_center_res_dict:dict, return_frames: bool = False):
+def get_branch_vec_from_tof(
+    node, data_dict: dict[pd.DataFrame], time_and_center_res_dict: dict, return_frames: bool = False
+):
     # Project tof readings in base frame
     A_vec_base_frame = get_tof_vec_base_frame(
-        node=node,
-        data_dict=data_dict,
-        time_and_center_res_dict=time_and_center_res_dict,
-        section_name='s0'
+        node=node, data_dict=data_dict, time_and_center_res_dict=time_and_center_res_dict, section_name="s0"
     )
     B_vec_base_frame = get_tof_vec_base_frame(
-        node=node,
-        data_dict=data_dict,
-        time_and_center_res_dict=time_and_center_res_dict,
-        section_name='s1'
+        node=node, data_dict=data_dict, time_and_center_res_dict=time_and_center_res_dict, section_name="s1"
     )
 
     # Get the centerpoint of these two points.
@@ -57,7 +55,13 @@ def get_branch_vec_from_tof(node, data_dict: dict[pd.DataFrame], time_and_center
         return branch_center_point, branch_vec_normalized, None, None
 
 
-def get_desired_position_from_branch_vec(node, branch_center_point: np.ndarray, branch_vec: np.ndarray, time: float, data_dict: dict,):
+def get_desired_position_from_branch_vec(
+    node,
+    branch_center_point: np.ndarray,
+    branch_vec: np.ndarray,
+    time: float,
+    data_dict: dict,
+):
     """
     Get closest point on a circle from point, given circle center,
     point, plane normal
@@ -71,7 +75,9 @@ def get_desired_position_from_branch_vec(node, branch_center_point: np.ndarray, 
     )
 
     tf_cut_point_to_base = pb.get_tf_matrix_from_df(
-        target_frame=f"{node._param_robot_base_part}__base", source_frame=f"{node._param_robot_eef_part}__tool0", tf_df=tf_df
+        target_frame=f"{node._param_robot_base_part}__base",
+        source_frame=f"{node._param_robot_eef_part}__tool0",
+        tf_df=tf_df,
     )
 
     curr_pose = tf_cut_point_to_base[0:3, 3]  # P

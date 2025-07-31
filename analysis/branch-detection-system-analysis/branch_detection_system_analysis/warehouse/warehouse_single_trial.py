@@ -29,7 +29,6 @@ import rclpy.logging
 
 logger = rclpy.logging.get_logger("warehouser")
 
-
 ws_path = os.path.abspath(os.path.join("/home/luke/branch_detection_ws"))
 bags_path = os.path.join(ws_path, "bags", "2025_ToFBranchDetection")
 warehouse_path = os.path.abspath(os.path.join(ws_path, "bags", "2025_ToFBranchDetection", "warehouse"))
@@ -151,10 +150,34 @@ def get_generated_start_poses_data(br: BagReader) -> dict:
     try:
         _generated_start_poses = list(br.query(topic_name=f"/generated_start_poses"))
         generated_start_poses: list[GeneratedPoses] = [d[1] for d in _generated_start_poses]
-        start_poses = zip(*map(lambda g: g.poses, generated_start_poses))
+        # generated_start_pose_data = list(zip(*map(lambda g: g.poses, generated_start_poses)))  
+        all_poses = list(itertools.chain.from_iterable(map(lambda gen_poses: gen_poses.poses, generated_start_poses)))
+      
+        x, y, z, qx, qy, qz, qw = zip(
+            *map(
+                lambda p: [
+                    p.position.x,
+                    p.position.y,
+                    p.position.z,
+                    p.orientation.x,
+                    p.orientation.y,
+                    p.orientation.z,
+                    p.orientation.w,
+                ],
+                all_poses,
+            )
+        )       
     except (KeyError, ValueError):
-        start_poses = []
-    return {"start_poses": start_poses}
+        x = y = z = qx = qy = qz = qw = []
+    return {
+        "x": x,
+        "y": y,
+        "z": z,
+        "qx": qx,
+        "qy": qy,
+        "qz": qz,
+        "qw": qw,
+    }
 
 
 def get_controller_success(br: BagReader, controller_name: str, topic: str) -> dict:
@@ -164,12 +187,6 @@ def get_controller_success(br: BagReader, controller_name: str, topic: str) -> d
     except (KeyError, ValueError):
         controller_success = []
     return {"controller_success": controller_success}
-
-
-"""
-'/fbrw_controller/ts_tof_min',
-
-"""
 
 
 def get_ts_tof_min(br: BagReader) -> dict:
@@ -319,7 +336,6 @@ def get_rotation_event(br: BagReader, controller_event: str) -> dict:
     try:
         rotation_event = list(br.query(topic_name=f"/fbrw_controller/rotation_{controller_event}"))
         rotation_event_data = [d[1] for d in rotation_event]
-        print(rotation_event_data)
         rotation_event_ts, rotation_event_name = zip(
             *map(
                 lambda rotev: [rotev.header.stamp.sec + rotev.header.stamp.nanosec * 1e-9, rotev.event],
@@ -329,6 +345,52 @@ def get_rotation_event(br: BagReader, controller_event: str) -> dict:
     except (KeyError, ValueError):
         rotation_event_ts = rotation_event_name = []
     return {"rotation_event_ts": rotation_event_ts, "rotation_event_name": rotation_event_name}
+
+
+def get_trial_start_pose(br: BagReader) -> dict:
+    try:
+        start_pose = list(br.query(topic_name=f"/trial_start_pose"))
+        start_pose_data = [d[1] for d in start_pose]
+
+        x, y, z, qx, qy, qz, qw = zip(
+            *map(
+                lambda p: [
+                    p.position.x,
+                    p.position.y,
+                    p.position.z,
+                    p.orientation.x,
+                    p.orientation.y,
+                    p.orientation.z,
+                    p.orientation.w,
+                ],
+                start_pose_data,
+            )
+        )
+
+    except (KeyError, ValueError):
+        x = y = z = qx = qy = qz = qw = []
+
+    return {
+        "x": x,
+        "y": y,
+        "z": z,
+        "qx": qx,
+        "qy": qy,
+        "qz": qz,
+        "qw": qw,
+    }
+
+
+def get_trial_start_pose_index(br: BagReader) -> dict:
+    try:
+        pose_index = list(br.query(topic_name=f"/pose_index"))
+        pose_index_data = [d[1] for d in pose_index]
+        
+        index = zip(*map(lambda i: [i.data], pose_index_data))
+
+    except (KeyError, ValueError):
+        index = []
+    return {"pose_index": index}
 
 
 def create_df_from_data_dict(data: dict) -> pd.DataFrame:
@@ -347,7 +409,7 @@ def get_dfs_from_bag_reader(br: BagReader) -> dict:
     joint_states_data = get_joint_states_data(br=br)
     tf_data = get_tf_data(br=br)
     tf_static_data = get_tf_data(br=br, static=True)
-    start_poses_data = get_generated_start_poses_data(br=br)
+    generated_start_poses_data = get_generated_start_poses_data(br=br)
     fbwr_controller_localization_success_data = get_controller_success(br=br, controller_name="fbrw", topic="alignment")
     fbwr_controller_alignment_success_data = get_controller_success(br=br, controller_name="fbrw", topic="localization")
     ts_tof_min_data = get_ts_tof_min(br=br)
@@ -355,6 +417,8 @@ def get_dfs_from_bag_reader(br: BagReader) -> dict:
     sjtc_transition_events_data = get_controller_events(br=br, controller_name="scaled_joint_trajectory_controller")
     rotation_started_data = get_rotation_event(br=br, controller_event="started")
     rotation_stopped_data = get_rotation_event(br=br, controller_event="stopped")
+    trial_start_pose_data = get_trial_start_pose(br=br)
+    trial_start_pose_index_data = get_trial_start_pose_index(br=br)
 
     data_dict = {
         "tof0_raw": tof0_raw_data,
@@ -366,7 +430,7 @@ def get_dfs_from_bag_reader(br: BagReader) -> dict:
         "joint_states": joint_states_data,
         "tf": tf_data,
         "tf_static": tf_static_data,
-        "start_poses": start_poses_data,
+        "generated_start_poses": generated_start_poses_data,
         "fbrw_controller_localization_success": fbwr_controller_localization_success_data,
         "fbrw_controller_alignment_success": fbwr_controller_alignment_success_data,
         "ts_tof_min": ts_tof_min_data,
@@ -374,6 +438,8 @@ def get_dfs_from_bag_reader(br: BagReader) -> dict:
         "sjtc_transition_events": sjtc_transition_events_data,
         "rotation_started": rotation_started_data,
         "rotation_stopped": rotation_stopped_data,
+        "trial_start_pose": trial_start_pose_data,
+        "trial_start_pose_index":  trial_start_pose_index_data,
     }
 
     df_dict = {k: create_df_from_data_dict(data=v) for k, v in data_dict.items()}
@@ -481,9 +547,12 @@ def main():
 
     # trial_file_name = "bds__arm_farm__20250519_15-27-56"
 
-    trial_file_name = "bds__arm_farm__20250722_22-32-22"
+    trial_file_name = "bds__arm_farm__20250729_22-25-35"
+    trial_file_name = "bds__arm_farm__20250729_22-26-18"
 
     # dbs = get_dbs_by_loc(location='arm_farm')
+
+    trial_file_name = "bds__arm_farm__20250730_17-33-32"
 
     # dbs = pb.get_db_by_trial_name(storage_path=storage_path, name=trial_file_name)
     # dbs = pb.get_files_by_trial_name(warehouse_path=warehouse_path, name=trial_file_name)
@@ -494,7 +563,7 @@ def main():
         else:
             try:
                 br = get_bag_reader(db=db_name)
-                # print(br.topics())
+                # pp.pprint(sorted(br.topics))
                 # return
             except sqlite3.DatabaseError as e:
                 logger.error(f"Database read error: {traceback.format_exc()}")

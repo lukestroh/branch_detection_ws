@@ -126,7 +126,7 @@ def main1():
     sensor_data_dict["tof0"]["tof_data"] = data_dict["tof0_filtered"]["tof0_filtered_data"]
     sensor_data_dict["tof0"]["joint_states_ts"] = _tof0_js_ts
     sensor_data_dict["tof0"]["joint_states_data"] = joint_states_tof0_data + np.pi / 2
-    sensor_data_dict["tof0"]['sensor_id'] = [0] * len(sensor_data_dict['tof0']['tof_ts'])
+    sensor_data_dict["tof0"]["sensor_id"] = [0] * len(sensor_data_dict["tof0"]["tof_ts"])
 
     sensor_data_dict["tof1"]["raw_tof_ts"] = data_dict["tof1_raw"]["tof1_raw_ts"]
     sensor_data_dict["tof1"]["raw_tof_data"] = data_dict["tof1_raw"]["tof1_raw_data"]
@@ -134,7 +134,7 @@ def main1():
     sensor_data_dict["tof1"]["tof_data"] = data_dict["tof1_filtered"]["tof1_filtered_data"]
     sensor_data_dict["tof1"]["joint_states_ts"] = _tof1_js_ts
     sensor_data_dict["tof1"]["joint_states_data"] = joint_states_tof1_data - np.pi / 2
-    sensor_data_dict["tof1"]['sensor_id'] = [1] * len(sensor_data_dict['tof1']['tof_ts'])
+    sensor_data_dict["tof1"]["sensor_id"] = [1] * len(sensor_data_dict["tof1"]["tof_ts"])
 
     ###########################
     # Combined Data
@@ -156,8 +156,8 @@ def main1():
     all_data_dict["joint_states_data"] = np.concatenate(
         (sensor_data_dict["tof0"]["joint_states_data"], sensor_data_dict["tof1"]["joint_states_data"])
     )
-    all_data_dict['sensor_id'] = np.concatenate(
-        (sensor_data_dict["tof0"]['sensor_id'], sensor_data_dict["tof1"]['sensor_id'])
+    all_data_dict["sensor_id"] = np.concatenate(
+        (sensor_data_dict["tof0"]["sensor_id"], sensor_data_dict["tof1"]["sensor_id"])
     )
 
     # Slice where the trial starts
@@ -173,7 +173,7 @@ def main1():
     all_data_dict["tof_data"] = all_data_dict["tof_data"][trial_idxs]
     all_data_dict["joint_states_ts"] = all_data_dict["joint_states_ts"][trial_idxs]
     all_data_dict["joint_states_data"] = all_data_dict["joint_states_data"][trial_idxs]
-    all_data_dict['sensor_id'] = all_data_dict['sensor_id'][trial_idxs]
+    all_data_dict["sensor_id"] = all_data_dict["sensor_id"][trial_idxs]
 
     # Sort all data by wrist 3 joint state
     sorted_indices = np.argsort(all_data_dict["joint_states_data"][:, 2])
@@ -183,7 +183,7 @@ def main1():
     all_data_dict["tof_data"] = all_data_dict["tof_data"][sorted_indices]
     all_data_dict["joint_states_ts"] = all_data_dict["joint_states_ts"][sorted_indices]
     all_data_dict["joint_states_data"] = all_data_dict["joint_states_data"][sorted_indices]
-    all_data_dict['sensor_id'] = all_data_dict['sensor_id'][sorted_indices]
+    all_data_dict["sensor_id"] = all_data_dict["sensor_id"][sorted_indices]
 
     separated_data_dict = dp.separate_tof_data_by_curve(node=node, all_data_dict=all_data_dict, save_fig=False)
 
@@ -216,17 +216,22 @@ def main1():
 
         if sec_time_and_dist is not None:
             timestamp, dist, sensor_id = sec_time_and_dist
-            time_and_center_res_dict[section_name]['time'] = timestamp
-            time_and_center_res_dict[section_name]['min_dist'] = dist
-            time_and_center_res_dict[section_name]['sensor_id'] = sensor_id
-    
+            time_and_center_res_dict[section_name]["time"] = timestamp
+            time_and_center_res_dict[section_name]["min_dist"] = dist
+            time_and_center_res_dict[section_name]["sensor_id"] = sensor_id
 
-    branch_center_point, branch_vec_normalized, tof0_vec_base_frame, tof1_vec_base_frame = (
-        bp.get_branch_vec_from_tof(node=node, data_dict=data_dict, time_and_center_res_dict=time_and_center_res_dict,return_frames=True)
+    branch_center_point, branch_vec_normalized, tof0_vec_base_frame, tof1_vec_base_frame = bp.get_branch_vec_from_tof(
+        node=node, data_dict=data_dict, time_and_center_res_dict=time_and_center_res_dict, return_frames=True
     )
 
-    timestamp_tool0 = all_data_dict['tof_ts'][-1]
-    desired_eef_xyz = bp.get_desired_position_from_branch_vec(node=node, branch_center_point=branch_center_point, branch_vec=branch_vec_normalized, time=timestamp_tool0, data_dict=data_dict)
+    timestamp_tool0 = all_data_dict["tof_ts"][-1]
+    desired_eef_xyz = bp.get_desired_position_from_branch_vec(
+        node=node,
+        branch_center_point=branch_center_point,
+        branch_vec=branch_vec_normalized,
+        time=timestamp_tool0,
+        data_dict=data_dict,
+    )
 
     desired_orientation_quat, desired_orientation_vec = bp.get_desired_orientation_from_branch_vec(
         branch_center_point=branch_center_point,
@@ -246,10 +251,6 @@ def main1():
         # save_fig_dir=self.bag_record_path,
     )
     fig.show()
-
-        
-
-            
 
     # pp.pprint(tof0_time_and_dist)
 
