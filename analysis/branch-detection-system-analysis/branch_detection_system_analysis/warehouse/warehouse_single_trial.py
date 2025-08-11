@@ -12,7 +12,7 @@ import plotly.subplots
 from branch_detection_system_analysis.bag_reader.bag_reader import BagReader
 from branch_detection_system_analysis.bag_reader.ros_constants import TransitionStates
 from final_approach_controller_msgs.msg import GeneratedPoses, TimestampTofMin
-from geometry_msgs.msg import WrenchStamped
+from geometry_msgs.msg import Pose, WrenchStamped
 from lifecycle_msgs.msg import TransitionEvent, State
 from ism330dhcx_msgs.msg import Ism330dhcxStamped
 from tof_msgs.msg import TofStamped
@@ -150,9 +150,9 @@ def get_generated_start_poses_data(br: BagReader) -> dict:
     try:
         _generated_start_poses = list(br.query(topic_name=f"/generated_start_poses"))
         generated_start_poses: list[GeneratedPoses] = [d[1] for d in _generated_start_poses]
-        # generated_start_pose_data = list(zip(*map(lambda g: g.poses, generated_start_poses)))  
+        # generated_start_pose_data = list(zip(*map(lambda g: g.poses, generated_start_poses)))
         all_poses = list(itertools.chain.from_iterable(map(lambda gen_poses: gen_poses.poses, generated_start_poses)))
-      
+
         x, y, z, qx, qy, qz, qw = zip(
             *map(
                 lambda p: [
@@ -166,9 +166,43 @@ def get_generated_start_poses_data(br: BagReader) -> dict:
                 ],
                 all_poses,
             )
-        )       
+        )
     except (KeyError, ValueError):
         x = y = z = qx = qy = qz = qw = []
+    return {
+        "x": x,
+        "y": y,
+        "z": z,
+        "qx": qx,
+        "qy": qy,
+        "qz": qz,
+        "qw": qw,
+    }
+
+
+def get_rpy_target_pose_data(br: BagReader) -> dict:
+    try:
+        _rpy_target_pose = list(br.query(topic_name=f"/rpy_target_pose"))
+        rpy_target_pose: list[Pose] = [d[1] for d in _rpy_target_pose]
+
+        x, y, z, qx, qy, qz, qw = zip(
+            *map(
+                lambda p: [
+                    p.position.x,
+                    p.position.y,
+                    p.position.z,
+                    p.orientation.x,
+                    p.orientation.y,
+                    p.orientation.z,
+                    p.orientation.w,
+                ],
+                rpy_target_pose,
+            )
+        )
+
+    except (KeyError, ValueError):
+        x = y = z = qx = qy = qz = qw = []
+
     return {
         "x": x,
         "y": y,
@@ -350,7 +384,7 @@ def get_rotation_event(br: BagReader, controller_event: str) -> dict:
 def get_trial_start_pose(br: BagReader) -> dict:
     try:
         start_pose = list(br.query(topic_name=f"/trial_start_pose"))
-        start_pose_data = [d[1] for d in start_pose]
+        start_pose_data: list[Pose] = [d[1] for d in start_pose]
 
         x, y, z, qx, qy, qz, qw = zip(
             *map(
@@ -385,7 +419,7 @@ def get_trial_start_pose_index(br: BagReader) -> dict:
     try:
         pose_index = list(br.query(topic_name=f"/pose_index"))
         pose_index_data = [d[1] for d in pose_index]
-        
+
         index = zip(*map(lambda i: [i.data], pose_index_data))
 
     except (KeyError, ValueError):
@@ -417,6 +451,7 @@ def get_dfs_from_bag_reader(br: BagReader) -> dict:
     sjtc_transition_events_data = get_controller_events(br=br, controller_name="scaled_joint_trajectory_controller")
     rotation_started_data = get_rotation_event(br=br, controller_event="started")
     rotation_stopped_data = get_rotation_event(br=br, controller_event="stopped")
+    rpy_target_pose_data = get_rpy_target_pose_data(br=br)
     trial_start_pose_data = get_trial_start_pose(br=br)
     trial_start_pose_index_data = get_trial_start_pose_index(br=br)
 
@@ -438,8 +473,9 @@ def get_dfs_from_bag_reader(br: BagReader) -> dict:
         "sjtc_transition_events": sjtc_transition_events_data,
         "rotation_started": rotation_started_data,
         "rotation_stopped": rotation_stopped_data,
+        "rpy_target_pose": rpy_target_pose_data,
         "trial_start_pose": trial_start_pose_data,
-        "trial_start_pose_index":  trial_start_pose_index_data,
+        "trial_start_pose_index": trial_start_pose_index_data,
     }
 
     df_dict = {k: create_df_from_data_dict(data=v) for k, v in data_dict.items()}

@@ -107,7 +107,7 @@ def main1():
     data_dict["tf"] = df_dict["tf"]
     data_dict["tf_static"] = df_dict["tf_static"]
 
-    print(len(data_dict["tof0_filtered"]["tof0_filtered_data"]))
+    # print(len(data_dict["tof0_filtered"]["tof0_filtered_data"]))
 
     ######################################################################################################3
     # Separated Data
@@ -138,7 +138,7 @@ def main1():
 
     ###########################
     # Combined Data
-    ##########################
+    ###########################
     all_data_dict = {}
     all_data_dict["raw_tof_ts"] = np.concatenate(
         [sensor_data_dict["tof0"]["raw_tof_ts"], sensor_data_dict["tof1"]["raw_tof_ts"]]

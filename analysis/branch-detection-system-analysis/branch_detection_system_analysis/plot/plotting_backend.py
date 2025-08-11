@@ -73,14 +73,14 @@ def filter_files_by_trial_number(files: list[str], trial_number: int) -> list[st
 
 
 def filter_files_by_topic(files: list[str], topic: str) -> list[str]:
-    import pprint as pp
-
+    """Filters a list of files by topic and sorts them. Returns an empty list if no filenames match the topic."""
     match = re.fullmatch(r"[A-Za-z0-9_.\-/]+", topic)
     if match is None:
         return []
     else:
-        pattern = rf"__{re.escape(topic)}__(?=)"
-        return [f for f in files if re.search(pattern, f)]
+        pattern = rf"__{re.escape(topic)}__"
+        file_list = [f for f in files if re.search(pattern, f)]
+        return sorted(file_list)
 
 
 def filter_files_by_topics(files: list[str], topics: list[str]) -> list[str]:
@@ -196,7 +196,7 @@ def group_files_by_datetime_by_topic(files: list[str]) -> defaultdict[str, defau
             datetime_str = datetime_match.group(0).strip("_")
             topic_str = topic_match.group(1)
             grouped_by_datetime_by_topic[datetime_str][topic_str].append(file)
-    return group_files_by_datetime_by_topic
+    return grouped_by_datetime_by_topic
 
 
 # =================================
@@ -216,9 +216,15 @@ def build_df_dict_from_files(data_dict: dict | None, files: list[str]) -> dict:
     return data_dict
 
 
-def get_df_rows_at_closest_timestamp(df_dict: dict, topic_name: str, timestamps: ArrayLike) -> pd.DataFrame:
+def get_df_rows_at_closest_timestamp_from_df_dict(
+    df_dict: dict, topic_name: str, timestamps: ArrayLike
+) -> pd.DataFrame:
     # """Gets the closest set of TF frames at a given timestamp"""
     df = df_dict[topic_name]
+    return get_df_rows_at_closest_timestamp(df=df, topic_name=topic_name, timestamps=timestamps)
+
+
+def get_df_rows_at_closest_timestamp(df: pd.DataFrame, topic_name: str, timestamps: ArrayLike):
     ts_col = df[f"{topic_name}_ts"].to_numpy()
     idxs = np.searchsorted(ts_col, timestamps)
 
@@ -296,10 +302,8 @@ def get_tf_matrix_from_df(target_frame: str, source_frame: str, tf_df: pd.DataFr
     frame_to_frame_mat = np.identity(4)
 
     source_frame_parent = tf_df.loc[tf_df["tf_child_frame_id"] == source_frame, ["tf_frame_id"]]["tf_frame_id"].iloc[0]
-    # print(source_frame_parent)
 
-    # print(tf_df)
-
+    i = 0
     while True:
         try:
             if target_frame == source_frame_parent:
@@ -311,6 +315,8 @@ def get_tf_matrix_from_df(target_frame: str, source_frame: str, tf_df: pd.DataFr
                     (tf_df["tf_frame_id"] == target_frame)
                     & (~tf_df["tf_child_frame_id"].isin(["ur5e__base", "ur5e__ft_frame"]))
                 ]
+
+            # print(tf_target_to_child_df)
 
             frame_to_frame_mat[:3, 3] = [
                 tf_target_to_child_df["tf_t_x"].iloc[0],
@@ -326,17 +332,42 @@ def get_tf_matrix_from_df(target_frame: str, source_frame: str, tf_df: pd.DataFr
                 ]
             ).as_matrix()
 
+            # print(frame_to_frame_mat)
+            # print(target_frame)
+            # print(source_frame)
+            # print(source_frame_parent)
+            # if i == 1:
+            #     import sys
+            #     sys.exit()
+
             transformation_mat = transformation_mat @ frame_to_frame_mat
 
             target_frame = tf_target_to_child_df["tf_child_frame_id"].iloc[0]
             if target_frame == source_frame:
                 break
 
+            i += 1
+
         except Exception as e:
             print(traceback.format_exc())
             break
 
+    # print(transformation_mat)
+    # import sys
+    # sys.exit()
     return transformation_mat
+
+
+def invert_transform(T: np.ndarray) -> np.ndarray:
+    """Invert a 4x4 homogeneous transform matrix."""
+    R = T[:3, :3]
+    t = T[:3, 3]
+    R_inv = R.T
+    t_inv = -R_inv @ t
+    T_inv = np.identity(4)
+    T_inv[:3, :3] = R_inv
+    T_inv[:3, 3] = t_inv
+    return T_inv
 
 
 # ==========================
@@ -364,3 +395,36 @@ def plot_linear_wrench_data(wrench_df: pd.DataFrame, fig: go.Figure = None) -> g
 
 def plot_tof_vs_timestamp():
     return
+
+
+def plot_quadratic_fit(t_vals: np.ndarray, coefs: np.ndarray, name: str = None, fig: go.Figure = None):
+    if fig is None:
+        fig = go.Figure()
+
+    t_vals_plot = np.linspace(min(t_vals), max(t_vals), 100)
+
+    # t_vals_plot = np.linspace(-1, 1, 500)
+    x = coefs[0, 0] * t_vals_plot**2 + coefs[0, 1] * t_vals_plot + coefs[0, 2]
+    y = coefs[1, 0] * t_vals_plot**2 + coefs[1, 1] * t_vals_plot + coefs[1, 2]
+    z = coefs[2, 0] * t_vals_plot**2 + coefs[2, 1] * t_vals_plot + coefs[2, 2]
+    fig.add_trace(go.Scatter3d(x=x, y=y, z=z, mode="lines", line=dict(color="#5A4735", width=20), name=f"{name}"))
+
+    return fig
+
+
+def plot_quadratic_residuals(points, projected_points, fig: go.Figure = None):
+    for p, q in zip(points, projected_points):
+        fig.add_trace(
+            go.Scatter3d(
+                x=(p[0], q[0]),
+                y=(p[1], q[1]),
+                z=(p[2], q[2]),
+                showlegend=False,
+                mode="lines",
+                line=dict(color="darkgoldenrod"),
+                legendgroup=0,
+                legendgrouptitle={"text": "residuals"},
+            )
+        )
+
+    return fig

@@ -425,21 +425,3 @@ def get_branch_center_time_and_distance(
         fit_min = refit_data[lowest_residual_idx]["fit_min"]
 
     return ts_min, fit_min
-
-
-# def evaluate_parabola_shapes(windowed_data: dict):
-#     """Evaluate parabolic shapes for where the windows where the height = 1/2 the width. For good fits, this should be consistent
-
-#     :param windowed_data: Dictionary containing all of the windowed data, even for windows where no fit was found
-#     :type dict:
-#     """
-
-#     for window_idx, window in windowed_data.items():
-#         delta_t = 1 / window['coefficients'][2]
-#         print(window_idx, delta_t, window['t_fit'])
-#         # print(window['coefficients'][2])
-
-# evaluated_window_data = evaluate_parabola_shapes(windowed_data=filtered_window_data)
-
-# import sys
-# sys.exit()

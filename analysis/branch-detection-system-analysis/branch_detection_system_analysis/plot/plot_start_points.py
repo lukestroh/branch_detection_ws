@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import branch_detection_system_analysis.plot.plotly_helpers as ph
+import branch_detection_system_analysis.plot.ray_tracing as rt
 
 import itertools
 import plotly.graph_objects as go
@@ -57,55 +58,9 @@ def compute_plane_from_pts_and_orientation(p0, p1, v0):
     return n / np.linalg.norm(n)
 
 
-def ray_hits_cylinder(
-    start_point: np.ndarray,
-    direction: np.ndarray,
-    branch_center: np.ndarray,
-    branch_orientation: np.ndarray,
-    branch_radius: float,
-    branch_length: float,
-) -> tuple[bool, float]:
-    # Normalize inputs
-    direction = direction / np.linalg.norm(direction)
-    branch_orientation = branch_orientation / np.linalg.norm(branch_orientation)
-    # Line 1 (ray): P(t) = start_point + t * direction
-    # Line 2 (cylinder axis): Q(s) = branch_center + s * branch_orientation
-    w0 = start_point - branch_center
-    a = np.dot(direction, direction)
-    b = np.dot(direction, branch_orientation)
-    c = np.dot(branch_orientation, branch_orientation)
-    d = np.dot(direction, w0)
-    e = np.dot(branch_orientation, w0)
-
-    denom = a * c - b * b
-    if np.isclose(denom, 0.0):
-        return False, -1.0  # Lines are parallel; no unique closest point
-
-    t = (b * e - c * d) / denom
-    s = (a * e - b * d) / denom
-
-    if t < 0:
-        return False, -1.0  # Intersection point is behind the ray origin
-
-    # Compute closest points on both lines
-    closest_point_on_ray = start_point + t * direction
-    closest_point_on_axis = branch_center + s * branch_orientation
-
-    # Distance from ray to axis
-    dist_perp = np.linalg.norm(closest_point_on_ray - closest_point_on_axis)
-
-    # Check axial bounds of the finite cylinder
-    if abs(s) > branch_length / 2:
-        return False, t
-
-    hit = dist_perp <= branch_radius
-
-    return hit, t
-
-
 def sample_gaussian_cone(
-    u: np.ndarray,
-    v: np.ndarray,
+    u: np.ndarray,  # points towards branch
+    v: np.ndarray,  # other basis vectors
     w: np.ndarray,
     sensor_fov_deg: float,
     sigma_deg: float,
@@ -150,7 +105,7 @@ def score_directions(
     scores = np.empty(shape=len(directions), dtype=float)
 
     for i, d in enumerate(directions):
-        hit_cyl, t_closest = ray_hits_cylinder(
+        hit_cyl, t_closest = rt.ray_hits_cylinder(
             start_point=start_point,
             direction=d,
             branch_center=branch_center,

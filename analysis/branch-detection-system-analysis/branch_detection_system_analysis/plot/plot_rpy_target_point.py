@@ -2,6 +2,8 @@
 from branch_detection_system_analysis.fit import branch_processing as bp
 from branch_detection_system_analysis.node import dummy_node
 from branch_detection_system_analysis.plot import plotting_backend as pb
+from branch_detection_system_analysis.plot import debug_plots as dplot
+from branch_detection_system_analysis.plot import plotly_helpers as ph
 from final_approach_controller import curve_fitting as cf
 from final_approach_controller import data_processing as dp
 import numpy as np
@@ -9,6 +11,8 @@ import os
 import pandas as pd
 import plotly.graph_objects as go
 import pprint as pp
+
+from scipy.spatial.transform import Rotation
 
 
 def main():
@@ -18,9 +22,7 @@ def main():
     warehouse_path = os.path.abspath(os.path.join(ws_path, "bags", "2025_ToFBranchDetection", "warehouse"))
 
     data_dict = {}
-    files_by_date = pb.get_files_by_date(warehouse_path=warehouse_path, date="20250729") + pb.get_files_by_date(
-        warehouse_path=warehouse_path, date="20250730"
-    )
+    files_by_date = pb.get_files_by_date(warehouse_path=warehouse_path, date="20250805")
 
     files_generated_start_poses = pb.filter_files_by_topic(files=files_by_date, topic="generated_start_poses")
 
@@ -35,22 +37,24 @@ def main():
             "tf",
             "tf_static",
             "trial_start_pose",
-            "trial_start_pose_index",
             "tof0_filtered",
             "tof1_filtered",
             "fbrw_controller_alignment_success",
             "fbrw_controller_localization_success",
             "rotation_started",
             "rotation_stopped",
+            "trial_start_pose",
+            "trial_start_pose_index",
             "joint_states",
+            "rpy_target_pose",
         ],
     )
 
     grouped_files = pb.group_files_by_datetime_by_topic(files=files_all_topics)
 
-    tof_readings_pts = []
-
-    start_pts = []
+    center_pts = []
+    pose_idxs = []
+    fig = go.Figure()
 
     for trial_name, trial_data in grouped_files.items():
         df_dict = {}
@@ -60,11 +64,6 @@ def main():
         data_dict = {}
         for topic_name, data_df in df_dict.items():
             data_dict[topic_name] = data_df.to_dict(orient="list")
-
-        print(data_dict["trial_start_pose"])
-        print(data_dict["trial_start_pose_index"])
-        # import sys
-        # sys.exit()
 
         _tof0_js_ts, joint_states_tof0_data = pb.get_list_rows_at_closest_timestamps(
             data_dict=data_dict, topic_name="joint_states", timestamps=data_dict["tof0_filtered"]["tof0_filtered_ts"]
@@ -242,47 +241,84 @@ def main():
             )
         )
 
-        tof_readings_pts.extend([tofA_reading_vec_base_frame, tofB_reading_vec_base_frame])
+        center_pts.append(branch_center_point)
 
-    tof_readings_pts = np.asarray(tof_readings_pts)
+        rpy_target_pose = data_dict["rpy_target_pose"]
+        # print()
+        # pose_idxs.append(data_dict['trial_start_pose_index']['pose_index'][0][0])
+        # # if data_dict['trial_start_pose_index']['pose_index'][0][0] == 42:
+        # pose = data_dict['trial_start_pose']
+        # pos = [pose['x'][0], pose['y'][0], pose['z'][0]]
+        # ori = [pose['qx'][0], pose['qy'][0], pose['qz'][0], pose['qw'][0]]
 
-    # Fit
-    centroid, direction = cf.fit_3d_linear_pca(points=tof_readings_pts)
-    t_vals, coefs = cf.fit_3d_quadratic(points=tof_readings_pts, centroid=centroid, direction=direction)
+        # fig = ph.plot_vector(
+        #     fig=fig,
+        #     position=pos,
+        #     orientation=ori,
+        #     scale=0.1,
+        #     color='blue',
+        #     name=data_dict['trial_start_pose_index']['pose_index'][0][0],
+        #     showlegend=True
+        # )
 
-    quadratic_t_vals, quadratic_projected_points = cf.project_points_onto_curve(
-        points=tof_readings_pts, t_vals=t_vals, coefs=coefs
+    print(sorted(pose_idxs))
+    # print(len(center_pts))
+    center_pts = np.asarray(center_pts)
+    center_pts = center_pts[:, :3]
+    # print(center_pts.shape)
+    # print(center_pts)
+
+    center_mean = np.mean(center_pts, axis=0)
+    print(center_mean)
+
+    center_diffs = center_pts - center_mean
+    print(center_diffs)
+
+    # center_diffs_mean = np.mean(center_diffs)
+    # print(center_diffs_mean)
+
+    center_diffs_norm_mean = np.mean(np.linalg.norm(center_diffs))
+    print(center_diffs_norm_mean)
+
+    center_diffs_std = np.std(center_diffs)
+    print(center_diffs_std)
+
+    fig.add_trace(
+        go.Scatter3d(x=center_pts[:, 0], y=center_pts[:, 1], z=center_pts[:, 2], mode="markers", name="center_pts")
     )
 
-    # Tests:
-    residuals = tof_readings_pts[:, 0:3] - quadratic_projected_points
-    # print("quadratic residuals:\n", residuals)
-    print("quadratic RESIDUALS mean ", np.mean(np.linalg.norm(residuals, axis=1)))
-    print("quadratic var:", np.var(residuals))
-    print("quadratic std: ", np.std(residuals))
+    fig.add_trace(go.Scatter3d(x=[center_mean[0]], y=[center_mean[1]], z=[center_mean[2]], name="center_mean"))
 
-    # fig = go.Figure()
-    # fig.add_trace(
-    #     go.Scatter3d(
-    #         x=[0],
-    #         y=[0],
-    #         z=[0]
-    #     )
-    # )
-    # fig.add_trace(
-    #     go.Scatter3d(
-    #         x=tof_readings_pts[:,0],
-    #         y=tof_readings_pts[:,1],
-    #         z=tof_readings_pts[:,2],
-    #         mode='markers',
-    #         marker=dict(size=4)
-    #     )
-    # )
-    # fig = pb.plot_quadratic_fit(t_vals=quadratic_t_vals, coefs=coefs, fig=fig)
-    # fig = pb.plot_quadratic_residuals(points=tof_readings_pts, projected_points=quadratic_projected_points, fig=fig)
-    # fig.show()
+    for i, row in df_generated_start_poses.iterrows():
+        pos = [float(row["x"]), float(row["y"]), float(row["z"])]
+        fig.add_trace(go.Scatter3d(x=[pos[0]], y=[pos[1]], z=[pos[2]], name=i))
 
-    return
+        if i == 70:
+
+            q = [row["qx"], row["qy"], row["qz"], row["qw"]]
+            rot_mat = Rotation.from_quat(q).as_matrix()
+
+            ori = rot_mat @ [0, 0, 1]
+            ori /= np.linalg.norm(ori)
+
+            fig = ph.plot_vector(fig=fig, position=pos, orientation=ori, color="blue", scale=0.1, name=i)
+
+            target_pos = pos + ori * 0.1
+            fig.add_trace(
+                go.Scatter3d(
+                    x=[target_pos[0]],
+                    y=[target_pos[1]],
+                    z=[target_pos[2]],
+                )
+            )
+
+            diff = target_pos - center_mean
+            print("target - calculated: ", np.abs(target_pos - center_mean))
+
+            print("mag: ", np.linalg.norm(diff))
+
+    fig.update_layout(scene=dict(aspectmode="data"))
+    fig.show()
 
 
 if __name__ == "__main__":

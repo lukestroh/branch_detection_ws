@@ -10,47 +10,109 @@ import pandas as pd
 import plotly.graph_objects as go
 import pprint as pp
 
+from final_approach_controller_msgs.action import GenerateCylindricalPoses
+from geometry_msgs.msg import Pose, Point, Quaternion
+from scipy.spatial.transform import Rotation
 
-def main():
-    node = dummy_node.DummyNode()
+import traceback
 
+import datetime as dt
+
+from collections import defaultdict
+
+
+def get_files():
     ws_path = os.path.abspath(os.path.join("/home/luke/branch_detection_ws"))
     warehouse_path = os.path.abspath(os.path.join(ws_path, "bags", "2025_ToFBranchDetection", "warehouse"))
 
-    data_dict = {}
-    files_by_date = pb.get_files_by_date(warehouse_path=warehouse_path, date="20250729") + pb.get_files_by_date(
-        warehouse_path=warehouse_path, date="20250730"
+    # all_files = {"tf": [], "tf_static": [], "start_position": [], "rotation_started": [], "tof0_filtered": [], "tof1_filtered": [], }
+    all_files = []
+
+    # 07 - 29
+    files_by_date = pb.get_files_by_date(warehouse_path=warehouse_path, date="20250729")
+    files_tf = pb.filter_files_by_topic(files=files_by_date, topic="tf")
+    files_tf_static = pb.filter_files_by_topic(files=files_by_date, topic="tf_static")
+    files_start_position = pb.filter_files_by_topic(files=files_by_date, topic="trial_start_pose")
+    # files_start_position_idx = pb.filter_files_by_topic(files=files_by_date, topic='trial_start_pose_index')
+    files_joint_states = pb.filter_files_by_topic(files=files_by_date, topic="joint_states")
+    files_rotation_started = pb.filter_files_by_topic(files=files_by_date, topic="rotation_started")
+    files_rotation_stopped = pb.filter_files_by_topic(files=files_by_date, topic="rotation_stopped")
+    files_tof0_filtered = pb.filter_files_by_topic(files=files_by_date, topic="tof0_filtered")
+    files_tof1_filtered = pb.filter_files_by_topic(files=files_by_date, topic="tof1_filtered")
+    _idx = 26
+    files_tf = files_tf[_idx:]
+    files_tf_static = files_tf_static[_idx:]
+    files_start_position = files_start_position[_idx:]
+    # files_start_position_idx = files_start_position_idx[_idx:]
+    # files_joint_states = files_joint_states[_idx:]
+    files_rotation_started = files_rotation_started[_idx:]
+    files_tof0_filtered = files_tof0_filtered[_idx:]
+    files_tof1_filtered = files_tof1_filtered[_idx:]
+
+    all_files += (
+        files_tf
+        + files_tf_static
+        + files_start_position
+        + files_rotation_started
+        + files_rotation_stopped
+        + files_tof0_filtered
+        + files_tof1_filtered
+        + files_joint_states
+    )
+    # all_files['tf'] += files_tf
+    # all_files['tf_static'] += files_tf_static
+    # all_files['start_position'] += files_start_position
+    # all_files['rotation_started'] += files_rotation_started
+    # all_files['tof0_filtered'] += files_tof0_filtered
+    # all_files['tof1_filtered'] += files_tof1_filtered
+
+    files_by_date = pb.get_files_by_date(warehouse_path=warehouse_path, date="20250730")
+    files_tf = pb.filter_files_by_topic(files=files_by_date, topic="tf")
+    files_tf_static = pb.filter_files_by_topic(files=files_by_date, topic="tf_static")
+    files_start_position = pb.filter_files_by_topic(files=files_by_date, topic="trial_start_pose")
+    # files_start_position_idx = pb.filter_files_by_topic(files=files_by_date, topic='trial_start_pose_index')
+    files_joint_states = pb.filter_files_by_topic(files=files_by_date, topic="joint_states")
+    files_rotation_started = pb.filter_files_by_topic(files=files_by_date, topic="rotation_started")
+    files_rotation_stopped = pb.filter_files_by_topic(files=files_by_date, topic="rotation_stopped")
+    files_tof0_filtered = pb.filter_files_by_topic(files=files_by_date, topic="tof0_filtered")
+    files_tof1_filtered = pb.filter_files_by_topic(files=files_by_date, topic="tof1_filtered")
+    _idx = -6
+    files_tf = files_tf[:_idx]
+    files_tf_static = files_tf_static[:_idx]
+    files_start_position = files_start_position[:_idx]
+    # files_start_position_idx = files_start_position_idx[:_idx]
+    files_joint_states = files_joint_states[:_idx]
+    files_rotation_started = files_rotation_started[:_idx]
+    files_tof0_filtered = files_tof0_filtered[:_idx]
+    files_tof1_filtered = files_tof1_filtered[:_idx]
+
+    all_files += (
+        files_tf
+        + files_tf_static
+        + files_start_position
+        + files_rotation_started
+        + files_rotation_stopped
+        + files_tof0_filtered
+        + files_tof1_filtered
+        + files_joint_states
     )
 
-    files_generated_start_poses = pb.filter_files_by_topic(files=files_by_date, topic="generated_start_poses")
+    # all_files['tf'] += files_tf
+    # all_files['tf_static'] += files_tf_static
+    # all_files['start_position'] += files_start_position
+    # all_files['rotation_started'] += files_rotation_started
+    # all_files['tof0_filtered'] += files_tof0_filtered
+    # all_files['tof1_filtered'] += files_tof1_filtered
 
-    for file in files_generated_start_poses:
-        df_generated_start_poses = pd.read_hdf(file)
-        if not df_generated_start_poses.empty:
-            break
+    grouped_files = pb.group_files_by_datetime_by_topic(files=all_files)
 
-    files_all_topics = pb.filter_files_by_topics(
-        files=files_by_date,
-        topics=[
-            "tf",
-            "tf_static",
-            "trial_start_pose",
-            "trial_start_pose_index",
-            "tof0_filtered",
-            "tof1_filtered",
-            "fbrw_controller_alignment_success",
-            "fbrw_controller_localization_success",
-            "rotation_started",
-            "rotation_stopped",
-            "joint_states",
-        ],
-    )
+    return grouped_files
 
-    grouped_files = pb.group_files_by_datetime_by_topic(files=files_all_topics)
+
+def get_projected_tof_readings(grouped_files: defaultdict):
+    node = dummy_node.DummyNode()
 
     tof_readings_pts = []
-
-    start_pts = []
 
     for trial_name, trial_data in grouped_files.items():
         df_dict = {}
@@ -61,8 +123,12 @@ def main():
         for topic_name, data_df in df_dict.items():
             data_dict[topic_name] = data_df.to_dict(orient="list")
 
-        print(data_dict["trial_start_pose"])
-        print(data_dict["trial_start_pose_index"])
+        try:
+            data_dict["trial_start_pose"]
+        except KeyError:
+            print(trial_name)
+            continue
+        # print(data_dict["trial_start_pose_index"])
         # import sys
         # sys.exit()
 
@@ -147,6 +213,8 @@ def main():
         all_data_dict["joint_states_data"] = all_data_dict["joint_states_data"][sorted_indices]
         all_data_dict["sensor_id"] = all_data_dict["sensor_id"][sorted_indices]
 
+        
+
         if all_data_dict["tof_data"].size == 0:
             print("SKIPPING, EMPTY ARRAY")
             continue
@@ -154,6 +222,8 @@ def main():
         separated_data_dict = dp.separate_tof_data_by_curve(
             node=node, all_data_dict=all_data_dict, save_fig=False, show_fig=False
         )
+
+        
 
         try:
             if (
@@ -244,7 +314,14 @@ def main():
 
         tof_readings_pts.extend([tofA_reading_vec_base_frame, tofB_reading_vec_base_frame])
 
-    tof_readings_pts = np.asarray(tof_readings_pts)
+    return tof_readings_pts
+
+
+def main():
+
+    files: defaultdict = get_files()
+
+    tof_readings_pts = np.asarray(get_projected_tof_readings(grouped_files=files))
 
     # Fit
     centroid, direction = cf.fit_3d_linear_pca(points=tof_readings_pts)
@@ -261,26 +338,23 @@ def main():
     print("quadratic var:", np.var(residuals))
     print("quadratic std: ", np.std(residuals))
 
-    # fig = go.Figure()
-    # fig.add_trace(
-    #     go.Scatter3d(
-    #         x=[0],
-    #         y=[0],
-    #         z=[0]
-    #     )
-    # )
-    # fig.add_trace(
-    #     go.Scatter3d(
-    #         x=tof_readings_pts[:,0],
-    #         y=tof_readings_pts[:,1],
-    #         z=tof_readings_pts[:,2],
-    #         mode='markers',
-    #         marker=dict(size=4)
-    #     )
-    # )
-    # fig = pb.plot_quadratic_fit(t_vals=quadratic_t_vals, coefs=coefs, fig=fig)
-    # fig = pb.plot_quadratic_residuals(points=tof_readings_pts, projected_points=quadratic_projected_points, fig=fig)
-    # fig.show()
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter3d(
+            x=tof_readings_pts[:,0],
+            y=tof_readings_pts[:,1],
+            z=tof_readings_pts[:,2],
+            mode='markers',
+            marker=dict(size=4)
+        )
+    )
+    fig = pb.plot_quadratic_fit(t_vals=quadratic_t_vals, coefs=coefs, fig=fig)
+    fig = pb.plot_quadratic_residuals(points=tof_readings_pts, projected_points=quadratic_projected_points, fig=fig)
+
+    fig.update_layout(scene=dict(aspectmode='data'))
+    fig.show()
+
+
 
     return
 
