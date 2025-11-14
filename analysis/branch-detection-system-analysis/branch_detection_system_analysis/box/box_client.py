@@ -144,7 +144,7 @@ class BoxClient:
             folder = self.client.folder(folder_id=box_environments[namespace]).get()
         return folder
 
-    def upload_bag_file(self, file_path: str, namespace: str = "staging", _id=None):
+    def upload_file(self, file_path: str, namespace: str = "staging", _id=None):
         """Upload a file to staging
         Parameters
         ----------
@@ -204,7 +204,7 @@ def main():
     creates one level of subfolders in box and uploads files
     """
     root_dir = os.path.join(
-        os.path.expanduser("~"), "branch_detection_ws", "bags", "2025_ToFBranchDetection", "warehouse"
+        os.path.expanduser("~"), "branch_detection_ws", "bags", "2025_ToFBranchDetection",#  "warehouse"
     )
     # root_dir = os.path.join("/media/luke/T7 Shield", "luke")
     folders = glob.glob("bds*", root_dir=root_dir, recursive=True)
@@ -213,7 +213,7 @@ def main():
         subfolder_path = os.path.join(root_dir, folder)
         subfolder_id = None
         try:
-            subfolder = mybox.client.folder(box_environments["warehouse"]).create_subfolder(folder)
+            subfolder = mybox.client.folder(box_environments["2025_ToFBranchDetection"]).create_subfolder(folder)
             subfolder_id = subfolder.id
         except Exception as e:
             subfolder_id = e.context_info["conflicts"][0]["id"]
@@ -224,9 +224,12 @@ def main():
         try:
             # TODO try preventing reupload requests: use get item, compare sha hash
             for file in files:
-                mybox.upload_bag_file(os.path.join(subfolder_path, file), _id=subfolder_id)
+                mybox.upload_file(os.path.join(subfolder_path, file), _id=subfolder_id)
+
+
         except Exception as e:  # TODO actually check for other exceptions to attempt retries
             print()
+            is_conflict = False
             filename = e.context_info["conflicts"]["name"]
             print(f"Item {filename} already exists")
 

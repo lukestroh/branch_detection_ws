@@ -54,9 +54,14 @@ def main():
 
     center_pts = []
     pose_idxs = []
+    tof_readings_pts = []
+    tof_locations = []
     fig = go.Figure()
 
-    for trial_name, trial_data in grouped_files.items():
+    for j, (trial_name, trial_data) in enumerate(grouped_files.items()):
+        trial_pose_idx = pd.read_hdf(trial_data['trial_start_pose_index'][0])
+        # trial_pose_idx = trial_pose_idx.at[0, 'pose_index']
+        # print(trial_pose_idx)
         df_dict = {}
         for topic_name, data_file_path in trial_data.items():
             df_dict[topic_name] = pd.read_hdf(data_file_path[0])
@@ -235,13 +240,21 @@ def main():
         # mat_A[3, :] = A_vec_base_frame
         # mat_B[3, :] = B_vec_base_frame
 
-        branch_center_point, branch_vec_normalized, tofA_reading_vec_base_frame, tofB_reading_vec_base_frame = (
-            bp.get_branch_vec_from_tof(
-                node=node, data_dict=df_dict, time_and_center_res_dict=time_and_center_res_dict, return_frames=True
-            )
+        (
+            branch_center_point,
+            branch_vec_normalized,
+            tofA_vec,
+            tofB_vec,
+            tofA_reading_vec_base_frame,
+            tofB_reading_vec_base_frame,
+            A_sensor_id,
+            B_sensor_id,
+        ) = bp.get_branch_vec_from_tof(
+            node=node, data_dict=df_dict, time_and_center_res_dict=time_and_center_res_dict, return_frames=True
         )
 
         center_pts.append(branch_center_point)
+        pose_idxs.append(trial_pose_idx.at[0, 'pose_index'])
 
         rpy_target_pose = data_dict["rpy_target_pose"]
         # print()
@@ -261,37 +274,30 @@ def main():
         #     showlegend=True
         # )
 
-    print(sorted(pose_idxs))
-    # print(len(center_pts))
-    center_pts = np.asarray(center_pts)
-    center_pts = center_pts[:, :3]
-    # print(center_pts.shape)
-    # print(center_pts)
-
+    center_pts = np.asarray(center_pts)[:, :3]
+    print(center_pts)
     center_mean = np.mean(center_pts, axis=0)
-    print(center_mean)
 
-    center_diffs = center_pts - center_mean
-    print(center_diffs)
+    pose_idxs = np.asarray(pose_idxs).flatten() - 1
+    print(pose_idxs)
 
-    # center_diffs_mean = np.mean(center_diffs)
-    # print(center_diffs_mean)
-
-    center_diffs_norm_mean = np.mean(np.linalg.norm(center_diffs))
-    print(center_diffs_norm_mean)
-
-    center_diffs_std = np.std(center_diffs)
-    print(center_diffs_std)
-
-    fig.add_trace(
-        go.Scatter3d(x=center_pts[:, 0], y=center_pts[:, 1], z=center_pts[:, 2], mode="markers", name="center_pts")
-    )
-
-    fig.add_trace(go.Scatter3d(x=[center_mean[0]], y=[center_mean[1]], z=[center_mean[2]], name="center_mean"))
-
+    fig = go.Figure()
+    start_poses = []
+    start_oris = []
     for i, row in df_generated_start_poses.iterrows():
+
         pos = [float(row["x"]), float(row["y"]), float(row["z"])]
+        start_poses.append(pos)
+        
         fig.add_trace(go.Scatter3d(x=[pos[0]], y=[pos[1]], z=[pos[2]], name=i))
+
+        q = [row["qx"], row["qy"], row["qz"], row["qw"]]
+        rot_mat = Rotation.from_quat(q).as_matrix()
+
+        ori = rot_mat @ [0, 0, 1]
+        ori /= np.linalg.norm(ori)
+
+        start_oris.append(ori)
 
         if i == 70:
 
@@ -301,24 +307,178 @@ def main():
             ori = rot_mat @ [0, 0, 1]
             ori /= np.linalg.norm(ori)
 
-            fig = ph.plot_vector(fig=fig, position=pos, orientation=ori, color="blue", scale=0.1, name=i)
-
             target_pos = pos + ori * 0.1
-            fig.add_trace(
-                go.Scatter3d(
-                    x=[target_pos[0]],
-                    y=[target_pos[1]],
-                    z=[target_pos[2]],
-                )
-            )
 
-            diff = target_pos - center_mean
-            print("target - calculated: ", np.abs(target_pos - center_mean))
 
-            print("mag: ", np.linalg.norm(diff))
+    start_poses = np.asarray(start_poses)
+    cross_vec = start_poses[0] - start_poses[-1]
+    cross_vec = cross_vec / np.linalg.norm(cross_vec)
+    # import sys
+    # sys.exit()
+    start_oris = np.asarray(start_oris)
+    used_start_oris = start_oris[pose_idxs]
+    perp_vec = np.cross(cross_vec, start_oris[0])
 
-    fig.update_layout(scene=dict(aspectmode="data"))
-    fig.show()
+    print("START")
+
+    view_dir_rms_errors = []
+    perp_dir_rms_errors = []
+    u_dir_rms_errors = []
+    view_dir_mean_errors = []
+    perp_dir_mean_errors = []
+    u_dir_mean_errors = []
+
+    for i in range(5):
+        grouped_idxs = np.where((pose_idxs >= i * 25) & (pose_idxs < (i+1) * 25))
+        print(used_start_oris[grouped_idxs])
+        print(grouped_idxs)
+        residual_vecs = center_pts[grouped_idxs] - target_pos
+        print(residual_vecs)
+
+        u_dir = np.cross(perp_vec, used_start_oris[grouped_idxs][0])
+        u_dir = u_dir / np.linalg.norm(u_dir)
+
+        # 1. RMS viewdir error (range accuracy)
+        viewdir_error = np.sum(np.multiply(residual_vecs, used_start_oris[grouped_idxs]), axis=1)[:, np.newaxis]
+        rms_viewdir = np.sqrt(np.mean(viewdir_error**2))
+        print("RMS viewdir ERROR")
+        print(rms_viewdir)
+        mean_viewdir_error = np.mean(viewdir_error) 
+        # 2. perpendicular error (up/down from branch)
+        perp_error = np.sum(np.multiply(residual_vecs, perp_vec), axis=1)[:, np.newaxis]
+        # print("PERP ERROR:")
+        # print(perp_error)
+        rms_perp = np.sqrt(np.mean(perp_error**2))
+        print("RMS PERP_ERROR")
+        print(rms_perp)
+        perp_mean_error = np.mean(perp_error)
+
+        # 2. perpendicular error (up/down from branch)
+        u_error = np.sum(np.multiply(residual_vecs, u_dir), axis=1)[:, np.newaxis]
+        # print("PERP ERROR:")
+        # print(perp_error)
+        rms_u = np.sqrt(np.mean(u_error**2))
+        print("RMS u_ERROR")
+        print(rms_u)
+        u_mean_error = np.mean(u_error)
+
+        view_dir_rms_errors.append(rms_viewdir)
+        perp_dir_rms_errors.append(rms_perp)
+        u_dir_rms_errors.append(rms_u)
+        view_dir_mean_errors.append(mean_viewdir_error)
+        perp_dir_mean_errors.append(perp_mean_error)
+        u_dir_mean_errors.append(u_mean_error)
+
+    print(view_dir_rms_errors)
+    print(perp_dir_rms_errors)
+    print(u_dir_rms_errors)
+    print(view_dir_mean_errors)
+    print(perp_dir_mean_errors)
+    print(u_dir_mean_errors)
+
+    print("ALL MEANS")
+    print(np.mean(view_dir_rms_errors))
+    print(np.mean(perp_dir_rms_errors))
+    print(np.mean(u_dir_rms_errors))
+    print(np.mean(view_dir_mean_errors))
+    print(np.mean(perp_dir_mean_errors))
+    print(np.mean(u_dir_mean_errors))
+    # used_start_poses = start_poses[pose_idxs]
+    # print(used_start_poses)
+
+    # print("TARGET_POS")
+    # print(target_pos)
+
+    view_vecs = target_pos - center_pts
+    # print(view_vecs)
+    # import sys
+    # sys.exit()
+
+
+    
+    # fig.add_trace(
+    #     go.Scatter3d(
+    #         x=[target_pos[0]],
+    #         y=[target_pos[1]],
+    #         z=[target_pos[2]],
+    #         name='target_pt',
+    #         mode='markers',
+    #         marker=dict(color='orange')
+    #     )
+    # )
+    # fig.add_trace(
+    #     go.Scatter3d(
+    #         x=center_pts[:,0],
+    #         y=center_pts[:,1],
+    #         z=center_pts[:,2],
+    #         mode='markers',
+            
+    #     )
+    # )
+    # fig.add_trace(
+    #     go.Scatter3d(
+    #         x=[start_poses[0,0], start_poses[-1,0]],
+    #         y=[start_poses[0,1], start_poses[-1,1]],
+    #         z=[start_poses[0,2], start_poses[-1,2]],
+    #     )
+    # )
+    # fig.update_layout(scene=dict(aspectmode='data'))
+    # fig.show()
+
+    # for i, row in df_generated_start_poses.iterrows():
+    #     if i == 20:
+    #         pos1 = np.asarray([float(row["x"]), float(row["y"]), float(row["z"])])
+    #     if i == 70:
+    #         pos2 = np.asarray([float(row["x"]), float(row["y"]), float(row["z"])])
+
+    # v = target_pos - pos2
+    # v /= np.linalg.norm(v)
+    # aa = pos1 - pos2
+    # aa /= np.linalg.norm(aa)
+    # w = np.cross(aa, v)
+    # w /= np.linalg.norm(w)
+    # u = np.cross(v, w)
+    # u /= np.linalg.norm(u)
+
+    # basis_trial = np.identity(4)
+    # basis_trial[:3, 3] = center_mean
+    # basis_trial[:3, :3] = np.column_stack((u, v, w))
+
+    # basis_inv = np.linalg.inv(basis_trial)
+
+    # pts = (basis_inv @ np.column_stack((center_pts, np.ones(len(center_pts)))).T).T[:, :3]
+    # print(pts)
+
+    # target__pt = (basis_inv @ np.concatenate((target_pos, [1])).T).T[:3]
+    # print(target__pt)
+
+    # center_mean = np.mean(pts, axis=0)
+    # center_diffs = pts - center_mean
+    # means = np.abs(center_diffs).mean(axis=0)  # mean per component
+    # stds = np.abs(center_diffs).std(axis=0)  # std per component
+    # print("---------------------------------")
+    # print("mean xyz: ", means)
+    # print("std xyz: ", stds)
+
+    # lengths = np.linalg.norm(center_diffs, axis=1)
+    # mean_len = lengths.mean()
+    # std_len = lengths.std()
+    # print("Mean center length:", mean_len)
+    # print("Std dev of lengths  :", std_len)
+
+    # diff = target__pt - center_mean
+    # print("target - calculated: ", np.abs(target__pt - center_mean))
+    # print("mag: ", np.linalg.norm(diff))
+
+    # fig.add_trace(go.Scatter3d(x=pts[:, 0], y=pts[:, 1], z=pts[:, 2], mode="markers", name="pts"))
+    # fig.add_trace(go.Scatter3d(x=[means[0]], y=[means[1]], z=[means[2]], mode="markers", name="mean"))
+
+    # # fig = ph.plot_vector(fig=fig, position=target_pos, orientation=u, color="#D01C1C", scale=0.1)
+    # # fig = ph.plot_vector(fig=fig, position=target_pos, orientation=v, color="#2E9E1F", scale=0.1)
+    # # fig = ph.plot_vector(fig=fig, position=target_pos, orientation=w, color="#263ABD", scale=0.1)
+
+    # fig.update_layout(scene=dict(aspectmode="data"))
+    # fig.show()
 
 
 if __name__ == "__main__":

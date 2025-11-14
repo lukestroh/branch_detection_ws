@@ -54,14 +54,19 @@ def get_files_by_topics(warehouse_path: str, topics: list[str]) -> list[str]:
     return files
 
 
-def get_files_by_datetime(warehouse_path: str, _datetime: datetime.datetime) -> list[str]:
-    files = glob.glob(warehouse_path + f"/**/*{datetime.datetime.strftime(_datetime, format=r'%Y%m%d')}*.h5")
-    return files
-
-
 def get_files_by_date(warehouse_path: str, date: str):
     files = glob.glob(warehouse_path + f"/**/*{date}*.h5")
-    return files
+    return sorted(files)
+
+
+def get_files_by_datetime(warehouse_path: str, d: datetime.datetime) -> list[str]:
+    files = glob.glob(warehouse_path + f"/**/*{datetime.datetime.strftime(d, format=r'%Y%m%d_%H-%M-%S')}*.h5")
+    return sorted(files)
+
+
+def get_files_by_datetime_str(warehouse_path: str, d_str: str) -> list[str]:
+    files = glob.glob(warehouse_path + f"/**/*{d_str}*.h5")
+    return sorted(files)
 
 
 # =============================

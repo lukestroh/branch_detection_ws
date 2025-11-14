@@ -16,6 +16,8 @@ import traceback
 
 import pprint as pp
 import sys
+import re
+import datetime as dt
 
 
 ws_path = os.path.abspath(os.path.join("/home/luke/branch_detection_ws"))
@@ -51,6 +53,46 @@ def get_files_by_topics_by_trial_name(topics: list[str], trial_name: str) -> lis
             warehouse_path + f"/**/*{trial_name}*{topic}*.h5"
         )  # NOTE: This includes tf_static both times
     return files
+
+
+def filter_files_by_date(files: list[str], start_date: str, end_date: str = None) -> list[str]:
+    """_summary_
+
+    :param files: List of file paths containing date stamps in format YYYYMMDD_HH-MM-SS
+    :type files: list[str]
+    :param start_date: Start date string (format: 'YYYYMMDD' or 'YYYY-MM-DD'), inclusive
+    :type start_date: str
+    :param end_date: End date string (format: 'YYYYMMDD' or 'YYYY-MM-DD'), inclusive, defaults to None
+    :type end_date: str, optional
+    :return: Filtered list of files within the date range
+    :rtype: list[str]
+    """
+    _files = []
+     # Parse filter dates if provided
+    start_dt = None
+    end_dt = None
+    if start_date:
+        start_date = start_date.replace('-', '')
+        start_dt = dt.datetime.strptime(start_date, '%Y%m%d')
+    if end_date:
+        end_date = end_date.replace('-', '')
+        end_dt = dt.datetime.strptime(end_date, '%Y%m%d')
+
+    for file in files:
+        # Extract date from filename using regex pattern YYYYMMDD_HH-MM-SS
+        match = re.search(r'__(\d{8})_\d{2}-\d{2}-\d{2}_', file)
+        if match:
+            date_str = match.group(1)
+            file_dt = dt.datetime.strptime(date_str, '%Y%m%d')
+            
+            # Check if file date is within range
+            if start_dt and file_dt < start_dt:
+                continue
+            if end_dt and file_dt > end_dt:
+                continue
+            
+            _files.append(file)
+    return _files
 
 
 def filter_files_by_trial_number(files: list[str], trial_number: int) -> list[str]:
@@ -195,7 +237,15 @@ def plot_all_individual_trials(
     fig.show()
 
     i += 1
-    if i == 13:
+    # if i == 8 or i == 21:
+    #     start_index = end_index
+    #     mid_trial_index = None
+    #     end_index = start_index + 1
+    # else:
+    #     start_index = end_index
+    #     mid_trial_index = start_index + 1
+    #     end_index = start_index + 2
+    if i == 14:
         start_index = end_index
         mid_trial_index = None
         end_index = start_index + 1
@@ -437,7 +487,7 @@ def plot_quadratic_fit(t_vals: np.ndarray, coefs: np.ndarray, name: str = None, 
     x = coefs[0, 0] * t_vals_plot**2 + coefs[0, 1] * t_vals_plot + coefs[0, 2]
     y = coefs[1, 0] * t_vals_plot**2 + coefs[1, 1] * t_vals_plot + coefs[1, 2]
     z = coefs[2, 0] * t_vals_plot**2 + coefs[2, 1] * t_vals_plot + coefs[2, 2]
-    fig.add_trace(go.Scatter3d(x=x, y=y, z=z, mode="lines", line=dict(color="#5A4735", width=20), name=f"{name}"))
+    fig.add_trace(go.Scatter3d(x=x, y=y, z=z, mode="lines", line=dict(color="#5A4735", width=5), name=f"{name}"))
 
     return fig
 
@@ -467,6 +517,8 @@ def curve_derivative(t, coefs):
 
 
 def main():
+    # trial_number_ = "1.1.2"
+    trial_number_ = "1.2.1"
     try:
         data_dict = {}
         files_by_topics_by_trial_name = get_files_by_topics_by_trial_name(
@@ -479,16 +531,18 @@ def main():
                 "fpc_transition_events",
                 "sjtc_transition_events",
             ],
-            trial_name="t1.2.1",
+            # trial_name="t1.2.1",
+            trial_name=f"t{trial_number_}",
         )
+        files = filter_files_by_date(files=files_by_topics_by_trial_name, start_date="20250221", end_date="20250221")
 
         # Load trial-constant files
-        tf_static_file = [file for file in files_by_topics_by_trial_name if file.endswith(f"tf_static.h5")][0]
+        tf_static_file = [file for file in files if file.endswith(f"tf_static.h5")][0]
         fpc_transition_events_file = [
-            file for file in files_by_topics_by_trial_name if file.endswith(f"fpc_transition_events.h5")
+            file for file in files if file.endswith(f"fpc_transition_events.h5")
         ][0]
         sjtc_transition_events_file = [
-            file for file in files_by_topics_by_trial_name if file.endswith(f"sjtc_transition_events.h5")
+            file for file in files if file.endswith(f"sjtc_transition_events.h5")
         ][0]
         # print(sjtc_transition_events_file)
         # sys.exit()
@@ -514,10 +568,14 @@ def main():
         mid_trial_index = 1
         end_index = start_index + 2
 
-        original_ransac_failure_count = 0
-        original_ransac_success_count = 0
+        original_ransac_failure_count_tof0 = 0
+        original_ransac_success_count_tof0 = 0
+        original_ransac_failure_count_tof1 = 0
+        original_ransac_success_count_tof1 = 0
         tof0_world_points = []
         tof1_world_points = []
+        tof0_frame_points = []
+        tof1_frame_points = []
 
         i = 0
         while True:
@@ -531,8 +589,12 @@ def main():
                 for topic_name, topic_df in data_dict.items():
                     if topic_name in ["tf", "tf_static", "fpc_transition_events", "sjtc_transition_events"]:
                         continue
-                    if i == 8 or i == 21:
-                        continue
+                    if trial_number_ == "1.2.1":
+                        if i == 8 or i == 21:
+                            continue
+                    elif trial_number_ == "1.1.2":
+                        if i == 14:
+                            continue
                     df_search_for_branch, df_align_and_approach_branch = split_trial_by_fpc_deactivate(
                         df=topic_df, df_topic_name=topic_name, transition_event_df=df_fpc_transition_events, trial_num=i
                     )
@@ -556,7 +618,7 @@ def main():
                 filtered_dfs = [df.copy() for _, df in search_data_dict["tof0_filtered"].groupby("group")]
             except KeyError:
                 i += 1
-                original_ransac_failure_count += 1
+                original_ransac_failure_count_tof0 += 1
                 continue
 
             if len(raw_dfs) != len(filtered_dfs):
@@ -577,16 +639,16 @@ def main():
                     if tof0_time_and_dist is not None:
                         tof0_branch_center_time, tof0_branch_center_min = tof0_time_and_dist
                         print(tof0_branch_center_min, tof0_branch_center_time)
-                        original_ransac_success_count += 1
+                        original_ransac_success_count_tof0 += 1
                         break
                     else:
                         if j == len(filtered_dfs) - 1:
-                            original_ransac_failure_count += 1
+                            original_ransac_failure_count_tof0 += 1
                         continue
 
                 except Exception:
                     i += 1
-                    original_ransac_failure_count += 1
+                    original_ransac_failure_count_tof0 += 1
                     print(f"Error with fitting: {traceback.format_exc()}")
                     continue
 
@@ -598,17 +660,15 @@ def main():
                 target_frame="amiga__base", source_frame="mock_pruner__tof0", tf_df=tf_df
             )
 
+            tof0_frame_points.append(tf_tof0_to_base[:3, 3])
+
             # Put tof readings into world frame
             tof0_branch_point_world = tf_tof0_to_base @ [0, 0, tof0_branch_center_min, 1]
             tof0_world_points.append(tof0_branch_point_world)
 
             i += 1
 
-        print(f"Fitting successes: {original_ransac_success_count}\nFitting failures: {original_ransac_failure_count}")
-
         i = 0
-        original_ransac_failure_count = 0
-        original_ransac_success_count = 0
         while True:
             try:
                 # For each trial number, build the data_dict
@@ -620,8 +680,12 @@ def main():
                 for topic_name, topic_df in data_dict.items():
                     if topic_name in ["tf", "tf_static", "fpc_transition_events", "sjtc_transition_events"]:
                         continue
-                    if i == 8 or i == 21:
-                        continue
+                    if trial_number_ == "1.2.1":
+                        if i == 8 or i == 21:
+                            continue
+                    elif trial_number_ == "1.1.2":
+                        if i == 14:
+                            continue
                     df_search_for_branch, df_align_and_approach_branch = split_trial_by_fpc_deactivate(
                         df=topic_df, df_topic_name=topic_name, transition_event_df=df_fpc_transition_events, trial_num=i
                     )
@@ -632,6 +696,8 @@ def main():
 
                     # print(df_search_for_branch)
                     search_data_dict.update({topic_name: df_split_search_df})
+
+                print(files_by_number)
 
             except KeyError:
                 print("\nNo more trials.")
@@ -645,7 +711,7 @@ def main():
                 filtered_dfs = [df.copy() for _, df in search_data_dict["tof1_filtered"].groupby("group")]
             except KeyError:
                 i += 1
-                original_ransac_failure_count += 1
+                original_ransac_failure_count_tof1 += 1
                 continue
 
             if len(raw_dfs) != len(filtered_dfs):
@@ -653,6 +719,8 @@ def main():
 
             for j in range(len(filtered_dfs)):
                 # Run the ransac algo
+                # if i == 14:
+                #     filtered_dfs[i].to_csv("./output_data.csv")
                 try:
                     tof1_time_and_dist = cf.get_branch_center_time_and_distance(
                         raw_timestamps=raw_dfs[j]["tof1_raw_ts"].to_list(),
@@ -666,16 +734,16 @@ def main():
                     if tof1_time_and_dist is not None:
                         tof1_branch_center_time, tof1_branch_center_min = tof1_time_and_dist
                         print(tof1_branch_center_time, tof1_branch_center_min)
-                        original_ransac_success_count += 1
+                        original_ransac_success_count_tof1 += 1
                         break
                     else:
                         if j == len(filtered_dfs) - 1:
-                            original_ransac_failure_count += 1
+                            original_ransac_failure_count_tof1 += 1
                         continue
 
                 except Exception:
                     i += 1
-                    original_ransac_failure_count += 1
+                    original_ransac_failure_count_tof1 += 1
                     print(f"Error with fitting: {traceback.format_exc()}")
                     continue
 
@@ -685,71 +753,252 @@ def main():
             tf_tof1_to_base = pb.get_tf_matrix_from_df(
                 target_frame="amiga__base", source_frame="mock_pruner__tof1", tf_df=tf_df
             )
+            tof1_frame_points.append(tf_tof1_to_base[:3, 3])
             # Put tof readings into world frame
             tof1_branch_point_world = tf_tof1_to_base @ [0, 0, tof1_branch_center_min, 1]
             tof1_world_points.append(tof1_branch_point_world)
-
+            print("APPENDED")
             i += 1
 
     except:
         pass
 
-    print(f"Fitting successes: {original_ransac_success_count}\nFitting failures: {original_ransac_failure_count}")
+    
 
     # pp.pprint(tof1_world_points)
     print(len(tof0_world_points), len(tof1_world_points))
 
     # z=ax2+by2+cxy+dx+ey+f
     all_data = np.vstack((tof0_world_points, tof1_world_points))
+    all_frame_data = np.vstack((tof0_frame_points, tof1_frame_points))
+
+    # all_data = np.delete(all_data, (-2), axis=0)
+    # all_frame_data = np.delete(all_frame_data, (-2), axis=0)
 
     # Fit
     centroid, direction = fit_3d_linear_pca(points=all_data)
     t_vals, coefs = fit_3d_quadratic(points=all_data, centroid=centroid, direction=direction)
-    # print(t_vals)
 
-    # linear_fit_residuals = compute_linear_residuals(points=all_data, centroid=centroid, direction=direction)
-    # quadratic_fit_residuals = compute_quadratic_residuals(points=all_data, t_vals=t_vals, coefs=coefs)
-
-    # # Compute orthogonal residuals
-
+    # Compute orthogonal residuals
     quadratic_t_vals, quadratic_projected_points = project_points_onto_curve(
         points=all_data, t_vals=t_vals, coefs=coefs
     )
 
-    linear_t_vals, linear_projected_points, linear_residuals = compute_linear_residuals(
-        points=all_data, centroid=centroid, direction=direction
-    )
-    # print("linear residuals:\n",linear_residuals)
-    # print(np.linalg.norm(linear_residuals, axis=1))
-    print("linear RESIDUALS mean ", np.mean(linear_residuals))
-    print("linear var:", np.var(linear_residuals))
-    print("linear std: ", np.std(linear_residuals))
+    def get_quadratic_deriv_coefs(quad_coefs: np.ndarray):
+        d_coefs = np.column_stack((2 * quad_coefs[:, 0], quad_coefs[:, 1]))
+        return d_coefs
+
+    def get_quadratic_deri_vals(quad_coefs: np.ndarray, t_vals: np.ndarray):
+        d_coefs = get_quadratic_deriv_coefs(quad_coefs=quad_coefs)
+        d_xyz = np.outer(d_coefs[:, 0], t_vals).T + d_coefs[:, 1]
+        return d_xyz
+
+    d_xyz = get_quadratic_deri_vals(quad_coefs=coefs, t_vals=quadratic_t_vals)
+    u = (-1 * d_xyz) / np.linalg.norm(d_xyz)
 
     # Tests:
-    residuals = all_data[:, 0:3] - quadratic_projected_points
-    # print("quadratic residuals:\n", residuals)
-    print("quadratic RESIDUALS mean ", np.mean(np.linalg.norm(residuals, axis=1)))
-    print("quadratic var:", np.var(residuals))
-    print("quadratic std: ", np.std(residuals))
+    # residuals = all_data[:, 0:3] - quadratic_projected_points
 
-    # print(tangents)
-    # for i, r in enumerate(residuals):
-    #     tangent = curve_derivative(t=ortho_t_vals[i], coefs=coefs)
-    # print(np.dot(r, tangent))
-    # print("Angle (deg):", np.degrees(np.arccos(
-    #     np.clip(np.dot(tangent, r) / (np.linalg.norm(tangent) * np.linalg.norm(r)), -1, 1)
-    # )))
+    w = all_data[:, :3] - all_frame_data[:, :3]
+    w /= np.linalg.norm(w, axis=1, keepdims=True)
+    v = np.cross(w, u)
+    v /= np.linalg.norm(v, axis=1, keepdims=True)
 
-    fig = plot_multi_trial_branch_segment(data=tof0_world_points, name="tof0")
-    fig = plot_multi_trial_branch_segment(data=tof1_world_points, name="tof1", fig=fig)
-    fig = plot_quadratic_fit(t_vals=quadratic_t_vals, coefs=coefs, fig=fig)
-    fig = plot_quadratic_residuals(points=all_data, projected_points=quadratic_projected_points, fig=fig)
-    # fig = ph.plot_vector(fig=fig, position=centroid, orientation=direction, scale=0.1, color="blue", name="Vt[0]")
-    # fig = plot_linear_fit(t_vals=linear_t_vals, centroid=centroid, direction=direction, fig=fig)
-    # fig = plot_linear_residuals(points=all_data, projected_points=linear_projected_points, fig=fig)
-    fig.update_layout(scene=dict(aspectmode="data"))
+    u_viewdir = np.cross(v, w)
+
+    print(f"TOF0 fitting successes: {original_ransac_success_count_tof0}\nFitting failures: {original_ransac_failure_count_tof0}")
+    print(f"TOF1 fitting successes: {original_ransac_success_count_tof1}\nFitting failures: {original_ransac_failure_count_tof1}")
+
+    print(len(tof0_world_points))
+    print(len(tof1_world_points))
+    residual_vecs = all_data[:, :3] - quadratic_projected_points[:, :3]
+    print("RESIDUAL VECS:")
+    print(residual_vecs)
+    print("W:")
+    print(w)
+    # fit_distances = np.linalg.norm(quadratic_projected_points[:, :3] - all_frame_data[:, :3], axis=1, keepdims=True)
+    # measured_distances = np.linalg.norm(all_data[:, :3] - all_frame_data[:, :3], axis=1, keepdims=True)
+
+    # 1. RMS viewdir error (range accuracy)
+    viewdir_error = np.sum(np.multiply(residual_vecs, w), axis=1)[:, np.newaxis]
+    print("viewdir ERROR:")
+    print(viewdir_error)
+    rms_viewdir = np.sqrt(np.mean(viewdir_error**2))
+    print("RMS viewdir ERROR")
+    print(rms_viewdir)
+    # Look for systematic bias
+    mean_viewdir_error = np.mean(viewdir_error)  # should be near zero if unbiased
+    print("MEAN viewdir ERROR")
+    print(mean_viewdir_error)
+
+    # 2. perpendicular error (up/down from branch)
+    perp_error = np.sum(np.multiply(residual_vecs, v), axis=1)[:, np.newaxis]
+    print("PERP ERROR:")
+    print(perp_error)
+    rms_perp = np.sqrt(np.mean(perp_error**2))
+    print("RMS PERP_ERROR")
+    print(rms_perp)
+    perp_mean_error = np.mean(perp_error)
+    print("MEAN PERP ERROR:")
+    print(perp_mean_error)
+    
+
+    # # 2.# Component perpendicular to line of sight
+    # perpendicular_vecs = residual_vecs - viewdir_error * w
+    # perpendicular_error = np.linalg.norm(perpendicular_vecs, axis=1)
+    # # 2. RMS perpendicular error (angular/geometric fit quality)
+    # rms_perpendicular = np.sqrt(np.mean(perpendicular_error**2))
+
+    # print("PERPENDICULAR VECS")
+    # print(perpendicular_vecs)
+    # print("Perpendicualr error:")
+    # print(perpendicular_error)
+    # print("RMS PERPENDICULAR")
+    # print(rms_perpendicular)
+
+    u_viewdir_error = np.sum(np.multiply(residual_vecs, u_viewdir), axis=1)[:,np.newaxis]
+    rms_u_viewdir = np.sqrt(np.mean(u_viewdir_error**2))
+
+    # Angle between view direction and curve tangent
+    angle = np.arccos(np.clip(np.einsum("ij,ij->i", w, d_xyz), -1, 1))
+    print("ANGLE:")
+    print(np.degrees(angle))
+    print("ANGLE MEAN:")
+    print(np.mean(np.degrees(angle)))
+
+    # 3. Total RMS error
+    rms_total = np.sqrt(np.mean(np.linalg.norm(residual_vecs, axis=1) ** 2))
+    print("RMS TOTAL:")
+    print(rms_total)
+    print(np.sqrt(rms_perp**2 + rms_viewdir**2 + rms_u_viewdir**2))
+
+    # 4. Max error (outlier detection)
+    max_error = np.max(np.linalg.norm(residual_vecs, axis=1))
+    print("MAX_ERROR:")
+    print(max_error)
+
+    
+    """
+    Interpretation for Algorithm Performance
+
+    Small viewdir errors: Your fit captures the range data well; sensor noise is the limiting factor
+    Small perpendicular errors: Points lie close to the fitted curve; quadratic is a good model
+    Large perpendicular but small viewdir: Curve captures depth well but geometry might need higher-order fit
+    Systematic bias in viewdir: Fitting algorithm might be biased (e.g., always over/under-estimating)
+    """
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=np.degrees(angle), y=viewdir_error.flatten(), mode="markers", marker=dict(size=10)))
     fig.show()
-    #####################################################################################################
+
+    print("EHLLO WORLD")
+    # new_w = np.cross(v, u)
+    # new_w /= np.linalg.norm(new_w)
+
+    # new_residuals = []
+    # for i, pos in enumerate(quadratic_projected_points):
+    #     basis = np.identity(4)
+    #     basis[:3, :3] = np.column_stack((u[i], v[i], w[i]))
+    #     basis[:3, 3] = pos
+
+    #     basis_inv = np.linalg.inv(basis)
+    #     new_pt = basis_inv @ all_data[i]
+    #     new_residuals.append(new_pt)
+
+    # # --- Component-wise stats ---
+    # new_residuals = np.asarray(new_residuals)[:, :3]
+    # means = np.abs(new_residuals).mean(axis=0)  # mean per component
+    # stds = np.abs(new_residuals).std(axis=0)  # std per component
+    # print(len(new_residuals))
+    # print("mean xyz: ", means)
+    # print("std xyz: ", stds)
+
+    # lengths = np.linalg.norm(new_residuals, axis=1)
+    # mean_len = lengths.mean()
+    # # rms_len  = np.sqrt(np.mean(lengths**2))
+    # std_len  = lengths.std()
+
+    # print("Mean residual length:", mean_len)
+    # # print("RMS residual length :", rms_len)
+    # print("Std dev of lengths  :", std_len)
+
+    # ------------------------------------------
+    # residuals = np.asarray(residuals)[:, :3]
+    # means = np.abs(residuals).mean(axis=0)  # mean per component
+    # stds = np.abs(residuals).std(axis=0)  # std per component
+
+    # print("mean xyz: ", means)
+    # print("std xyz: ", stds)
+
+    # lengths = np.linalg.norm(new_residuals, axis=1)
+    # mean_len = lengths.mean()
+    # # rms_len  = np.sqrt(np.mean(lengths**2))
+    # std_len  = lengths.std()
+
+    # print("Mean residual length:", mean_len)
+    # # print("RMS residual length :", rms_len)
+    # print("Std dev of lengths  :", std_len)
+
+    # for i, pos in enumerate(quadratic_projected_points):
+    #     fig = go.Figure()
+    #     fig = plot_quadratic_fit(t_vals=quadratic_t_vals, coefs=coefs, fig=fig)
+    #     fig.add_trace(
+    #         go.Scatter3d(
+    #             x=all_frame_data[:, 0],
+    #             y=all_frame_data[:, 1],
+    #             z=all_frame_data[:, 2],
+    #             mode='markers'
+    #         )
+    #     )
+    # import csv
+    # __here__ = os.path.dirname(__file__)
+    # with open(f'{__here__}/data/tof_readings_branch_{trial_number_}.csv', 'w', newline='') as f:
+    #     writer = csv.writer(f)
+    #     writer.writerow(['x', 'y', 'z'])
+    #     writer.writerows(all_data[:,:3])
+    # with open(f'{__here__}/data/tof_positions_branch_{trial_number_}.csv', 'w', newline='') as f:
+    #     writer = csv.writer(f)
+    #     writer.writerow(['x', 'y', 'z'])
+    #     writer.writerows(all_frame_data[:,:3])
+    # with open(f'{__here__}/data/quadratic_projections_branch_{trial_number_}.csv', 'w', newline='') as f:
+    #     writer = csv.writer(f)
+    #     writer.writerow(['x', 'y', 'z'])
+    #     writer.writerows(quadratic_projected_points[:,:3])
+
+    fig = go.Figure()
+    for i in range(all_data.shape[0]):
+        fig.add_trace(
+            go.Scatter3d(
+                mode='markers+lines',
+                x=[all_data[i,0], all_frame_data[i,0]],
+                y=[all_data[i,1], all_frame_data[i,1]],
+                z=[all_data[i,2], all_frame_data[i,2]],
+            )
+        )
+        fig.add_trace(
+            go.Scatter3d(
+                mode='markers+lines',
+                x=[all_frame_data[i,0]],
+                y=[all_frame_data[i,1]],
+                z=[all_frame_data[i,2]],
+                marker=dict(color='red')
+            )
+        )
+    fig = plot_quadratic_fit(t_vals=quadratic_t_vals, coefs=coefs, fig=fig)
+    fig.add_trace(
+        go.Scatter3d(
+            x=all_frame_data[:, 0],
+            y=all_frame_data[:, 1],
+            z=all_frame_data[:, 2],
+            mode='markers'
+        )
+    )
+    for i, pos in enumerate(quadratic_projected_points):
+        # fig = ph.plot_vector(fig=fig, position=pos, orientation=basis_matrices[i][0], scale=0.1, color="#D01919")
+        fig = ph.plot_vector(fig=fig, position=pos, orientation=v[i], scale=0.05, color="#19D022")
+        fig = ph.plot_vector(fig=fig, position=pos, orientation=w[i], scale=0.05, color="#1922D0")
+    fig.update_layout(scene=dict(aspectmode='data'))
+    fig.show()
 
     return
 

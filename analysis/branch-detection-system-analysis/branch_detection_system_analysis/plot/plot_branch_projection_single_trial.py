@@ -2,6 +2,7 @@
 from branch_detection_system_analysis.fit import branch_processing as bp
 from branch_detection_system_analysis.node import dummy_node
 from branch_detection_system_analysis.plot import plotting_backend as pb
+from branch_detection_system_analysis.plot import plotly_helpers as ph
 from final_approach_controller import curve_fitting as cf
 from final_approach_controller import data_processing as dp
 import numpy as np
@@ -9,6 +10,9 @@ import os
 import pandas as pd
 import plotly.graph_objects as go
 import pprint as pp
+
+import h5py as hpy
+__here__ = os.path.dirname(__file__)
 
 
 def main():
@@ -48,9 +52,12 @@ def main():
 
     grouped_files = pb.group_files_by_datetime_by_topic(files=files_all_topics)
 
-    tof_readings_pts = []
+    print(len(grouped_files))
+    import sys
+    sys.exit()
 
-    start_pts = []
+    tof_readings_pts = []
+    tof_locations = []
 
     for trial_name, trial_data in grouped_files.items():
         df_dict = {}
@@ -205,82 +212,153 @@ def main():
         if break_flag:
             continue
 
-        # branch_center_point, branch_vec_normalized, tof0_vec_base_frame, tof1_vec_base_frame = bp.get_branch_vec_from_tof(
-        #     node=node, data_dict=data_dict, time_and_center_res_dict=time_and_center_res_dict, return_frames=True
-        # )
-
-        # timestamp_tool0 = all_data_dict["tof_ts"][-1]
-        # desired_eef_xyz = bp.get_desired_position_from_branch_vec(
-        #     node=node,
-        #     branch_center_point=branch_center_point,
-        #     branch_vec=branch_vec_normalized,
-        #     time=timestamp_tool0,
-        #     data_dict=data_dict,
-        # )
-
-        # desired_orientation_quat, desired_orientation_vec = bp.get_desired_orientation_from_branch_vec(
-        #     branch_center_point=branch_center_point,
-        #     branch_vec=branch_vec_normalized,
-        #     desired_eef_xyz=desired_eef_xyz,
-        # )
-
-        # Project tof readings in base frame
-        # A_vec_base_frame = bp.get_tof_vec_base_frame(
-        #     node=node, data_dict=df_dict, time_and_center_res_dict=time_and_center_res_dict, section_name="s0"
-        # )
-        # B_vec_base_frame = bp.get_tof_vec_base_frame(
-        #     node=node, data_dict=df_dict, time_and_center_res_dict=time_and_center_res_dict, section_name="s1"
-        # )
-
-        # mat_A = mat_B = np.identity(4)
-        # mat_A[3, :] = A_vec_base_frame
-        # mat_B[3, :] = B_vec_base_frame
-
-        branch_center_point, branch_vec_normalized, tofA_reading_vec_base_frame, tofB_reading_vec_base_frame = (
-            bp.get_branch_vec_from_tof(
-                node=node, data_dict=df_dict, time_and_center_res_dict=time_and_center_res_dict, return_frames=True
-            )
+        (
+            branch_center_point,
+            branch_vec_normalized,
+            tofA_vec,
+            tofB_vec,
+            tofA_reading_vec_base_frame,
+            tofB_reading_vec_base_frame,
+            A_sensor_id,
+            B_sensor_id,
+        ) = bp.get_branch_vec_from_tof(
+            node=node, data_dict=df_dict, time_and_center_res_dict=time_and_center_res_dict, return_frames=True
         )
-
+        tof_locations.extend([tofA_vec, tofB_vec])
         tof_readings_pts.extend([tofA_reading_vec_base_frame, tofB_reading_vec_base_frame])
 
     tof_readings_pts = np.asarray(tof_readings_pts)
+    tof_locations = np.asarray(tof_locations)
+
+    print(len(tof_readings_pts))
+    
+
+    assert tof_readings_pts.shape == tof_locations.shape
 
     # Fit
     centroid, direction = cf.fit_3d_linear_pca(points=tof_readings_pts)
     t_vals, coefs = cf.fit_3d_quadratic(points=tof_readings_pts, centroid=centroid, direction=direction)
 
+    # file_coefs = hpy.Flie(f'{__here__}/data/detection_coefs.h5', 'w')
+
+
     quadratic_t_vals, quadratic_projected_points = cf.project_points_onto_curve(
         points=tof_readings_pts, t_vals=t_vals, coefs=coefs
     )
 
-    # Tests:
-    residuals = tof_readings_pts[:, 0:3] - quadratic_projected_points
-    # print("quadratic residuals:\n", residuals)
-    print("quadratic RESIDUALS mean ", np.mean(np.linalg.norm(residuals, axis=1)))
-    print("quadratic var:", np.var(residuals))
-    print("quadratic std: ", np.std(residuals))
+    def get_quadratic_deriv_coefs(quad_coefs: np.ndarray):
+        d_coefs = np.column_stack((2 * quad_coefs[:, 0], quad_coefs[:, 1]))
+        return d_coefs
 
-    # fig = go.Figure()
-    # fig.add_trace(
-    #     go.Scatter3d(
-    #         x=[0],
-    #         y=[0],
-    #         z=[0]
-    #     )
-    # )
-    # fig.add_trace(
-    #     go.Scatter3d(
-    #         x=tof_readings_pts[:,0],
-    #         y=tof_readings_pts[:,1],
-    #         z=tof_readings_pts[:,2],
-    #         mode='markers',
-    #         marker=dict(size=4)
-    #     )
-    # )
-    # fig = pb.plot_quadratic_fit(t_vals=quadratic_t_vals, coefs=coefs, fig=fig)
-    # fig = pb.plot_quadratic_residuals(points=tof_readings_pts, projected_points=quadratic_projected_points, fig=fig)
-    # fig.show()
+    def get_quadratic_deri_vals(quad_coefs: np.ndarray, t_vals: np.ndarray):
+        d_coefs = get_quadratic_deriv_coefs(quad_coefs=quad_coefs)
+        d_xyz = np.outer(d_coefs[:, 0], t_vals).T + d_coefs[:, 1]
+        return d_xyz
+
+    # Tests:
+    residual_vecs = tof_readings_pts[:, 0:3] - quadratic_projected_points
+    d_xyz = get_quadratic_deri_vals(quad_coefs=coefs, t_vals=quadratic_t_vals)
+    u = (-1 * d_xyz) / np.linalg.norm(d_xyz)
+
+    w = tof_readings_pts[:, :3] - tof_locations[:, :3]
+    w /= np.linalg.norm(w, axis=1, keepdims=True)
+    v = np.cross(w, u)
+    v /= np.linalg.norm(v, axis=1, keepdims=True)
+
+    u_viewdir = np.cross(v, w)
+    
+    print("RESIDUAL VECS:")
+    print(residual_vecs)
+    print("W:")
+    print(w)
+
+    # 1. RMS viewdir error (range accuracy)
+    viewdir_error = np.sum(np.multiply(residual_vecs, w), axis=1)[:, np.newaxis]
+    # print("viewdir ERROR:")
+    # print(viewdir_error)
+    rms_viewdir = np.sqrt(np.mean(viewdir_error**2))
+    print("RMS viewdir ERROR")
+    print(rms_viewdir)
+    # Look for systematic bias
+    mean_viewdir_error = np.mean(viewdir_error)  # should be near zero if unbiased
+    print("MEAN viewdir ERROR")
+    print(mean_viewdir_error)
+    print("STD viewdir ERROR:")
+    print(np.std(viewdir_error))
+
+    # 2. perpendicular error (up/down from branch)
+    perp_error = np.sum(np.multiply(residual_vecs, v), axis=1)[:, np.newaxis]
+    # print("PERP ERROR:")
+    # print(perp_error)
+    rms_perp = np.sqrt(np.mean(perp_error**2))
+    print("RMS PERP_ERROR")
+    print(rms_perp)
+    perp_mean_error = np.mean(perp_error)
+    print("MEAN PERP ERROR:")
+    print(perp_mean_error)
+
+    u_viewdir_error = np.sum(np.multiply(residual_vecs, u_viewdir), axis=1)[:,np.newaxis]
+    rms_u_viewdir = np.sqrt(np.mean(u_viewdir_error**2))
+
+    # Angle between view direction and curve tangent
+    angle = np.arccos(np.clip(np.einsum("ij,ij->i", w, d_xyz), -1, 1))
+    # print("ANGLE:")
+    # print(np.degrees(angle))
+    print("ANGLE MEAN:")
+    print(np.mean(np.degrees(angle)))
+
+    # 3. Total RMS error
+    rms_total = np.sqrt(np.mean(np.linalg.norm(residual_vecs, axis=1) ** 2))
+    print("RMS TOTAL:")
+    print(rms_total)
+    print(np.sqrt(rms_perp**2 + rms_viewdir**2 + rms_u_viewdir**2))
+
+    # 4. Max error (outlier detection)
+    max_error = np.max(np.linalg.norm(residual_vecs, axis=1))
+    print("MAX_ERROR:")
+    print(max_error)
+
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=np.degrees(angle), y=viewdir_error.flatten(), mode="markers", marker=dict(size=10)))
+    fig.show()
+
+    print("EHLLO WORLD")
+
+    fig = go.Figure()
+    for i in range(tof_readings_pts.shape[0]):
+        fig.add_trace(
+            go.Scatter3d(
+                mode='markers+lines',
+                x=[tof_readings_pts[i,0], tof_locations[i,0]],
+                y=[tof_readings_pts[i,1], tof_locations[i,1]],
+                z=[tof_readings_pts[i,2], tof_locations[i,2]],
+            )
+        )
+        fig.add_trace(
+            go.Scatter3d(
+                mode='markers+lines',
+                x=[tof_locations[i,0]],
+                y=[tof_locations[i,1]],
+                z=[tof_locations[i,2]],
+                marker=dict(color='red')
+            )
+        )
+    fig = pb.plot_quadratic_fit(t_vals=quadratic_t_vals, coefs=coefs, fig=fig)
+    fig.add_trace(
+        go.Scatter3d(
+            x=tof_locations[:, 0],
+            y=tof_locations[:, 1],
+            z=tof_locations[:, 2],
+            mode='markers'
+        )
+    )
+    for i, pos in enumerate(quadratic_projected_points):
+        # fig = ph.plot_vector(fig=fig, position=pos, orientation=basis_matrices[i][0], scale=0.1, color="#D01919")
+        fig = ph.plot_vector(fig=fig, position=pos, orientation=v[i], scale=0.05, color="#19D022")
+        fig = ph.plot_vector(fig=fig, position=pos, orientation=w[i], scale=0.05, color="#1922D0")
+    fig.update_layout(scene=dict(aspectmode='data'))
+    fig.show()
 
     return
 

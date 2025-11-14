@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # import branch_detection_system_analysis.plot.plotting_backend as pb
 import branch_detection_system_analysis.plot.plotly_helpers as ph
-import branch_detection_system_analysis.plot.plot_start_points as psp
+import branch_detection_system_analysis.plot.plot_start_points_new_score as psp
 
 
 import numpy as np
@@ -147,8 +147,8 @@ if __name__ == "__main__":
     os.nice(10)
 
     start_time = time.process_time()
-    make_cylindrical_plot()
-    # make_angles_plot()
+    # make_cylindrical_plot()
+    make_angles_plot()
     end_time = time.process_time()
 
     print(f"Program took {end_time - start_time}s to run")

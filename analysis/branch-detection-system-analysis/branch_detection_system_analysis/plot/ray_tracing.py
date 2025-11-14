@@ -1,7 +1,81 @@
 #!/usr/bin/env python3
 import numpy as np
-
+from numpy.typing import ArrayLike
 import plotly.graph_objects as go
+
+from typing import Optional
+
+
+def sample_gaussian_cone(
+    u: np.ndarray,  # points towards branch
+    v: np.ndarray,  # other basis vectors
+    w: np.ndarray,
+    sensor_fov_deg: float,
+    sigma_deg: float,
+    num_samples: int,
+    seed: int | None = None,
+):
+    # Convert to rad
+    sensor_fov = np.radians(sensor_fov_deg)
+    sigma = np.radians(sigma_deg)
+    max_radius = np.tan(sensor_fov / 2)
+
+    rgen = np.random.default_rng(seed=seed)
+
+    sampled_directions = []
+    while len(sampled_directions) < num_samples:
+        # 2D Gaussian on tangent plane
+        x, y = rgen.normal(loc=0, scale=sigma / 3, size=2)
+        # Reject outside circular aperture
+        if np.hypot(x, y) > max_radius:
+            continue
+        # Build direction: tilt u by (x, y) in v, w
+        T = x * v + y * w
+        d = u + T
+        d /= np.linalg.norm(d)
+        sampled_directions.append(d)
+    return np.asarray(sampled_directions)
+
+
+def generate_cylindrical_pts(
+    r_range: ArrayLike,
+    theta_range: ArrayLike,
+    z_range: ArrayLike,
+    num_r_pts: int,
+    num_theta_pts: int,
+    num_z_pts: int,
+    start_point: np.ndarray,
+    start_orientation: np.ndarray,
+):
+    r = np.linspace(r_range[0], r_range[1], num_r_pts)
+    theta = np.linspace(theta_range[0], theta_range[1], num_theta_pts)
+    z = np.linspace(z_range[0], z_range[1], num_z_pts)
+    x = np.outer(r, np.cos(theta)).flatten()
+    y = np.outer(r, np.sin(theta)).flatten()
+    xy = np.stack((x, y), axis=1)
+    xy_repeated = np.tile(xy, reps=(len(z), 1))
+    z_repeated = np.repeat(z, len(x))[:, np.newaxis]
+    xyz = np.hstack((xy_repeated, z_repeated))
+    z_axis = np.array([0, 0, 1])
+    orientation = start_orientation / np.linalg.norm(start_orientation)
+    if np.allclose(orientation, z_axis):
+        # Already aligned
+        rotation_matrix = np.eye(3)
+    elif np.allclose(orientation, -z_axis):
+        # Opposite direction, rotate 180° around x-axis
+        rotation_matrix = np.array([[1, 0, 0], [0, -1, 0], [0, 0, -1]])
+    else:
+        v = np.cross(z_axis, orientation)
+        s = np.linalg.norm(v)
+        c = np.dot(z_axis, orientation)
+
+        vx = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
+
+        rotation_matrix = np.eye(3) + vx + np.dot(vx, vx) * ((1 - c) / (s**2))
+
+    points_global = xyz @ rotation_matrix + start_point
+
+    return points_global
 
 
 def ray_hits_cylinder(
@@ -50,10 +124,6 @@ def ray_hits_cylinder(
     return hit, t
 
 
-import numpy as np
-import plotly.graph_objects as go
-
-
 def ray_hits_quadratic(start_point, direction, coefs, branch_radius, u_min=-np.inf, u_max=np.inf):
     D = direction / np.linalg.norm(direction)
     O = start_point
@@ -94,17 +164,123 @@ def ray_hits_quadratic(start_point, direction, coefs, branch_radius, u_min=-np.i
             Mu = A * u**2 + B * u + C0
             t = D.dot(Mu)
             if t < 0:
+                print(t)
                 continue
             # verify
             P = O + t * D
             Q = A * u**2 + B * u + C
-            if abs(np.linalg.norm(P - Q) - branch_radius) < 1e-3:
+            if abs(np.linalg.norm(P - Q) - branch_radius) < 0.0065 * 0.01:
                 if t < t_hit:
                     t_hit, u_hit = t, u
 
     if u_hit is None:
         return False, -1, None
     return True, t_hit, u_hit
+
+
+def score_quadratic_directions(
+    start_point: np.ndarray,
+    directions: np.ndarray,  # (N,3) array or list of direction vectors
+    coefs: np.ndarray,  # 3x3 matrix: columns are [A, B, C]
+    branch_radius: float,
+    u_min: float = -np.inf,
+    u_max: float = np.inf,
+    lambda_dist: float = 0.25,
+    sigma_fov_deg: Optional[float] = None,
+    # NEW options for axis_weight replacement:
+    sigma_u: Optional[float] = None,  # gaussian width in u-space (if None, no u-central penalty)
+    sigma_kappa: Optional[float] = None,  # width for curvature penalty (if None, no curvature penalty)
+) -> np.ndarray:
+    """
+    Score directions for hitting a quadratic tube.
+
+    Returns scores array of shape (len(directions),).
+
+    Notes:
+      - Uses ray_hits_quadratic(start_point, direction, coefs, branch_radius, u_min, u_max)
+        which must return (hit:bool, t:float, u:float).
+      - axis_weight is either a Gaussian in u (if sigma_u provided) or a Gaussian on curvature
+        (if sigma_kappa provided); if both provided, they are multiplied together.
+    """
+    # prepare
+    sigma_fov = np.radians(sigma_fov_deg) if sigma_fov_deg is not None else None
+    scores = np.zeros(len(directions), dtype=float)
+
+    # pre-extract quadratic coefficients for derivative computations
+    A = coefs[:, 0]
+    B = coefs[:, 1]
+    # C = coefs[:, 2]  # not needed for tangent/curvature
+
+    # u center for u-based weight
+    if np.isfinite(u_min) and np.isfinite(u_max):
+        u_center = 0.5 * (u_min + u_max)
+        if sigma_u is None:
+            # default sigma_u as half the segment length in u space (so ends are ~exp(-0.5) away)
+            sigma_u = max(1e-6, 0.5 * (u_max - u_min))
+    else:
+        u_center = 0.0
+        # if sigma_u given keep it; otherwise leave None (no u penalty)
+
+    for i, d in enumerate(directions):
+        # ensure direction unit
+        D = np.asarray(d, dtype=float)
+        D_norm = np.linalg.norm(D)
+        if D_norm == 0:
+            scores[i] = 0.0
+            continue
+        D = D / D_norm
+
+        # call the intersection routine
+        hit, t_closest, u_hit = ray_hits_quadratic(
+            start_point=start_point,
+            direction=D,
+            coefs=coefs,
+            branch_radius=branch_radius,
+            u_min=u_min,
+            u_max=u_max,
+        )
+
+        if (not hit) or (t_closest < 0):
+            scores[i] = 0.0
+            continue
+
+        # distance weight (closer intersection along the ray is better)
+        distance_weight = np.exp(-t_closest / lambda_dist)
+
+        # perpendicularity / FOV style term (favor perpendicular rays)
+        # compute local tangent Q'(u) = 2*A*u + B
+        tangent = 2.0 * A * u_hit + B
+        tnorm = np.linalg.norm(tangent)
+        if tnorm == 0:
+            perp_weight = 0.0
+        else:
+            tangent_unit = tangent / tnorm
+            perp_weight = 1.0 - abs(np.dot(D, tangent_unit))
+
+        # axis_weight replacements:
+        axis_weight = 1.0
+        if sigma_u is not None:
+            # gaussian about the segment center: prefer hits near the middle of the fitted segment
+            du = u_hit - u_center
+            axis_weight *= np.exp(-0.5 * (du / sigma_u) ** 2)
+
+        if sigma_kappa is not None:
+            # curvature kappa ≈ ||Q' x Q''|| / ||Q'||^3
+            # Q''(u) = 2*A (constant)
+            Qp = tangent
+            Qpp = 2.0 * A
+            cross = np.cross(Qp, Qpp)
+            denom = np.linalg.norm(Qp) ** 3
+            if denom <= 0:
+                kappa = 0.0
+            else:
+                kappa = np.linalg.norm(cross) / denom
+            axis_weight *= np.exp(-0.5 * (kappa / sigma_kappa) ** 2)
+
+        # final score
+        scores[i] = axis_weight * perp_weight * distance_weight
+
+    return scores
 
 
 def make_tube_mesh(coefs, radius, u_vals, n_theta=16):

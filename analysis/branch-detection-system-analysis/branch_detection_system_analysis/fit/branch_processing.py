@@ -27,30 +27,31 @@ def get_tof_vec_base_frame(
         source_frame=f"{node._param_robot_eef_part}__tof{sensor_id}",
         tf_df=tf_df,
     )
-    vec = tf_tof_to_base @ [0, 0, dist, 1]
+    reading_vec = tf_tof_to_base @ [0, 0, dist, 1]
+    tof_vec = tf_tof_to_base[:, 3]
 
-    return vec
+    return tof_vec, reading_vec, sensor_id
 
 
 def get_branch_vec_from_tof(
     node, data_dict: dict[pd.DataFrame], time_and_center_res_dict: dict, return_frames: bool = False
 ):
     # Project tof readings in base frame
-    A_vec_base_frame = get_tof_vec_base_frame(
+    A_tof_vec, A_reading_vec, A_sensor_id = get_tof_vec_base_frame(
         node=node, data_dict=data_dict, time_and_center_res_dict=time_and_center_res_dict, section_name="s0"
     )
-    B_vec_base_frame = get_tof_vec_base_frame(
+    B_tof_vec, B_reading_vec, B_sensor_id = get_tof_vec_base_frame(
         node=node, data_dict=data_dict, time_and_center_res_dict=time_and_center_res_dict, section_name="s1"
     )
 
     # Get the centerpoint of these two points.
-    branch_center_point = np.mean([A_vec_base_frame, B_vec_base_frame], axis=0)  # C
+    branch_center_point = np.mean([A_reading_vec, B_reading_vec], axis=0)  # C
 
-    branch_vec = A_vec_base_frame - B_vec_base_frame
+    branch_vec = A_reading_vec - B_reading_vec
     branch_vec_normalized = branch_vec / np.linalg.norm(branch_vec)  # N
 
     if return_frames:
-        return branch_center_point, branch_vec_normalized, A_vec_base_frame, B_vec_base_frame
+        return branch_center_point, branch_vec_normalized, A_tof_vec, B_tof_vec, A_reading_vec, B_reading_vec, A_sensor_id, B_sensor_id
     else:
         return branch_center_point, branch_vec_normalized, None, None
 
