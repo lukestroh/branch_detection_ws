@@ -1,0 +1,10 @@
+Collecting boxsdk
+  Using cached boxsdk-10.1.0-py3-none-any.whl (556 kB)
+Requirement already satisfied: requests in ./venv/lib/python3.10/site-packages (from boxsdk) (2.32.5)
+Requirement already satisfied: requests-toolbelt in ./venv/lib/python3.10/site-packages (from boxsdk) (1.0.0)
+Requirement already satisfied: charset_normalizer<4,>=2 in ./venv/lib/python3.10/site-packages (from requests->boxsdk) (3.4.4)
+Requirement already satisfied: urllib3<3,>=1.21.1 in ./venv/lib/python3.10/site-packages (from requests->boxsdk) (2.5.0)
+Requirement already satisfied: idna<4,>=2.5 in ./venv/lib/python3.10/site-packages (from requests->boxsdk) (3.11)
+Requirement already satisfied: certifi>=2017.4.17 in ./venv/lib/python3.10/site-packages (from requests->boxsdk) (2025.11.12)
+Installing collected packages: boxsdk
+Successfully installed boxsdk-10.1.0
