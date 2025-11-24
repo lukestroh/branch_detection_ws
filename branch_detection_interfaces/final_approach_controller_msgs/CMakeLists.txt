@@ -24,6 +24,7 @@ rosidl_generate_interfaces(
   "action/GeneratePoses.action"
   "action/GenerateCylindricalPoses.action"
   "action/GenerateRpyProjectedPoses.action"
+  "action/GetCurrentPose.action"
   "action/RunCutPointRotateAxis.action"
   "action/RunFinalApproach.action"
   "action/RunFindBranchRollWrist.action"
