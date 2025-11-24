@@ -158,7 +158,7 @@ def main():
 
     fig.update_layout(
         xaxis=dict(
-            title=dict(text="Visibility score", font=dict(size=28)),
+            title=dict(text="Visibility score", font=dict(size=28, color="#000000")),
             tickfont=dict(
                 size=20,
                 color='#000000'
@@ -170,9 +170,12 @@ def main():
         yaxis=dict(
             title=dict(
                 text="Percent success",
-                font=dict(size=28),
+                font=dict(size=28, color="#000000"),
             ),
-            tickfont=dict(size=20),
+            tickfont=dict(
+                size=20,
+                color="#000000"
+            ),
         ),
     )
     fig.show()

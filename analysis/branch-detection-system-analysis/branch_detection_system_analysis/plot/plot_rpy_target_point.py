@@ -58,6 +58,9 @@ def main():
     tof_locations = []
     fig = go.Figure()
 
+    global_minima_counts = np.zeros(4)
+    sus_trial_names = []
+
     for j, (trial_name, trial_data) in enumerate(grouped_files.items()):
         trial_pose_idx = pd.read_hdf(trial_data['trial_start_pose_index'][0])
         # trial_pose_idx = trial_pose_idx.at[0, 'pose_index']
@@ -155,9 +158,12 @@ def main():
             print("SKIPPING, EMPTY ARRAY")
             continue
 
-        separated_data_dict = dp.separate_tof_data_by_curve(
+        separated_data_dict, minima_counts = dp.separate_tof_data_by_curve(
             node=node, all_data_dict=all_data_dict, save_fig=False, show_fig=False
         )
+        if minima_counts[1]:
+            sus_trial_names.append(trial_name)
+        global_minima_counts += minima_counts
 
         try:
             if (
@@ -273,6 +279,12 @@ def main():
         #     name=data_dict['trial_start_pose_index']['pose_index'][0][0],
         #     showlegend=True
         # )
+    
+    print(f"GLOBAL MINIMA COUNTS: {global_minima_counts}")
+    pp.pprint(sus_trial_names)
+    print(len(sus_trial_names))
+    import sys
+    sys.exit()
 
     center_pts = np.asarray(center_pts)[:, :3]
     print(center_pts)

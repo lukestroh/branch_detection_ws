@@ -149,6 +149,13 @@ def get_projected_tof_readings(grouped_files: defaultdict):
     # _start_poses = []
     start_poses = {}
 
+    successes_counter = 0
+    expected_failures_counter = 0
+    unexpected_failures_counter = 0
+
+    global_minima_counts = np.zeros(4)
+    sus_trial_names = []
+
     for trial_name, trial_data in grouped_files.items():
         df_dict = {}
         for topic_name, data_file_path in trial_data.items():
@@ -250,13 +257,15 @@ def get_projected_tof_readings(grouped_files: defaultdict):
         all_data_dict["sensor_id"] = all_data_dict["sensor_id"][sorted_indices]
 
         if all_data_dict["tof_data"].size == 0:
-            print("SKIPPING, EMPTY ARRAY")
             successes.append(0)
             continue
 
-        separated_data_dict = dp.separate_tof_data_by_curve(
+        separated_data_dict, minima_counts = dp.separate_tof_data_by_curve(
             node=node, all_data_dict=all_data_dict, save_fig=False, show_fig=False
         )
+        if minima_counts[1]:
+            sus_trial_names.append(trial_name)
+        global_minima_counts += minima_counts
 
         try:
             if (
@@ -280,6 +289,8 @@ def get_projected_tof_readings(grouped_files: defaultdict):
 
         break_flag = False
         time_and_center_res_dict = {}
+        section_counter = 0
+        section_success: list[bool] = [False, False]
         for section_name, section in separated_data_dict.items():
             time_and_center_res_dict[section_name] = {}
             sec_time_and_dist = cf.get_branch_center_time_and_distance(
@@ -298,14 +309,24 @@ def get_projected_tof_readings(grouped_files: defaultdict):
                 node=node,
             )
             if sec_time_and_dist is not None:
+                section_success[section_counter] = True
                 timestamp, dist, sensor_id = sec_time_and_dist
                 time_and_center_res_dict[section_name]["time"] = timestamp
                 time_and_center_res_dict[section_name]["min_dist"] = dist
                 time_and_center_res_dict[section_name]["sensor_id"] = sensor_id
             else:
+                section_success[section_counter] = False
                 break_flag = True
                 break
 
+            section_counter += 1
+
+        if np.all(section_success):
+            successes_counter += 1
+        elif not np.all(section_success):
+            expected_failures_counter += 1
+        elif np.sum(section_success) == 1:
+            unexpected_failures_counter += 1
         if break_flag:
             successes.append(1)
             continue
@@ -371,6 +392,15 @@ def get_projected_tof_readings(grouped_files: defaultdict):
 
         successes.append(2)
 
+    print(f"SUCCESSES: {successes_counter}")
+    print(f"EXPECTED FAILURES: {expected_failures_counter}")
+    print(f"UNEXPECTED_FAILURES: {unexpected_failures_counter}")
+
+    print(f"GLOBAL MINIMA COUNTS: {global_minima_counts}")
+    pp.pprint(sus_trial_names)
+    print(len(sus_trial_names))
+    import sys
+    sys.exit()
     return (
         tof_vecs,
         tof_readings_pts,
@@ -424,6 +454,15 @@ def main():
     quadratic_t_vals, quadratic_projected_points = cf.project_points_onto_curve(
         points=tof_readings_pts, t_vals=t_vals, coefs=coefs
     )
+
+    # with hpy.File(f"{__here__}/data/quadratic_t_vals.h5", "w") as f:
+    #     f.create_dataset("quadratic_t_vals", data=quadratic_t_vals)
+
+    with hpy.File(f"{__here__}/data/u_min.h5", "w") as f:
+        f.create_dataset("u_min", data=u_min)
+
+    with hpy.File(f"{__here__}/data/u_max.h5", "w") as f:
+        f.create_dataset("u_max", data=u_max)
 
     with hpy.File(f"{__here__}/data/coefs.h5", "w") as f:
         f.create_dataset("coefs", data=coefs)
@@ -522,7 +561,6 @@ def main():
     tube_mesh_info = ph.get_tube_mesh_info(coefs=coefs, radius=0.0065, u_vals=plot_t_vals)
     fig = ph.plot_tube_mesh(fig=fig, tube_mesh_info=tube_mesh_info, name='branch')
     
-
     for i, (trial_name, pose) in enumerate(start_poses.items()):
         rot_mat = Rotation.from_quat([pose["qx"][0], pose["qy"][0], pose["qz"][0], pose["qw"][0]]).as_matrix()
         ori_vec = rot_mat @ [0, 0, 1]
@@ -543,8 +581,6 @@ def main():
             start_point=pos,
             start_orientation=ori_vec,
         )
-        
-        
 
         rotated_pt_scores = np.zeros(shape=len(rotated_fov_pts), dtype=float)
 

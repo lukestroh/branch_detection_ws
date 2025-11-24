@@ -12,7 +12,7 @@ class AuthHTTPServer(HTTPServer):
     
 
 class RedirectHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
+    def do_GET(self) -> None:
         query_components = parse_qs(urlparse(self.path).query)
 
         self.server.auth_code = query_components.get("code", [None])[0]
@@ -32,7 +32,7 @@ class RedirectHandler(BaseHTTPRequestHandler):
 
         return
     
-    def success_page(self, code):
+    def success_page(self, code) -> str:
         return_string = f"""
             <!DOCTYPE html>
             <html lang="en">
@@ -95,7 +95,7 @@ class RedirectHandler(BaseHTTPRequestHandler):
             """
         return return_string
     
-    def error_page(self):
+    def error_page(self) -> str:
         return_string = """
             <!DOCTYPE html>
             <html lang="en">
@@ -136,6 +136,13 @@ class RedirectHandler(BaseHTTPRequestHandler):
 
 
 def run_server(server: AuthHTTPServer, port: int) -> None:
+    """Runs the HTTP server to run the OAuth redirect handler
+
+    :param server: AuthHTTPServer instance
+    :type server: AuthHTTPServer
+    :param port: Port number to run the server on
+    :type port: int
+    """
     print(f"Starting server at http://localhost:{port}")
     server.serve_forever()
     return

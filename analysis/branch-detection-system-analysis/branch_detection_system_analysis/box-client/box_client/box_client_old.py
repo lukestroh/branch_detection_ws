@@ -3,6 +3,8 @@
 """
 Box Authentication script
 Author: Luke Strohbehn
+
+DEPRECATED: Use box_client.py now
 """
 
 # TODO: Implement Lynx - Pipe output back to terminal
@@ -10,7 +12,7 @@ Author: Luke Strohbehn
 import base64
 from typing import Any, Generator
 from xmlrpc import server
-import boxsdk as box
+import box_sdk_gen as box
 
 # from boxsdk import BoxOAuthException
 import dotenv
@@ -51,6 +53,7 @@ box_environments: dict = {
     "datalake": "351993973489",
 }
 
+
 class BoxClient:
     def __init__(self):
         self.client = self.box_connection()
@@ -90,6 +93,9 @@ class BoxClient:
                 open(box_refresh_token_path, "r").read().strip().encode()
             ).decode()  # CHANGE THIS TO UTF-8
             access_token = base64.b64decode(open(box_access_token_path, "r").read().strip().encode()).decode()
+
+            access_token = box.AccessToken(accessToken=access_token, refreshToken=refresh_token)
+            
             oauth = box.OAuth2(
                 client_id=app_client,
                 client_secret=app_secret,
@@ -106,12 +112,14 @@ class BoxClient:
             server_thread.start()
 
             # start OAuth process
-            oauth = box.OAuth2(
-                client_id=app_client,
-                client_secret=app_secret,
-                store_tokens=self.store_tokens,  # uses store_tokens method above
+            oauth = box.BoxOAuth(
+                    box.OAuth2Config(
+                    client_id=app_client,
+                    client_secret=app_secret,
+                    store_tokens=self.store_tokens,  # uses store_tokens method above
+                )
             )
-            auth_url, csrf_token = oauth.get_authorization_url(f"http://localhost:5000")
+            auth_url, csrf_token = oauth.get_authorize_url(f"http://localhost:5000")
             webbrowser.open(auth_url)
 
             # wait for handler to get auth code
