@@ -10,7 +10,7 @@ import os
 
 import rclpy.logging
 
-logger = rclpy.logging.get_logger("reset_tests_tree.launch")
+logger = rclpy.logging.get_logger("rpy_reset_tests_tree.launch")
 
 
 def launch_setup(context: LaunchContext, *args, **kwargs):
@@ -20,8 +20,8 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
 
     node_fa_tree = Node(
         package="behavior_trees_python",
-        executable="reset_tests_tree",
-        name="reset_tests_tree",
+        executable="rpy_reset_tests_tree",
+        name="rpy_reset_tests_tree",
         emulate_tty=True,
         parameters=[
             {

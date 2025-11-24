@@ -18,6 +18,8 @@ from controller_manager_msgs.srv import SwitchController, ListControllers
 from visualization_msgs.msg import Marker
 
 from final_approach_controller.tf_node import TFNode
+from final_approach_controller.timer_state import TimerState
+
 import modern_robotics as mr
 import numpy as np
 from threading import Lock
@@ -29,8 +31,8 @@ class ResetTestNode(TFNode):
         super().__init__(node_name="reset_test_node")
 
         # Threading locks
-        self._timer_lock = Lock()
-        self._servo_msg_lock = Lock()
+        self._lock_timer_state = Lock()
+        self._lock_msg_twist = Lock()
 
         # Parameters
         _param_use_mock_hardware: bool = (
@@ -55,17 +57,17 @@ class ResetTestNode(TFNode):
 
         # Callback groups
         self._reentrant_cb_group = ReentrantCallbackGroup()
-        self._pub_servo_cb_group = MutuallyExclusiveCallbackGroup()
+        self._cb_group_pub_servo = MutuallyExclusiveCallbackGroup()
 
         # Action servers
         self._action_srv_generate_poses_from_current_pose = ActionServer(
             node=self,
-            action_name='/run_test_reset',
+            action_name="/run_test_reset",
             action_type=RunTestReset,
             goal_callback=self._action_goal_cb_run_test_reset,
             cancel_callback=self._action_cancel_cb_run_test_reset,
             execute_callback=self._action_execute_cb_run_test_reset,
-            callback_group=self._reentrant_cb_group
+            callback_group=self._reentrant_cb_group,
         )
 
         # Service clients
@@ -92,15 +94,15 @@ class ResetTestNode(TFNode):
 
         self._srv_list_ctrlrs = self.create_client(
             srv_type=ListControllers,
-            srv_name='/controller_manager/list_controllers',
-            callback_group=self._reentrant_cb_group
+            srv_name="/controller_manager/list_controllers",
+            callback_group=self._reentrant_cb_group,
         )
 
         # Publishers
         self._pub_servo = self.create_publisher(
             msg_type=TwistStamped,
             topic="/servo_node/delta_twist_cmds",
-            callback_group=self._pub_servo_cb_group,
+            callback_group=self._cb_group_pub_servo,
             qos_profile=QoSProfile(
                 reliability=rclpy.qos.ReliabilityPolicy.RELIABLE, history=rclpy.qos.HistoryPolicy.KEEP_LAST, depth=10
             ),
@@ -114,11 +116,16 @@ class ResetTestNode(TFNode):
 
         # Timers
         self._timer_setup_tf_frames = self.create_timer(timer_period_sec=3.0, callback=self._timer_cb_setup_tf_frames)
-        self._timer_pub_servo = None
+        self._timer_pub_servo = self.create_timer(
+            timer_period_sec=1 / 30,
+            callback=self._timer_cb_pub_servo,
+            callback_group=self._cb_group_pub_servo,
+        )
+        self._timer_state = TimerState.STOPPED
 
         # Messages
-        self.msg_twist = TwistStamped()
-
+        self._msg_twist = TwistStamped()
+        self._msg_twist.header.frame_id = f"{self._param_robot_eef_part}__tool0"
 
         # Class params
         if _param_use_mock_hardware:
@@ -130,6 +137,18 @@ class ResetTestNode(TFNode):
 
         return
 
+    def stop_servo_pub_timer(self):
+        with self._lock_timer_state:
+            if self._timer_state == TimerState.RUNNING:
+                self._timer_state = TimerState.STOPPED
+        return
+
+    def start_servo_pub_timer(self):
+        with self._lock_timer_state:
+            if self._timer_state == TimerState.STOPPED:
+                self._timer_state = TimerState.RUNNING
+        return
+
     async def start_servo(self) -> None:
         start_servo_future: Future = self._srv_client_start_servo.call_async(request=Trigger.Request())
         await start_servo_future
@@ -138,7 +157,7 @@ class ResetTestNode(TFNode):
         else:
             self.error(f"Servo failed to start.")
         return
-    
+
     async def stop_servo(self) -> None:
         stop_servo_future: Future = self._srv_client_stop_servo.call_async(request=Trigger.Request())
         await stop_servo_future
@@ -147,7 +166,7 @@ class ResetTestNode(TFNode):
         else:
             self.error(f"Servo failed to stop.")
         return
-    
+
     async def switch_controllers(self, activate_controllers: list[str], deactivate_controllers: list[str]) -> None:
         # await self.list_controllers()
         switch_ctrlr_req = SwitchController.Request(
@@ -162,7 +181,7 @@ class ResetTestNode(TFNode):
         else:
             self.error("Failed to switch controllers,")
         return
-    
+
     async def list_controllers(self) -> None:
         list_ctrlrs_req = ListControllers.Request()
         list_ctrlrs_future: Future = self._srv_list_ctrlrs.call_async(request=list_ctrlrs_req)
@@ -171,20 +190,19 @@ class ResetTestNode(TFNode):
             self.warn(list_ctrlrs_future.result().controller)
 
     def publish_zero_twist(self):
-        with self._servo_msg_lock:
-            self.msg_twist.twist.linear.x = 0.0
-            self.msg_twist.twist.linear.y = 0.0
-            self.msg_twist.twist.linear.z = 0.0
-            self.msg_twist.twist.angular.x = 0.0
-            self.msg_twist.twist.angular.y = 0.0
-            self.msg_twist.twist.angular.z = 0.0
-            self.msg_twist.header.frame_id = (
+        with self._lock_msg_twist:
+            self._msg_twist.twist.linear.x = 0.0
+            self._msg_twist.twist.linear.y = 0.0
+            self._msg_twist.twist.linear.z = 0.0
+            self._msg_twist.twist.angular.x = 0.0
+            self._msg_twist.twist.angular.y = 0.0
+            self._msg_twist.twist.angular.z = 0.0
+            self._msg_twist.header.frame_id = (
                 f"{self._param_robot_eef_part}__tool0"  # TODO: if changing to EEF, change ur_servo.yaml
             )
-            self.msg_twist.header.stamp = self.get_clock().now().to_msg()
-            self._pub_servo.publish(self.msg_twist)
+            self._msg_twist.header.stamp = self.get_clock().now().to_msg()
+            self._pub_servo.publish(self._msg_twist)
         return
-    
 
     # ===============================
     #        Action callbacks
@@ -192,98 +210,73 @@ class ResetTestNode(TFNode):
     def _action_cancel_cb_run_test_reset(self, goal_handle: ServerGoalHandle):
         self.info("Received cancel request")
         self.publish_zero_twist()
-        with self._timer_lock:
-            if self.destroy_timer(self._timer_pub_servo):
-                self._timer_pub_servo = None
+        self.stop_servo_pub_timer()
         goal_handle.canceled()
         self.reset_controller()
         return CancelResponse.ACCEPT
-    
+
     def _action_goal_cb_run_test_reset(self, goal_handle: ServerGoalHandle):
         self.info("Received goal request")
         return GoalResponse.ACCEPT
-    
+
     async def _action_execute_cb_run_test_reset(self, goal_handle: ServerGoalHandle):
         run_test_reset_req: RunTestReset.Goal = goal_handle.request
-        run_test_reset_result = RunTestReset.Result()
-
-        with self._timer_lock:
-            if self._timer_pub_servo is None:
-                self._timer_pub_servo = self.create_timer(
-                    timer_period_sec=1 / 50,
-                    callback=self._timer_cb_pub_servo,
-                    callback_group=self._pub_servo_cb_group,
-                )
-            else:
-                self._timer_pub_servo.reset()
+        _result = RunTestReset.Result()
 
         try:
-            if run_test_reset_req.pose_idx != 0:
-                await self.start_servo()
-                start_servoing_time = self.get_clock().now()
+            # Start the reset by backing away from the last pose
+            # if run_test_reset_req.pose_idx != 0:
+            await self.start_servo()
+            self.publish_zero_twist()
+            self.start_servo_pub_timer()
+            start_servoing_time = self.get_clock().now()
+            while self.get_clock().now() - start_servoing_time < Duration(seconds=5.0):
+                with self._lock_msg_twist:
+                    self._msg_twist.twist.linear.x = 0.0
+                    self._msg_twist.twist.linear.y = 0.0
+                    self._msg_twist.twist.linear.z = -1 * self.max_linear_speed
+                    self._msg_twist.twist.angular.x = 0.0
+                    self._msg_twist.twist.angular.y = 0.0
+                    self._msg_twist.twist.angular.z = 0.0
 
-                while self.get_clock().now() - start_servoing_time < Duration(seconds=5.0):
-                    self.msg_twist.twist.linear.x = 0.0
-                    self.msg_twist.twist.linear.y = 0.0
-                    self.msg_twist.twist.linear.z = -1 * self.max_linear_speed
-                    self.msg_twist.twist.angular.x = 0.0
-                    self.msg_twist.twist.angular.y = 0.0
-                    self.msg_twist.twist.angular.z = 0.0
-                    self.msg_twist.header.frame_id = f"{self._param_robot_eef_part}__tool0"
-                    self.msg_twist.header.stamp = self.get_clock().now().to_msg()            
+            self.stop_servo_pub_timer()
+            self.publish_zero_twist()
+            self.get_clock().sleep_for(Duration(seconds=1.0))
 
-                self.get_clock().sleep_for(Duration(seconds=1.0))
-                self.publish_zero_twist()
-                
-                await self.stop_servo()
-
-            with self._timer_lock:
-                if self.destroy_timer(self._timer_pub_servo):
-                    self._timer_pub_servo = None
+            await self.stop_servo()
 
             # Move to new pose
             await self.switch_controllers(
-                activate_controllers=self._move_group_controller,
-                deactivate_controllers=self._servo_controller
+                activate_controllers=self._move_group_controller, deactivate_controllers=self._servo_controller
             )
-            
+
             self.info("Sending goal")
 
             move_group_req = MoveToPose.Request()
             move_group_req.goal = run_test_reset_req.pose
-            move_group_future: Future = self._srv_cartesian_move_to_pose.call_async(
-                request=move_group_req
-            )
+            move_group_future: Future = self._srv_cartesian_move_to_pose.call_async(request=move_group_req)
             move_group_future.add_done_callback(callback=self._done_cb_srv_cartesian_move_to_pose)
             await move_group_future
 
             await self.switch_controllers(
-                activate_controllers=self._servo_controller,
-                deactivate_controllers=self._move_group_controller
+                activate_controllers=self._servo_controller, deactivate_controllers=self._move_group_controller
             )
 
             self.info("New pose set")
 
             # self.publish_pose_to_rviz(pose=run_test_reset_req.pose)
 
-            run_test_reset_result.success = True
+            _result.success = True
             goal_handle.succeed()
-            return run_test_reset_result
+            return _result
 
         except Exception as e:
-            run_test_reset_result.success = False
+            _result.success = False
             goal_handle.abort()
             self.fatal(traceback.format_exc())
 
-        finally:
-            # if run_test_reset_req.pose_idx != 0:
-            #     await self.switch_controllers(activate_controllers=self._servo_controller, deactivate_controllers=self._move_group_controller)
-            with self._timer_lock:
-                if self.destroy_timer(self._timer_pub_servo):
-                    self._timer_pub_servo = None
-            
-        return run_test_reset_result
-    
+        return _result
+
     # ===============================
     #        Future callbacks
     # ===============================
@@ -332,10 +325,14 @@ class ResetTestNode(TFNode):
         return
 
     def _timer_cb_pub_servo(self):
-        with self._servo_msg_lock:
-            self._pub_servo.publish(self.msg_twist)
+        with self._lock_timer_state:
+            if self._timer_state != TimerState.RUNNING:
+                return
+        with self._lock_msg_twist:
+            self._msg_twist.header.stamp = self.get_clock().now().to_msg()
+            self._pub_servo.publish(self._msg_twist)
         return
-    
+
     # ===============================
     #         Class methods
     # ===============================
@@ -363,6 +360,7 @@ class ResetTestNode(TFNode):
     #     self.start_pose_marker_id += 1
     #     return
 
+
 def main():
     rclpy.init()
     reset_test_node = ResetTestNode()
@@ -372,4 +370,3 @@ def main():
     rclpy.shutdown()
 
     return
-

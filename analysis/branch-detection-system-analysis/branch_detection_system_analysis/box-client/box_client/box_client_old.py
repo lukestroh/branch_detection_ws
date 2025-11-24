@@ -3,41 +3,46 @@
 """
 Box Authentication script
 Author: Luke Strohbehn
+
+DEPRECATED: Use box_client.py now
 """
 
 # TODO: Implement Lynx - Pipe output back to terminal
 
 import base64
 from typing import Any, Generator
-import boxsdk as box
+from xmlrpc import server
+import box_sdk_gen as box
 
 # from boxsdk import BoxOAuthException
 import dotenv
 import webbrowser
 
 # import contextlib
-import requests
 import json
 import io
 import os
 import glob
+import traceback
+import time
+import threading
 
-from redirect_handler import RedirectHandler
+from box_client.redirect_handler import RedirectHandler, AuthHTTPServer, run_server
 from http.server import HTTPServer
 from urllib.parse import urlparse, parse_qs
 
 
 __here__ = os.path.dirname(__file__)
-
-dotenv_path = os.path.join(__here__, ".env")
+env_path = os.path.join(__here__, "env")
+dotenv_path = os.path.join(env_path, ".env")
 dot = dotenv.load_dotenv(dotenv_path=dotenv_path)
 
 app_client = os.environ["CLIENT_ID"]
 app_token = os.environ["BOX_APP_TOKEN"]
 app_secret = os.environ["BOX_APP_SECRET"]
 
-box_refresh_token_path = os.path.join(__here__, ".box_refresh_token")
-box_access_token_path = os.path.join(__here__, ".box_access_token")
+box_refresh_token_path = os.path.join(env_path, ".box_refresh_token")
+box_access_token_path = os.path.join(env_path, ".box_access_token")
 
 box_environments: dict = {
     "root": "0",
@@ -45,15 +50,8 @@ box_environments: dict = {
     "20240201_prosser_trials": "247314061474",
     "2025_ToFBranchDetection": "308822377240",
     "warehouse": "316868797576",
+    "datalake": "351993973489",
 }
-
-
-def run_server():
-    PORT = 5000  # Ensure this matches your redirect URI port
-    server = HTTPServer(("localhost", PORT), RedirectHandler)
-    print(f"Starting server at http://localhost:{PORT}")
-    server.serve_forever()
-    return
 
 
 class BoxClient:
@@ -95,6 +93,9 @@ class BoxClient:
                 open(box_refresh_token_path, "r").read().strip().encode()
             ).decode()  # CHANGE THIS TO UTF-8
             access_token = base64.b64decode(open(box_access_token_path, "r").read().strip().encode()).decode()
+
+            access_token = box.AccessToken(accessToken=access_token, refreshToken=refresh_token)
+            
             oauth = box.OAuth2(
                 client_id=app_client,
                 client_secret=app_secret,
@@ -104,26 +105,38 @@ class BoxClient:
             )
 
         except Exception as e:  # catch everything, go to reauthorization
-            oauth = box.OAuth2(
-                client_id=app_client,
-                client_secret=app_secret,
-                store_tokens=self.store_tokens,  # uses store_tokens method above
+            # start server
+            PORT = 5000
+            server = AuthHTTPServer(("localhost", PORT), RedirectHandler)
+            server_thread = threading.Thread(target=run_server, args=(server, PORT), daemon=True)
+            server_thread.start()
+
+            # start OAuth process
+            oauth = box.BoxOAuth(
+                    box.OAuth2Config(
+                    client_id=app_client,
+                    client_secret=app_secret,
+                    store_tokens=self.store_tokens,  # uses store_tokens method above
+                )
             )
-
-            auth_url, csrf_token = oauth.get_authorization_url(f"http://localhost:5000")
-
+            auth_url, csrf_token = oauth.get_authorize_url(f"http://localhost:5000")
             webbrowser.open(auth_url)
-            user_input = input("Enter the url here: ").strip()
 
-            query_components = parse_qs(urlparse(user_input).query)
-            auth_code = query_components.get("code")[0]
-            url_csrf_token = query_components.get("state")[0]
+            # wait for handler to get auth code
+            while server.auth_code is None:
+                time.sleep(0.1)
 
-            assert url_csrf_token == csrf_token
-            access_token, refresh_token = oauth.authenticate(auth_code)
+            # validate state
+            assert server.state_received == csrf_token, "CSRF mismatch!"
+
+            # clean up server
+            server.shutdown()
+            server_thread.join()
+
+            # get tokens
+            access_token, refresh_token = oauth.authenticate(server.auth_code)
             print("Authentication successful")
 
-            pass
 
         client = box.Client(oauth)
 
@@ -143,8 +156,20 @@ class BoxClient:
         else:
             folder = self.client.folder(folder_id=box_environments[namespace]).get()
         return folder
+    
+    def _file_exists_in_folder(self, folder_obj, filename: str) -> bool:
+        """Check whether a filename already exists in a Box folder (by name)."""
+        try:
+            items = folder_obj.get_items(limit=1000)
+            for item in items:
+                if item.name == filename:
+                    return True
+        except Exception:
+            # On any error conservatively return False to attempt upload (retry will catch)
+            return False
+        return False
 
-    def upload_bag_file(self, file_path: str, namespace: str = "staging", _id=None):
+    def upload_file(self, file_path: str, namespace: str = "staging", _id=None):
         """Upload a file to staging
         Parameters
         ----------
@@ -157,6 +182,12 @@ class BoxClient:
             folder = self.get_folder(_id=_id)
         else:
             folder = self.get_folder(namespace)
+
+        filename = os.path.basename(file_path)
+
+        # if file already exists, skip upload
+
+
         a_file = folder.upload(file_path=file_path, upload_using_accelerator=True)  # , file_name=file_name)
         try:
             print(f'{a_file.get()["name"]} uploaded. ')
@@ -204,16 +235,23 @@ def main():
     creates one level of subfolders in box and uploads files
     """
     root_dir = os.path.join(
-        os.path.expanduser("~"), "branch_detection_ws", "bags", "2025_ToFBranchDetection", "warehouse"
+        os.path.expanduser("~"), "branch_detection_ws", "bags", "2025_ToFBranchDetection",#  "warehouse"
     )
-    # root_dir = os.path.join("/media/luke/T7 Shield", "luke")
+    archive_dir = os.path.join(
+        os.path.expanduser("~"), "branch_detection_ws", "bags", "2025_ToFBranchDetection", "archive"
+    )
+
     folders = glob.glob("bds*", root_dir=root_dir, recursive=True)
+
     for folder in sorted(folders):
+        print(type(folder))
+        import sys
+        sys.exit()
         # print(f"FOLDER: {folder}")
         subfolder_path = os.path.join(root_dir, folder)
         subfolder_id = None
         try:
-            subfolder = mybox.client.folder(box_environments["warehouse"]).create_subfolder(folder)
+            subfolder = mybox.client.folder(box_environments["2025_ToFBranchDetection"]).create_subfolder(folder)
             subfolder_id = subfolder.id
         except Exception as e:
             subfolder_id = e.context_info["conflicts"][0]["id"]
@@ -224,9 +262,12 @@ def main():
         try:
             # TODO try preventing reupload requests: use get item, compare sha hash
             for file in files:
-                mybox.upload_bag_file(os.path.join(subfolder_path, file), _id=subfolder_id)
+                mybox.upload_file(os.path.join(subfolder_path, file), _id=subfolder_id)
+
+
         except Exception as e:  # TODO actually check for other exceptions to attempt retries
             print()
+            is_conflict = False
             filename = e.context_info["conflicts"]["name"]
             print(f"Item {filename} already exists")
 
@@ -234,11 +275,4 @@ def main():
 
 
 if __name__ == "__main__":
-    import threading
-
-    server_thread = threading.Thread(target=run_server, daemon=True)
-    server_thread.start()
-
-    # main_thread = threading.Thread(target=main, daemon=True)
     main()
-    # main_thread.start()

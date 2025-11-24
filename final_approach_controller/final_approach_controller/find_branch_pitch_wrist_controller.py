@@ -187,7 +187,7 @@ class FindBranchPitchWristController(TFNode):
         self._timer_debug = self.create_timer(timer_period_sec=1.0, callback=self._timer_cb_debug)
 
         # Messages
-        self.msg_twist = TwistStamped()
+        self._msg_twist = TwistStamped()
         self.msg_tof_branch_fit = ToFBranchFitStamped()
 
         # Transforms
@@ -201,9 +201,9 @@ class FindBranchPitchWristController(TFNode):
         self.reset_controller()
         self.feedback_pub_prev_time = self.get_clock().now()
         if _param_use_mock_hardware:
-            self.max_angular_vel = np.pi / 16
+            self.max_angular_vel = np.pi / 8
         else:
-            self.max_angular_vel = np.pi / 16 * 10  # For some reason the UR5e scales down servoing movement very hard?
+            self.max_angular_vel = np.pi / 8 * 10  # For some reason the UR5e scales down servoing movement very hard?
 
         # self.max_angular_vel = np.pi / 2
 
@@ -381,14 +381,14 @@ class FindBranchPitchWristController(TFNode):
                                 self.publish_zero_twist()
 
                         with self._servo_msg_lock:  # TODO: Fill out once
-                            self.msg_twist.twist.linear.x = 0.0
-                            self.msg_twist.twist.linear.y = 0.0
-                            self.msg_twist.twist.linear.z = 0.0
-                            self.msg_twist.twist.angular.x = 0.0
-                            self.msg_twist.twist.angular.y = 0.0
-                            self.msg_twist.twist.angular.z = angular_x
-                            self.msg_twist.header.frame_id = f"{self._param_robot_eef_part}__tool0"
-                            self.msg_twist.header.stamp = self.get_clock().now().to_msg()
+                            self._msg_twist.twist.linear.x = 0.0
+                            self._msg_twist.twist.linear.y = 0.0
+                            self._msg_twist.twist.linear.z = 0.0
+                            self._msg_twist.twist.angular.x = 0.0
+                            self._msg_twist.twist.angular.y = 0.0
+                            self._msg_twist.twist.angular.z = angular_x
+                            self._msg_twist.header.frame_id = f"{self._param_robot_eef_part}__tool0"
+                            self._msg_twist.header.stamp = self.get_clock().now().to_msg()
 
                         if self.neg_rot_complete and self.pos_rot_complete:
                             self.publish_zero_twist()
@@ -723,8 +723,12 @@ class FindBranchPitchWristController(TFNode):
         return
 
     def _timer_cb_pub_servo(self):
+        with self._lock_timer_state:
+            if self._timer_state != TimerState.RUNNING:
+                return
+
         with self._servo_msg_lock:
-            self._pub_servo.publish(self.msg_twist)
+            self._pub_servo.publish(self._msg_twist)
         return
 
     # def _timer_cb_run_controller(self):
@@ -873,17 +877,17 @@ class FindBranchPitchWristController(TFNode):
 
     def publish_zero_twist(self):
         with self._servo_msg_lock:
-            self.msg_twist.twist.linear.x = 0.0
-            self.msg_twist.twist.linear.y = 0.0
-            self.msg_twist.twist.linear.z = 0.0
-            self.msg_twist.twist.angular.x = 0.0
-            self.msg_twist.twist.angular.y = 0.0
-            self.msg_twist.twist.angular.z = 0.0
-            self.msg_twist.header.frame_id = (
+            self._msg_twist.twist.linear.x = 0.0
+            self._msg_twist.twist.linear.y = 0.0
+            self._msg_twist.twist.linear.z = 0.0
+            self._msg_twist.twist.angular.x = 0.0
+            self._msg_twist.twist.angular.y = 0.0
+            self._msg_twist.twist.angular.z = 0.0
+            self._msg_twist.header.frame_id = (
                 f"{self._param_robot_eef_part}__tool0"  # TODO: if changing to EEF, change ur_servo.yaml
             )
-            self.msg_twist.header.stamp = self.get_clock().now().to_msg()
-            self._pub_servo.publish(self.msg_twist)
+            self._msg_twist.header.stamp = self.get_clock().now().to_msg()
+            self._pub_servo.publish(self._msg_twist)
         return
 
 

@@ -14,6 +14,7 @@
         <xacro:if value="${stack_qty}">
             <xacro:arg name="parent${stack_qty - 1}" default="world"/>
             <xacro:arg name="robot_part${stack_qty - 1}" default="world"/>
+            <!-- Recursively call macro -->
             <xacro:arg_assignment_loop stack_qty="${stack_qty - 1}"/>
         </xacro:if>
     </xacro:macro>

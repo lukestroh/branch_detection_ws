@@ -14,7 +14,7 @@ from action_msgs.msg import GoalStatus
 from branch_detection_system_moveit_msgs.srv import MoveToPose
 from controller_manager_msgs.srv import SwitchController
 from final_approach_controller_msgs.action import RunFindBranchRollWrist
-from final_approach_controller_msgs.msg import ToFBranchFitStamped, WindowedData, TimestampTofMin
+from final_approach_controller_msgs.msg import ToFBranchFitStamped, WindowedData, TimestampTofMin, EventStamped
 from geometry_msgs.msg import TwistStamped, Pose, Point, Quaternion
 from moveit_msgs.action import MoveGroup
 from sensor_msgs.msg import JointState
@@ -28,6 +28,7 @@ from vl53l4cd_msgs.msg import Vl53l4cdStamped
 import branch_detection_system_analysis.plot.debug_plots as dplot
 import branch_detection_system_analysis.plot.plotting_backend as pb
 import final_approach_controller.curve_fitting as cf
+import final_approach_controller.data_processing as dp
 from final_approach_controller.tf_node import TFNode
 from final_approach_controller.timer_state import TimerState
 
@@ -49,9 +50,12 @@ import py_trees
 
 class FindBranchRollWristController(TFNode):
     def __init__(self):
-        super().__init__(node_name="find_branch_roll_wrist_controller", cache_time=Duration(seconds=35))
+        super().__init__(node_name="find_branch_roll_wrist_controller", cache_time=Duration(seconds=40))
 
         # Parameters
+        self._param_far_plane_filter = (
+            self.declare_parameter("far_plane_filter", value=Parameter.Type.DOUBLE).get_parameter_value().double_value
+        )
         _param_use_mock_hardware: bool = (
             self.declare_parameter(name="use_mock_hardware", value=Parameter.Type.BOOL).get_parameter_value().bool_value
         )
@@ -74,15 +78,15 @@ class FindBranchRollWristController(TFNode):
         )
 
         # Threading locks
-        self._data_lock = Lock()
-        self._timer_lock = Lock()
-        self._servo_msg_lock = Lock()
-        self._rotations_complete_lock = Lock()
+        self._lock_raw_data = Lock()
+        self._lock_filtered_data = Lock()
+        self._lock_joint_states_data = Lock()
+        self._lock_msg_twist = Lock()
+        self._lock_rotations_complete = Lock()
         self._lock_timer_state_pub_servo = Lock()
 
         # Callback group
         self._reentrant_cb_group = ReentrantCallbackGroup()
-        self._parabola_fitting_cb_group = MutuallyExclusiveCallbackGroup()
         self._cb_group_pub_servo = MutuallyExclusiveCallbackGroup()
 
         # Action servers
@@ -133,14 +137,14 @@ class FindBranchRollWristController(TFNode):
             topic="/microROS/vl53l4cd/data",
             callback=self._sub_cb_tof_raw,
             callback_group=self._reentrant_cb_group,
-            qos_profile=5,
+            qos_profile=100,
         )
         self._sub_tof_filtered = self.create_subscription(
             msg_type=TofStamped,
             topic="/vl53l4cd/filtered",
             callback=self._sub_cb_tof_filtered,
             callback_group=self._reentrant_cb_group,
-            qos_profile=1,
+            qos_profile=100,
         )
         self._sub_bag_record_path = self.create_subscription(
             msg_type=String,
@@ -154,7 +158,7 @@ class FindBranchRollWristController(TFNode):
             topic="joint_states",
             callback=self._sub_cb_joint_states,
             callback_group=self._reentrant_cb_group,
-            qos_profile=1,
+            qos_profile=100,
         )
 
         # Publishers
@@ -196,6 +200,18 @@ class FindBranchRollWristController(TFNode):
             callback_group=self._reentrant_cb_group,
             qos_profile=10,
         )
+        self._pub_rotation_started = self.create_publisher(
+            msg_type=EventStamped,
+            topic="/fbrw_controller/rotation_started",
+            callback_group=self._reentrant_cb_group,
+            qos_profile=1,
+        )
+        self._pub_rotation_stopped = self.create_publisher(
+            msg_type=EventStamped,
+            topic="/fbrw_controller/rotation_stopped",
+            callback_group=self._reentrant_cb_group,
+            qos_profile=1,
+        )
 
         # self._pub_fit = self.create_publisher(
         #     msg_type=ToFBranchFitStamped,
@@ -224,8 +240,10 @@ class FindBranchRollWristController(TFNode):
         # self.msg_tof_branch_fit = ToFBranchFitStamped()
         # self._msg_ts_tof_min = TimestampTofMin()
 
+        self._msg_event_stamped = EventStamped()
+
         # Action requests
-        self.move_to_pose_req = MoveToPose.Request()
+        self._move_to_pose_req = MoveToPose.Request()
 
         # Transforms
         self.tf_mp_base_to_tof0 = np.identity(4)
@@ -241,9 +259,7 @@ class FindBranchRollWristController(TFNode):
         if _param_use_mock_hardware:
             self.max_angular_vel = np.pi / 2
         else:
-            self.max_angular_vel = np.pi / 16 * 10 # For some reason the UR5e scales down servoing movement very hard?
-
-        self.filter_far_plane = 0.25
+            self.max_angular_vel = np.pi / 8 * 10  # For some reason the UR5e scales down servoing movement very hard?
 
         # self.eef_weight = 0.355  # TODO: measure again. Measured IRL
 
@@ -259,18 +275,19 @@ class FindBranchRollWristController(TFNode):
         # Debug parameters
         self.bag_record_path: str = ""
         self.debug_plot = True
+
         return
-    
+
     def stop_servo_pub_timer(self):
         with self._lock_timer_state_pub_servo:
             if self._timer_state_pub_servo == TimerState.RUNNING:
-                self._timer_state_pub_servo == TimerState.STOPPED
+                self._timer_state_pub_servo = TimerState.STOPPED
         return
-    
+
     def start_servo_pub_timer(self):
         with self._lock_timer_state_pub_servo:
             if self._timer_state_pub_servo == TimerState.STOPPED:
-                self._timer_state_pub_servo == TimerState.RUNNING
+                self._timer_state_pub_servo = TimerState.RUNNING
         return
 
     # ===============================
@@ -280,8 +297,7 @@ class FindBranchRollWristController(TFNode):
         self.info("Received cancel request")
         self.info("Canceling quadratic fit timer")
         self.publish_zero_twist()
-        with self._timer_lock:
-            self.stop_servo_pub_timer()
+        self.stop_servo_pub_timer()
         if goal_handle.is_cancel_requested:
             goal_handle.canceled()
         self.reset_controller()
@@ -303,8 +319,7 @@ class FindBranchRollWristController(TFNode):
         self.reset_controller()
 
         trials_initial_joint_position: RunFindBranchRollWrist.Goal = goal_handle.request
-        
-        
+
         try:
             wrist_3_initial_position = trials_initial_joint_position.initial_joint_position[2]
         except IndexError:
@@ -324,19 +339,26 @@ class FindBranchRollWristController(TFNode):
 
         self.info(trials_initial_joint_position)
         self.warn(self.start_joint_states)
-        
+
         await self.start_servo()
         self._pub_rotation_speed.publish(Float64(data=self.max_angular_vel))
+        self.publish_zero_twist()
+        self.start_servo_pub_timer()
+        self._msg_event_stamped.event = "start_rotations"
+        self._msg_event_stamped.header.stamp = self.get_clock().now().to_msg()
+        self._pub_rotation_started.publish(msg=self._msg_event_stamped)
 
         try:
             ##############################################################################################
             # Actuate wrist, collect data via subscriber callbacks
-            self.start_servo_pub_timer()
             while True:
-                with self._rotations_complete_lock:
+                with self._lock_rotations_complete:
                     if self.rotations_complete:
                         self.stop_servo_pub_timer()
                         self.publish_zero_twist()
+                        self._msg_event_stamped.event = "stop_rotations"
+                        self._msg_event_stamped.header.stamp = self.get_clock().now().to_msg()
+                        self._pub_rotation_stopped.publish(msg=self._msg_event_stamped)
                         break
                 # self.get_clock().sleep_for(Duration(seconds=0.004))  # loop runs too fast, slow it down!
                 if not self.check_action_goal_status(goal_handle=goal_handle):
@@ -364,14 +386,6 @@ class FindBranchRollWristController(TFNode):
 
             else:
                 self._pub_localization_success.publish(msg=Bool(data=True))
-                if rclpy.ok():
-                    await self.stop_servo()
-                    await self.switch_controllers(
-                        activate_controllers=self._move_group_controller,
-                        deactivate_controllers=self._servo_controller,
-                    )
-                else:
-                    raise Exception("rclpy is not ok :(")
 
                 # Get branch info, find desired xyz + quat
                 branch_center_point, branch_vec_normalized, tof0_vec_base_frame, tof1_vec_base_frame = (
@@ -400,18 +414,26 @@ class FindBranchRollWristController(TFNode):
                         save_fig_dir=self.bag_record_path,
                     )
                 ######################################################################################
+
+                # Move to desired pose
+                await self.stop_servo()
+                await self.switch_controllers(
+                    activate_controllers=self._move_group_controller,
+                    deactivate_controllers=self._servo_controller,
+                )
+
                 self.info(f"Moving to pose {desired_eef_xyz}, {desired_orientation_vec}")
-                self.move_to_pose_req.goal.position.x = desired_eef_xyz[0]
-                self.move_to_pose_req.goal.position.y = desired_eef_xyz[1]
-                self.move_to_pose_req.goal.position.z = desired_eef_xyz[2]
-                self.move_to_pose_req.goal.orientation.x = desired_orientation_quat[0]
-                self.move_to_pose_req.goal.orientation.y = desired_orientation_quat[1]
-                self.move_to_pose_req.goal.orientation.z = desired_orientation_quat[2]
-                self.move_to_pose_req.goal.orientation.w = desired_orientation_quat[3]
+                self._move_to_pose_req.goal.position.x = desired_eef_xyz[0]
+                self._move_to_pose_req.goal.position.y = desired_eef_xyz[1]
+                self._move_to_pose_req.goal.position.z = desired_eef_xyz[2]
+                self._move_to_pose_req.goal.orientation.x = desired_orientation_quat[0]
+                self._move_to_pose_req.goal.orientation.y = desired_orientation_quat[1]
+                self._move_to_pose_req.goal.orientation.z = desired_orientation_quat[2]
+                self._move_to_pose_req.goal.orientation.w = desired_orientation_quat[3]
 
                 self.info("Sending goal")
 
-                move_group_future: Future = self._srv_cartesian_move_to_pose.call_async(request=self.move_to_pose_req)
+                move_group_future: Future = self._srv_cartesian_move_to_pose.call_async(request=self._move_to_pose_req)
                 move_group_future.add_done_callback(callback=self._done_cb_srv_cartesian_move_to_pose)
                 await move_group_future
 
@@ -513,10 +535,10 @@ class FindBranchRollWristController(TFNode):
         return
 
     def _timer_cb_pub_servo(self):
-        with self._lock_timer_state:
-            if self._timer_state != TimerState.RUNNING:
-                return  
-        with self._servo_msg_lock:
+        with self._lock_timer_state_pub_servo:
+            if self._timer_state_pub_servo != TimerState.RUNNING:
+                return
+        with self._lock_msg_twist:
             self._pub_servo.publish(self._msg_twist)
         return
 
@@ -529,55 +551,59 @@ class FindBranchRollWristController(TFNode):
         elif msg.dev_id == 1:
             self.d_tof1_raw = msg.distance / 1000
 
-        # Append data to lists if the actuation is running
-        with self._rotations_complete_lock:
+        with self._lock_rotations_complete:
             rot_complete_flag = self.rotations_complete
-        if not rot_complete_flag:
-            timestamp_float = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
-            with self._data_lock:
-                if msg.dev_id == 0:
-                    # if not self.tof0_branch_found:
-                    self.d_tof0_raw_readings.append(self.d_tof0_raw)
-                    self.ts_tof0_raw.append(timestamp_float)
-                elif msg.dev_id == 1:
-                    # if not self.tof1_branch_found:
-                    self.d_tof1_raw_readings.append(self.d_tof1_raw)
-                    self.ts_tof1_raw.append(timestamp_float)
+        if rot_complete_flag:
+            return
+
+        # Append data to lists if the actuation is running
+        timestamp_float = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+        with self._lock_raw_data:
+            if msg.dev_id == 0:
+                # if not self.tof0_branch_found:
+                self.d_tof0_raw_readings.append(self.d_tof0_raw)
+                self.ts_tof0_raw.append(timestamp_float)
+            elif msg.dev_id == 1:
+                # if not self.tof1_branch_found:
+                self.d_tof1_raw_readings.append(self.d_tof1_raw)
+                self.ts_tof1_raw.append(timestamp_float)
         return
 
     def _sub_cb_tof_filtered(self, msg: TofStamped):
         # Do some checks, make sure that the readings make sense in intuitive way.
         # Make sure readings do not exceed maximum. # TODO: Find a way to get sensor parameters in here
+        # Append data to lists if the actuation is running
         if msg.dev_id == 0:
             self.d_tof0 = msg.data[0]
         elif msg.dev_id == 1:
             self.d_tof1 = msg.data[0]
 
-        # Append data to lists if the actuation is running
-        with self._rotations_complete_lock:
+        with self._lock_rotations_complete:
             rot_complete_flag = self.rotations_complete
-        if not rot_complete_flag:
-            timestamp_float = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
-            with self._data_lock:
-                if msg.dev_id == 0:
-                    # if not self.tof0_branch_found:
-                    self.d_tof0_readings.append(self.d_tof0)
-                    self.ts_tof0.append(timestamp_float)
-                elif msg.dev_id == 1:
-                    # if not self.tof1_branch_found:
-                    self.d_tof1_readings.append(self.d_tof1)
-                    self.ts_tof1.append(timestamp_float)
+        if rot_complete_flag:
+            return
+
+        timestamp_float = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+        with self._lock_filtered_data:
+            if msg.dev_id == 0:
+                # if not self.tof0_branch_found:
+                self.d_tof0_readings.append(self.d_tof0)
+                self.ts_tof0.append(timestamp_float)
+            elif msg.dev_id == 1:
+                # if not self.tof1_branch_found:
+                self.d_tof1_readings.append(self.d_tof1)
+                self.ts_tof1.append(timestamp_float)
 
         return
 
     def _sub_cb_joint_states(self, msg: JointState):
         self.joint_states = msg.position
 
-        with self._rotations_complete_lock:
+        with self._lock_rotations_complete:
             rot_complete_flag = self.rotations_complete
         if not rot_complete_flag:
             timestamp_float = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
-            with self._data_lock:
+            with self._lock_joint_states_data:
                 self.joint_states_cache.append(msg.position)
                 self.ts_joint_states_cache.append(timestamp_float)
         return
@@ -591,7 +617,7 @@ class FindBranchRollWristController(TFNode):
     #      Controller methods
     # ===============================
     def publish_zero_twist(self):
-        with self._servo_msg_lock:
+        with self._lock_msg_twist:
             self._msg_twist.twist.linear.x = 0.0
             self._msg_twist.twist.linear.y = 0.0
             self._msg_twist.twist.linear.z = 0.0
@@ -645,15 +671,16 @@ class FindBranchRollWristController(TFNode):
     # ===============================
     #         Class methods
     # ===============================
-    def _wrap_angles_to_circle(self, angles: np.ndarray | float):
-        return (angles + np.pi) % (2 * np.pi) - np.pi
+    # def _wrap_angles_to_circle(self, angles: np.ndarray | float):
+    #     return (angles + np.pi) % (2 * np.pi) - np.pi
 
-    def angular_distance(self, a, b):
-        return np.abs(np.arctan2(np.sin(a - b), np.cos(a - b)))
+    # def angular_distance(self, a, b):
+    #     return np.abs(np.arctan2(np.sin(a - b), np.cos(a - b)))
 
     def reset_controller(self) -> None:
-        with self._rotations_complete_lock:
+        with self._lock_rotations_complete:
             self.rotations_complete = False
+
         self.time_and_center_res_dict = {}
 
         self.reset_data_caches()
@@ -662,15 +689,19 @@ class FindBranchRollWristController(TFNode):
         return
 
     def reset_data_caches(self):
-        with self._data_lock:
-            self.d_tof0_raw_readings = []
-            self.d_tof0_readings = []
-            self.ts_tof0 = []
+        with self._lock_raw_data:
             self.ts_tof0_raw = []
-            self.d_tof1_raw_readings = []
-            self.d_tof1_readings = []
-            self.ts_tof1 = []
+            self.d_tof0_raw_readings = []
             self.ts_tof1_raw = []
+            self.d_tof1_raw_readings = []
+
+        with self._lock_filtered_data:
+            self.ts_tof0 = []
+            self.d_tof0_readings = []
+            self.ts_tof1 = []
+            self.d_tof1_readings = []
+
+        with self._lock_joint_states_data:
             self.joint_states_cache = []
             self.ts_joint_states_cache = []
         return
@@ -699,7 +730,7 @@ class FindBranchRollWristController(TFNode):
 
     def actuate_wrist(self, wrist3_initial_pos):
         """Determine direction of actuation, assign rotation speed to twist message. If rotation has reached termination point, set flag."""
-        
+
         if self.start_joint_states[2] > 0.0:
             angular_z = -1 * self.max_angular_vel
             delta_theta_limit = np.pi
@@ -708,31 +739,34 @@ class FindBranchRollWristController(TFNode):
             delta_theta_limit = -1 * np.pi
 
         if np.isclose(self.start_joint_states[2] - self.joint_states[2], delta_theta_limit, atol=np.radians(1)):
-            with self._rotations_complete_lock:
+            with self._lock_rotations_complete:
                 self.rotations_complete = True
 
             self.stop_servo_pub_timer()
             self.publish_zero_twist()
 
             return
-        with self._servo_msg_lock:
+        with self._lock_msg_twist:
             self._msg_twist.twist.angular.z = angular_z
             self._msg_twist.header.stamp = self.get_clock().now().to_msg()
         return
 
-    def aggregate_tof_data(self, save_fig: bool, save_fig_path: str) -> dict:
+    def aggregate_tof_data(self, save_fig: bool, save_fig_path: str, show_fig: bool) -> dict:
         """Concatenate all tof data so that it wraps around 360 degrees"""
-        with self._data_lock:
+        with self._lock_raw_data:
             sensor_data_dict = {"tof0": {}, "tof1": {}}
             sensor_data_dict["tof0"]["raw_tof_ts"] = list(self.ts_tof0_raw)
             sensor_data_dict["tof0"]["raw_tof_data"] = list(self.d_tof0_raw_readings)
-            sensor_data_dict["tof0"]["tof_ts"] = list(self.ts_tof0)
-            sensor_data_dict["tof0"]["tof_data"] = list(self.d_tof0_readings)
             sensor_data_dict["tof1"]["raw_tof_ts"] = list(self.ts_tof1_raw)
             sensor_data_dict["tof1"]["raw_tof_data"] = list(self.d_tof1_raw_readings)
+
+        with self._lock_filtered_data:
+            sensor_data_dict["tof0"]["tof_ts"] = list(self.ts_tof0)
+            sensor_data_dict["tof0"]["tof_data"] = list(self.d_tof0_readings)
             sensor_data_dict["tof1"]["tof_ts"] = list(self.ts_tof1)
             sensor_data_dict["tof1"]["tof_data"] = list(self.d_tof1_readings)
 
+        with self._lock_joint_states_data:
             joint_angle_dict = {}
             joint_angle_dict["ts"] = list(self.ts_joint_states_cache)
             joint_angle_dict["data"] = list(self.joint_states_cache)
@@ -748,34 +782,56 @@ class FindBranchRollWristController(TFNode):
 
         sensor_data_dict["tof0"]["joint_states_ts"] = _tof0_js_ts
         sensor_data_dict["tof0"]["joint_states_data"] = joint_states_tof0_data
+        sensor_data_dict["tof0"]["sensor_id"] = [0] * len(sensor_data_dict["tof0"]["tof_ts"])
+
         sensor_data_dict["tof1"]["joint_states_ts"] = _tof1_js_ts
         sensor_data_dict["tof1"]["joint_states_data"] = joint_states_tof1_data
+        sensor_data_dict["tof1"]["sensor_id"] = [1] * len(sensor_data_dict["tof1"]["tof_ts"])
 
         # TODO: Debug plot here
         if self.debug_plot:
             parabola_fig = dplot.plot_tof_vs_joint_state(data=sensor_data_dict["tof0"], name="tof0")
             parabola_fig = dplot.plot_tof_vs_joint_state(data=sensor_data_dict["tof1"], name="tof1", fig=parabola_fig)
-            proj_2d_fig = dplot.plot_2d_tof_projection(data=sensor_data_dict["tof0"], name="tof0")
-            proj_2d_fig = dplot.plot_2d_tof_projection(data=sensor_data_dict["tof1"], name="tof1", fig=proj_2d_fig)
-            proj_3d_fig = dplot.plot_3d_tof_projection(data=sensor_data_dict["tof0"], name="tof0")
-            proj_3d_fig = dplot.plot_3d_tof_projection(data=sensor_data_dict["tof1"], name="tof1", fig=proj_3d_fig)
+            proj_2d_fig = dplot.plot_2d_tof_projection(
+                data=sensor_data_dict["tof0"], far_plane_filter=self._param_far_plane_filter, name="tof0"
+            )
+            proj_2d_fig = dplot.plot_2d_tof_projection(
+                data=sensor_data_dict["tof1"],
+                far_plane_filter=self._param_far_plane_filter,
+                name="tof1",
+                fig=proj_2d_fig,
+            )
+            proj_3d_fig = dplot.plot_3d_tof_projection(
+                data=sensor_data_dict["tof0"], far_plane_filter=self._param_far_plane_filter, name="tof0"
+            )
+            proj_3d_fig = dplot.plot_3d_tof_projection(
+                data=sensor_data_dict["tof1"],
+                far_plane_filter=self._param_far_plane_filter,
+                name="tof1",
+                fig=proj_3d_fig,
+            )
 
             if save_fig:
                 pio.write_html(
                     fig=parabola_fig,
                     file=os.path.join(save_fig_path, "tof_vs_joint_state_by_sensor.html"),
-                    auto_open=True,
+                    auto_open=show_fig,
                 )
                 pio.write_html(
                     fig=proj_2d_fig,
                     file=os.path.join(save_fig_path, "tof_vs_joint_state_2d_proj.html"),
-                    auto_open=True,
+                    auto_open=show_fig,
                 )
                 pio.write_html(
                     fig=proj_3d_fig,
                     file=os.path.join(save_fig_path, "tof_vs_joint_state_3d_proj.html"),
-                    auto_open=True,
+                    auto_open=show_fig,
                 )
+            else:
+                if show_fig:
+                    parabola_fig.show()
+                    proj_2d_fig.show()
+                    proj_3d_fig.show()
 
         all_data_dict = {}
         all_data_dict["raw_tof_ts"] = np.concatenate(
@@ -793,349 +849,67 @@ class FindBranchRollWristController(TFNode):
         all_data_dict["joint_states_ts"] = np.concatenate(
             [sensor_data_dict["tof0"]["joint_states_ts"], sensor_data_dict["tof1"]["joint_states_ts"]]
         )
-        # # Move all joint angle data to the [-pi, pi] range
-        # all_data_dict["joint_states_data"] = self._wrap_angles_to_circle(
-        #     np.concatenate(
-        #         (sensor_data_dict["tof0"]["joint_states_data"], sensor_data_dict["tof1"]["joint_states_data"])
-        #     )
-        # )
         all_data_dict["joint_states_data"] = np.concatenate(
             (sensor_data_dict["tof0"]["joint_states_data"], sensor_data_dict["tof1"]["joint_states_data"])
+        )
+        all_data_dict["sensor_id"] = np.concatenate(
+            (sensor_data_dict["tof0"]["sensor_id"], sensor_data_dict["tof1"]["sensor_id"])
         )
 
         # Sort all of my data by wrist 3 joint state
         sorted_indices = np.argsort(all_data_dict["joint_states_data"][:, 2])
-        all_data_dict["raw_tof_ts"] = all_data_dict["raw_tof_ts"][sorted_indices]
-        all_data_dict["raw_tof_data"] = all_data_dict["raw_tof_data"][sorted_indices]
+        # self.debug(all_data_dict['raw_tof_data'].shape)
+        # self.debug(all_data_dict['tof_data'].shape)
+        # self.debug(all_data_dict['joint_states_data'].shape)
+        # self.debug(sorted_indices.shape)
+        # all_data_dict["raw_tof_ts"] = all_data_dict["raw_tof_ts"][sorted_indices]
+        # all_data_dict["raw_tof_data"] = all_data_dict["raw_tof_data"][sorted_indices]
         all_data_dict["tof_ts"] = all_data_dict["tof_ts"][sorted_indices]
         all_data_dict["tof_data"] = all_data_dict["tof_data"][sorted_indices]
         all_data_dict["joint_states_ts"] = all_data_dict["joint_states_ts"][sorted_indices]
         all_data_dict["joint_states_data"] = all_data_dict["joint_states_data"][sorted_indices]
+        all_data_dict["sensor_id"] = all_data_dict["sensor_id"][sorted_indices]
 
         return all_data_dict, sensor_data_dict
 
-    def filter_minima_by_angle_proximity(self, joint_states, distances, valley_idxs, angle_thresh=0.1, far_plane_filter=0.25):
-        # joint_states = np.unwrap(np.asarray(joint_states))  # unwrap for proximity comparisons
-        distances = np.asarray(distances)
+    def find_best_quadratic_fits(self):
+        all_data_dict, sensor_data_dict = self.aggregate_tof_data(
+            save_fig=True, save_fig_path=self.bag_record_path, show_fig=True
+        )
 
-        sorted_idxs = valley_idxs[np.argsort(joint_states[valley_idxs])]
-        filtered_idxs = []
+        separated_data_dict = dp.separate_tof_data_by_curve(
+            node=self, all_data_dict=all_data_dict, save_fig=True, save_fig_path=self.bag_record_path, show_fig=True
+        )
 
-        if distances[sorted_idxs[0]] > far_plane_filter:
-            group = [sorted_idxs[1]]
-            _idxs = sorted_idxs[2:]
+        # Shift section joint angles as needed if discontiunity exists
+        if (
+            separated_data_dict["s0"]["joint_states_data"][:, 2][0]
+            < separated_data_dict["s1"]["joint_states_data"][:, 2][0]
+        ):
+            separated_data_dict["s0"]["joint_states_data"][:, 2] = dp.amend_joint_angle_discontinuity(
+                node=self,
+                joint_angles=separated_data_dict["s0"]["joint_states_data"][:, 2],
+                indices=separated_data_dict["s0"]["indices"],
+            )
         else:
-            group = [sorted_idxs[0]]
-            _idxs = sorted_idxs[1:]
-        for idx in _idxs:
-            # self.info(joint_states[idx])
-            # Also filter by height, since we tacked on the end points
-            if distances[idx] > far_plane_filter:
-                continue
-            prev_idx = group[-1]
-            if np.abs(joint_states[idx] - joint_states[prev_idx]) < angle_thresh:
-                group.append(idx)
-            else:
-                group_arr = np.array(group)
-                best_idx = group_arr[np.argmin(distances[group_arr])]
-                filtered_idxs.append(best_idx)
-                group = [idx]
-
-        if group:
-            group_arr = np.array(group)
-            best_idx = group_arr[np.argmin(distances[group_arr])]
-            filtered_idxs.append(best_idx)
-
-        num_minima = len(filtered_idxs)
-        if num_minima not in [2, 3]:
-            self.error(
-                f"Found too many minima: {num_minima}. Either multiple targets spotted, or consider adjusting angle threshold."
+            separated_data_dict["s1"]["joint_states_data"][:, 2] = dp.amend_joint_angle_discontinuity(
+                node=self,
+                joint_angles=separated_data_dict["s1"]["joint_states_data"][:, 2],
+                indices=separated_data_dict["s1"]["indices"],
             )
 
-        return np.asarray(filtered_idxs)
-
-    def detect_sectioned_window_indices(self, joint_angles, filtered_valley_idxs, angle_thresh):
-
-        def get_idx_midpoint_from_joint_angles(joint_angles, idx0, idx1):
-            # Find midpoint between the two minima
-            midpoint_angle = (joint_angles[idx0] + joint_angles[idx1]) / 2
-            matches = np.where(np.isclose(joint_angles, midpoint_angle, atol=0.01))[0]
-            if len(matches) == 0:
-                # fallback if no exact match — just use the average of indices
-                midpoint_idx = (idx0 + idx1) // 2
-            else:
-                midpoint_idx = matches[0]
-
-            return midpoint_idx
-
-        num_minima = len(filtered_valley_idxs)
-        self.info(f"NUMBER MINIMA: {num_minima}")
-        if num_minima == 2:
-            # Standard case - split at midpoint between the two minima
-            idx0, idx1 = sorted(filtered_valley_idxs)
-
-            midpoint_idx = get_idx_midpoint_from_joint_angles(joint_angles=joint_angles, idx0=idx0, idx1=idx1)
-            self.info(f"MIDPOINT: {joint_angles[midpoint_idx]}")
-
-            # Create two sections
-            section0_idxs = np.arange(0, midpoint_idx + 1)
-            section1_idxs = np.arange(midpoint_idx, len(joint_angles))
-            return section0_idxs, section1_idxs
-
-        elif num_minima == 3:
-            # Sort minima by their index position (not angle)
-            sorted_by_index = filtered_valley_idxs[np.argsort(filtered_valley_idxs)]
-
-            # Get the angles at these minima
-            angles_at_minima = joint_angles[sorted_by_index]
-            self.error(angles_at_minima)
-
-            # Calculate distances between consecutive minima in angle space
-            # But also consider wraparound distances
-            def circlular_distance(a1, a2):
-                direct_dist = abs(a1 - a2)
-                wraparound_dist = 2 * np.pi - direct_dist
-                return min(direct_dist, wraparound_dist)
-
-            d_01 = circlular_distance(angles_at_minima[0], angles_at_minima[1])
-            d_12 = circlular_distance(angles_at_minima[1], angles_at_minima[2])
-            d_20 = circlular_distance(angles_at_minima[2], angles_at_minima[0])
-
-            dists = [d_01, d_12, d_20]
-            min_diff_idx = np.argmin(dists)
-
-            if dists[min_diff_idx] < angle_thresh:
-                # Get the indices of the three minima (sorted by index, not angle)
-                m0, m1, m2 = sorted_by_index
-
-                minima_midpoint0 = get_idx_midpoint_from_joint_angles(joint_angles=joint_angles, idx0=m0, idx1=m1)
-                minima_midpoint1 = get_idx_midpoint_from_joint_angles(joint_angles=joint_angles, idx0=m1, idx1=m2)
-
-                self.info(f"MIDPOINT: {joint_angles[minima_midpoint0]}")
-                self.info(f"MIDPOINT: {joint_angles[minima_midpoint1]}")
-
-                section0_idxs = np.concatenate(
-                    [np.arange(0, minima_midpoint0 + 1), np.arange(minima_midpoint1, len(joint_angles))]
-                )
-                section1_idxs = np.arange(minima_midpoint0, minima_midpoint1 + 1)
-
-                # Ensure indices are unique and sorted
-                section0_idxs = np.unique(section0_idxs)
-                section1_idxs = np.unique(section1_idxs)
-                return section0_idxs, section1_idxs
-
-            else:
-                self.warn(f"No minima exceeded angular threshold difference of {angle_thresh}")
-                return None
-
-        return None
-
-    def separate_tof_data_by_curve(self, all_data_dict: dict, save_fig: bool = False, save_fig_path: str = ""):
-        """After concatenation, split the tof data into two parabolic shapes. If only one exists, failure?"""
-        # Get minima. We are searching for two
-        joint_angles = all_data_dict["joint_states_data"][:, 2]
-
-        valley_idxs, heights_dict = ssi.find_peaks(
-            x=(-1 * np.asarray(all_data_dict["tof_data"])),
-            height=(-1 * self.filter_far_plane),
-            # prominence=0.5,
-            distance=50,
-        )
-
-        # Step 2: Check endpoints manually
-        endpoint_minima = []
-        if joint_angles[0] < joint_angles[1]:
-            endpoint_minima.append(0)
-        if joint_angles[-1] < joint_angles[-2]:
-            endpoint_minima.append(len(joint_angles) - 1)
-        valley_idxs = np.concatenate([valley_idxs, endpoint_minima])
-
-        self.warn(valley_idxs)
-        self.warn(joint_angles[valley_idxs])
-
-        angle_threshold = np.radians(30)
-
-        # Get minima, filter by proximity
-        filtered_valley_idxs = self.filter_minima_by_angle_proximity(
-            joint_states=joint_angles,
-            distances=all_data_dict["tof_data"],
-            valley_idxs=valley_idxs,
-            angle_thresh=angle_threshold,
-        )
-        # self.warn(filtered_valley_idxs)
-        # self.warn(joint_angles[filtered_valley_idxs])
-
-        # TODO: Do debug plot here
-        if self.debug_plot:
-            fig = dplot.plot_tof_vs_joint_state(data=all_data_dict, name="all_data")
-
-            # Add minima to plot
-            for i, idx in enumerate(valley_idxs):
-                if i == 0:
-                    showlegend = True
-                else:
-                    showlegend = False
-                fig.add_trace(
-                    go.Scatter(
-                        x=[all_data_dict["joint_states_data"][idx][2]],
-                        y=[all_data_dict["tof_data"][idx]],
-                        mode="markers",
-                        name="minimum",
-                        marker=dict(size=20, color="LightSkyBlue"),
-                        showlegend=showlegend,
-                        legendgroup="minima",
-                        legendgrouptitle=dict(text="minima"),
-                    )
-                )
-            for i, idx in enumerate(filtered_valley_idxs):
-                if i == 0:
-                    showlegend = True
-                else:
-                    showlegend = False
-                fig.add_trace(
-                    go.Scatter(
-                        x=[all_data_dict["joint_states_data"][idx][2]],
-                        y=[all_data_dict["tof_data"][idx]],
-                        mode="markers",
-                        name="filtered_minimum",
-                        marker=dict(size=20, color="orange"),
-                        showlegend=showlegend,
-                        legendgroup="filtered_minima",
-                        legendgrouptitle=dict(text="filtered_minima"),
-                    )
-                )
-            if save_fig:
-                pio.write_html(
-                    fig=fig,
-                    file=os.path.join(save_fig_path, "tof_vs_joint_state_all_data.html"),
-                    auto_open=True,
-                )
-
-        sectioned_idxs = self.detect_sectioned_window_indices(
-            joint_angles=joint_angles, filtered_valley_idxs=filtered_valley_idxs, angle_thresh=angle_threshold
-        )
-        if sectioned_idxs is not None:
-            section0_idxs, section1_idxs = sectioned_idxs
-        else:
-            return None
-    
-
-        separated_data_dict = {"s0": {}, "s1": {}}
-        separated_data_dict["s0"]["raw_tof_ts"] = all_data_dict["raw_tof_ts"][section0_idxs]
-        separated_data_dict["s0"]["raw_tof_data"] = all_data_dict["raw_tof_data"][section0_idxs]
-        separated_data_dict["s0"]["tof_ts"] = all_data_dict["tof_ts"][section0_idxs]
-        separated_data_dict["s0"]["tof_data"] = all_data_dict["tof_data"][section0_idxs]
-        separated_data_dict["s1"]["raw_tof_ts"] = all_data_dict["raw_tof_ts"][section1_idxs]
-        separated_data_dict["s1"]["raw_tof_data"] = all_data_dict["raw_tof_data"][section1_idxs]
-        separated_data_dict["s1"]["tof_ts"] = all_data_dict["tof_ts"][section1_idxs]
-        separated_data_dict["s1"]["tof_data"] = all_data_dict["tof_data"][section1_idxs]
-
-        separated_data_dict["s0"]["joint_states_ts"] = all_data_dict["joint_states_ts"][section0_idxs]
-        separated_data_dict["s0"]["joint_states_data"] = all_data_dict["joint_states_data"][section0_idxs]
-        separated_data_dict["s1"]["joint_states_ts"] = all_data_dict["joint_states_ts"][section1_idxs]
-        separated_data_dict["s1"]["joint_states_data"] = all_data_dict["joint_states_data"][section1_idxs]
-
-        separated_data_dict["s0"]["indices"] = section0_idxs
-        separated_data_dict["s1"]["indices"] = section1_idxs
-
-        # TODO: another debug plot here
-        if self.debug_plot:
-            fig = dplot.plot_tof_vs_joint_state(data=separated_data_dict["s0"], name="s0")
-            fig = dplot.plot_tof_vs_joint_state(data=separated_data_dict["s1"], name="s1", fig=fig)
-            if save_fig:
-                pio.write_html(
-                    fig=fig,
-                    file=os.path.join(save_fig_path, "tof_vs_joint_state_by_section.html"),
-                    auto_open=True,
-                )
-
-        # raise Exception("we're gonna stop here")
-
-        return separated_data_dict
-
-    def amend_joint_angle_discontinuity(self, joint_angles: np.ndarray, indices: np.ndarray) -> np.ndarray:
-        """
-        :param joint_angles: A array of joint angles
-        :type joint_angles: np.ndarray
-        :param indices: A array of indices corresponding to the joint angles
-        :type indices: np.ndarray
-        :returns: An array of continuous joint angles
-        :rtype: ndarray
-        """
-        idx_diffs = np.diff(indices)
-        gap_mask = idx_diffs > 1
-
-        if not np.any(gap_mask):
-            self.warn("No gap detected.")
-            return joint_angles
-        # Find largest gap, split the joint angle data at the gap.
-        gap_idx = np.argmax(idx_diffs)
-        new_indices = len(joint_angles) - 1
-        first_part_indices = new_indices[: gap_idx + 1]
-        second_part_indices = new_indices[gap_idx + 1 :]
-
-        first_part_angles = joint_angles[first_part_indices]
-        second_part_angles = joint_angles[second_part_indices]
-
-        # Determine which part is further from 0 (this part should be shifted)
-        first_part_distance_from_zero = np.mean(np.abs(first_part_angles))
-        second_part_distance_from_zero = np.mean(np.abs(second_part_angles))
-
-        if first_part_distance_from_zero > second_part_distance_from_zero:
-            self.warn("shifting left side")
-            # Shift first part
-            shift_direction = -1 if np.mean(first_part_angles) > 0 else 1
-            shifted_angles = first_part_angles + shift_direction * 2 * np.pi
-
-            # Check if shift keeps us in [-2π, 2π] range
-            if np.any(shifted_angles > 2 * np.pi) or np.any(shifted_angles < -2 * np.pi):
-                # Try opposite direction
-                shift_direction *= -1
-                shifted_angles = first_part_angles + shift_direction * 2 * np.pi
-
-            # Combine: shifted first part + original second part
-            return np.concatenate([shifted_angles, second_part_angles])
-
-        else:
-            self.warn("shifting right side")
-            # Shift second part
-            shift_direction = -1 if np.mean(second_part_angles) > 0 else 1
-            shifted_angles = second_part_angles + shift_direction * 2 * np.pi
-
-            # Check if shift keeps us in [-2π, 2π] range
-            if np.any(shifted_angles > 2 * np.pi) or np.any(shifted_angles < -2 * np.pi):
-                # Try opposite direction
-                shift_direction *= -1
-                shifted_angles = second_part_angles + shift_direction * 2 * np.pi
-
-            # Combine: original first part + shifted second part
-            return np.concatenate([first_part_angles, shifted_angles])
-
-    def find_best_quadratic_fits(self):
-        all_data_dict, sensor_data_dict = self.aggregate_tof_data(save_fig=True, save_fig_path=self.bag_record_path)
-
-        separated_data_dict = self.separate_tof_data_by_curve(
-            all_data_dict=all_data_dict, save_fig=True, save_fig_path=self.bag_record_path
-        )
-
-        # self.warn(separated_data_dict['s0'])
-        # Shift s0 joint angles as needed if discontiunity exists
-        # self.info(separated_data_dict['s0']['joint_states_data'])
-        # self.info(separated_data_dict['s0']['indices'])
-        separated_data_dict["s0"]["joint_states_data"][:,2] = self.amend_joint_angle_discontinuity(
-            joint_angles=separated_data_dict["s0"]["joint_states_data"][:,2], indices=separated_data_dict["s0"]["indices"]
-        )
-
+        # Curve fit
         for section_name, section in separated_data_dict.items():
             self.time_and_center_res_dict[section_name] = {}
             sec_time_and_dist = cf.get_branch_center_time_and_distance(
                 data=section,
-                filter_far_plane=self.filter_far_plane,
+                far_plane_filter=self._param_far_plane_filter,
                 section_name=section_name,
                 debug_plot=True,
+                show_fig=False,
                 save_fig=True,
                 save_fig_path=self.bag_record_path,
-                window_size=2.5,
+                window_size=0.4,
                 window_overlap_ratio=7 / 10,
                 min_samples=10,
                 max_trials=20,
@@ -1148,6 +922,7 @@ class FindBranchRollWristController(TFNode):
                 (
                     self.time_and_center_res_dict[section_name]["time"],
                     self.time_and_center_res_dict[section_name]["min_dist"],
+                    self.time_and_center_res_dict[section_name]["sensor_id"],
                 ) = sec_time_and_dist
 
         return
@@ -1181,12 +956,12 @@ class FindBranchRollWristController(TFNode):
         tof0_vec_base_frame = self.get_tof_vec_base_frame(
             ts=self.time_and_center_res_dict["s0"]["time"],
             tof=self.time_and_center_res_dict["s0"]["min_dist"],
-            sensor_name="tof0",
+            sensor_name=f"tof{self.time_and_center_res_dict['s0']['sensor_id']}",
         )
         tof1_vec_base_frame = self.get_tof_vec_base_frame(
-            ts=self.time_and_center_res_dict["s0"]["time"],
+            ts=self.time_and_center_res_dict["s1"]["time"],
             tof=self.time_and_center_res_dict["s1"]["min_dist"],
-            sensor_name="tof1",
+            sensor_name=f"tof{self.time_and_center_res_dict['s1']['sensor_id']}",
         )
 
         # Get the centerpoint of these two points.

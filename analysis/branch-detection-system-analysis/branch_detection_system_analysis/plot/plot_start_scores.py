@@ -69,6 +69,7 @@ def make_cylindrical_plot():
             yaxis=dict(backgroundcolor="rgba(0,0,0,0)", showbackground=False, visible=False),
             zaxis=dict(backgroundcolor="rgba(0,0,0,0)", showbackground=False, visible=False),
         ),
+        showlegend=False,
     )
 
     fig.show()
@@ -130,10 +131,10 @@ def make_angles_plot():
             yaxis=dict(backgroundcolor="rgba(0,0,0,0)", showbackground=False, visible=False),
             zaxis=dict(backgroundcolor="rgba(0,0,0,0)", showbackground=False, visible=False),
         ),
+        showlegend=False,
     )
 
-
-    pio.write_image(fig=fig, file='./fig.pdf', format='pdf')
+    # pio.write_image(fig=fig, file="./fig.pdf", format="pdf")
     fig.show()
 
     return
@@ -142,11 +143,12 @@ def make_angles_plot():
 if __name__ == "__main__":
     import time
     import os
+
     os.nice(10)
 
     start_time = time.process_time()
-    # make_cylindrical_plot()
-    make_angles_plot()
+    make_cylindrical_plot()
+    # make_angles_plot()
     end_time = time.process_time()
 
     print(f"Program took {end_time - start_time}s to run")

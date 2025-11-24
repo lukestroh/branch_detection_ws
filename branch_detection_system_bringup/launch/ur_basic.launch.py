@@ -141,14 +141,13 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
     _parameterfile_moveit_controllers = ParameterFile(param_file=_filepath_moveit_controllers, allow_substs=True)
     _parameterfile_moveit_controllers.evaluate(context=context)
 
-    # logger.error(f"{ur_prefix.perform(context)}")
     _mappings = {
-        "name": "pruning_robot",
+        "name": "ag_robot",
         "ur_type": ur_type.perform(context),
         "robot_ip": ur_robot_ip.perform(context),
         "ur_prefix": ur_prefix.perform(context),  # parent_child_mappings["ur_prefix"],
         "robot_stack_qty": str(len(robot_conf["robot_stack"])),
-        "headless_mode": headless_mode,
+        "headless_mode": headless_mode.perform(context),
         "mock_sensor_commands": mock_sensor_commands,
         "use_mock_hardware": use_mock_hardware,
         "use_fake_hardware": use_mock_hardware,  # UR5 humble hasn't updated
@@ -158,7 +157,7 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
             get_package_share_directory("branch_detection_system_description"), "config/initial_positions.yaml"
         ),
         "kinematics_params_file": os.path.join(
-            get_package_share_directory("branch_detection_system_description"), "config", "cindy_ur5e_calibration.yaml"
+            get_package_share_directory("branch_detection_system_description"), "config", "robot_calibration.yaml"
         ),
         "joint_limit_params": os.path.join(
             get_package_share_directory("ur_description"), "config", ur_type.perform(context), "joint_limits.yaml"
@@ -175,6 +174,9 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         "script_filename": os.path.join(
             get_package_share_directory("ur_client_library"), "resources", "external_control.urscript"
         ),
+        # "script_filename": os.path.join(
+        #     get_package_share_directory("branch_detection_system_bringup"), "config", "external_control.urscript"
+        # ),
         "input_recipe_filename": os.path.join(
             get_package_share_directory("ur_robot_driver"), "resources", "rtde_input_recipe.txt"
         ),
@@ -188,7 +190,7 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         "script_sender_port": "50002",
         "trajectory_port": "50003",
         # "warehouse_port": "33829"
-        # "use_tool_communication": "false",
+        "use_tool_communication": "false",
     }
     _mappings.update(parent_child_mappings)
 
@@ -235,7 +237,7 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
     # et = ET.XML(moveit_configs.robot_description['robot_description'].value[0].perform(context))
     # tree = ET.ElementTree(et)
     # ET.indent(tree)
-    # tree.write("/home/luke/branch_detection_ws/src/branch_detection_system_description/urdf/tmp/robot.urdf", encoding='utf-8', xml_declaration=True)
+    # tree.write("/home/luke/branch_detection_ws/src/branch_detection_system/branch_detection_system_description/urdf/tmp/robot.urdf", encoding='utf-8', xml_declaration=True)
 
     # # Save HARD-CODED SRDF
     # et = ET.XML(moveit_configs.robot_description_semantic['robot_description_semantic'].value[0].perform(context))
@@ -290,6 +292,48 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         output="screen",
         emulate_tty=True,
         parameters=[{"robot_ip": ur_robot_ip}],
+    )
+
+    node_robot_state_helper = Node(
+        package="ur_robot_driver",
+        executable="robot_state_helper",
+        name="ur_robot_state_helper",
+        output="screen",
+        condition=UnlessCondition(use_mock_hardware),
+        parameters=[
+            {"headless_mode": headless_mode},
+            {"robot_ip": ur_robot_ip},
+        ],
+    )
+
+    node_urscript_interface = Node(
+        package="ur_robot_driver",
+        executable="urscript_interface",
+        parameters=[{"robot_ip": ur_robot_ip}],
+        output="screen",
+    )
+
+    node_controller_stopper_node = Node(
+        package="ur_robot_driver",
+        executable="controller_stopper_node",
+        name="controller_stopper",
+        output="screen",
+        emulate_tty=True,
+        condition=UnlessCondition(use_mock_hardware),
+        parameters=[
+            {"headless_mode": headless_mode},
+            {"joint_controller_active": activate_joint_controller},
+            {
+                "consistent_controllers": [
+                    "io_and_status_controller",
+                    "force_torque_sensor_broadcaster",
+                    "joint_state_broadcaster",
+                    "speed_scaling_state_broadcaster",
+                    "tcp_pose_broadcaster",
+                    "ur_configuration_controller",
+                ]
+            },
+        ],
     )
 
     node_robot_state_publisher = Node(
@@ -512,6 +556,9 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         node_ros2_control,
         node_ur_control,
         node_dashboard_client,
+        node_robot_state_helper,
+        node_urscript_interface,
+        node_controller_stopper_node,
         register_event_delay_rviz_after_JSB_spawner,
         node_move_group,
         node_move_arm,

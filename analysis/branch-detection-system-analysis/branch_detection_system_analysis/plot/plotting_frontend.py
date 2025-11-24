@@ -14,7 +14,7 @@ def plot_tof_vs_joint_state(df_dict: dict, tof_name: str, fig: go.Figure = None)
 
     timestamps = tof_df[f"{tof_name}_filtered_ts"].to_numpy()
 
-    joint_states_ts_filtered_df = pb.get_df_rows_at_closest_timestamp(
+    joint_states_ts_filtered_df = pb.get_df_rows_at_closest_timestamp_from_df_dict(
         df_dict=df_dict, topic_name="joint_states", timestamps=timestamps
     )
 

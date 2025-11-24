@@ -2,6 +2,7 @@
 
 from enum import Enum
 
+
 class TimerState(Enum):
     RUNNING = 1
     STOPPING = 2

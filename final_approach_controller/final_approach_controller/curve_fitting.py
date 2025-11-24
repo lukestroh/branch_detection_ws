@@ -22,11 +22,7 @@ from rclpy.node import Node
 import py_trees
 
 
-def far_plane_filter(
-    filter_far_plane: float,
-    ts: list,
-    data: list,
-) -> dict[str, np.ndarray] | None:
+def filter_far_plane(far_plane_value: float, data: dict) -> dict[str, np.ndarray] | None:
     """
     A low-pass filter, filters data points out beyond the `filter_far_plane` value. Resulting arrays are truncated.
 
@@ -41,12 +37,18 @@ def far_plane_filter(
     :rtype: dict
     """
     # filter readings beyond a distance
-    fp_filter_data = np.where(np.asarray(data) < filter_far_plane, data, np.nan)
-    # Put all of those values beyond as np.nan
-    fp_filter_ts = np.where(np.isnan(fp_filter_data), np.nan, np.asarray(ts))
-    # Filter out the np.nan values
-    fp_filter_data = fp_filter_data[~np.isnan(fp_filter_data)]
-    fp_filter_ts = fp_filter_ts[~np.isnan(fp_filter_ts)]
+    fp_filter_idxs = np.where(np.asarray(data["tof_data"]) < far_plane_value)
+
+    # fp_filter_data = np.where(np.asarray(data) < far_plane_value, data, np.nan)
+    # # Put all of those values beyond as np.nan
+    # fp_filter_ts = np.where(np.isnan(fp_filter_data), np.nan, np.asarray(ts))
+    # # Filter out the np.nan values
+    # fp_filter_data = fp_filter_data[~np.isnan(fp_filter_data)]
+    # fp_filter_ts = fp_filter_ts[~np.isnan(fp_filter_ts)]
+
+    fp_filter_data = data["tof_data"][fp_filter_idxs]
+    fp_filter_ts = data["tof_ts"][fp_filter_idxs]
+    fp_filter_sensor_ids = data["sensor_id"][fp_filter_idxs]
 
     if fp_filter_ts.size == 0:
         # print(f"Could not find any data points less than the filter's far plane of {filter_far_plane}")
@@ -58,8 +60,9 @@ def far_plane_filter(
         "ts": fp_filter_ts,
         "ts_zeroed": fp_filter_zeroed_ts,
         "data": fp_filter_data,
-        "data_min": np.min(fp_filter_data),
-        "tof_arm_radius": 0.4891,
+        # "data_min": np.min(fp_filter_data),
+        "sensor_id": fp_filter_sensor_ids,
+        "tof_arm_radius": 0.04891,
     }
 
 
@@ -87,8 +90,9 @@ def fit_ransac(
         ransac = ransac.fit(X=x_quad, y=window_data["data"])
     except ValueError as e:
         if node is not None:
-            node.error(traceback.format_exc())
+            # node.error(traceback.format_exc())
             # node.warn(min_samples)
+            node.error(e)
         else:
             # print(traceback.format_exc())
             ...
@@ -109,8 +113,8 @@ def process_window(
     data = window_data["data"]
 
     x_fit = np.linspace(
-        x[0],
-        x[-1],
+        window_data["window_start"],
+        window_data["window_end"],
         len(x),
     )
 
@@ -139,6 +143,7 @@ def process_window(
     window_data["x_fit"] = x_fit
     window_data["y_fit"] = y_fit
     window_data["inlier_mask"] = ransac.inlier_mask_
+    window_data["sensor_id_min"] = window_data["sensor_id"][idx_min]
 
     return window_data
 
@@ -169,7 +174,8 @@ def fit_and_process_ransac(
     else:
         result = _error_result(
             window_id=window_data["window_id"],
-            start_time=window_data["start_ts"],
+            window_start=window_data["window_start"],
+            window_end=window_data["window_end"],
             window_size=window_data["window_size"],
         )
 
@@ -208,41 +214,40 @@ def window_ransac(
     :returns: A dictionary containing all of the windowed data. If errors are thrown due to the set RANSAC parameters, dictionary values will be None.
     :rtype: dict
     """
-    ts_window_start = 0.0
-    ts_window_end = ts_window_start + window_size
+    # ts_window_start = 0.0
+    # ts_window_end = ts_window_start + window_size
 
-    ts_trial_end = np.max(data["ts_zeroed"])
+    js_window_start = np.min(data["wrist_state"])
+    js_window_end = js_window_start + window_size
+
+    # ts_trial_end = np.max(data["ts_zeroed"])
+    js_trial_end = np.max(data["wrist_state"])
 
     window_idx = 0
     last_window_reached = False
     window_results = {}
 
     while not last_window_reached:
-        # Prune window size at end
-        if ts_window_start + window_size <= ts_trial_end:
-            ts_window_end = ts_window_start + window_size
+        if js_window_start + window_size <= js_trial_end:
+            js_window_end = js_window_start + window_size
         else:
-            ts_window_end = ts_trial_end
+            js_window_end = js_trial_end
             last_window_reached = True
 
-        window_indices = np.where((data["ts_zeroed"] >= ts_window_start) & (data["ts_zeroed"] < ts_window_end))
-        # t_window = data["ts"][window_indices]
-        # zt_window = data["ts_zeroed"][window_indices]
-        # dist_window = data["data"][window_indices]
-
-        # data['start_ts']
-        # data['window_size'] = window_size
+        window_indices = np.where((data["wrist_state"] >= js_window_start) & (data["wrist_state"] <= js_window_end))
 
         window = {}
         window["window_id"] = window_idx
-        window["start_ts"] = ts_window_start
+        window["window_start"] = js_window_start
+        window["window_end"] = js_window_end
         window["window_size"] = window_size
         window["ts"] = data["ts"][window_indices]
         window["ts_zeroed"] = data["ts_zeroed"][window_indices]
         window["data"] = data["data"][window_indices]
         window["wrist_state"] = data["wrist_state"][window_indices]
-        window["rotation_speed"] = np.pi / 16  # rad / s TODO: get from topic, publish from controller
-        window["tof_arm_radius"] = 0.4891
+        window["sensor_id"] = data["sensor_id"][window_indices]
+        window["rotation_speed"] = np.pi / 8  # rad / s TODO: get from topic, publish from controller
+        window["tof_arm_radius"] = 0.04891
 
         window = fit_and_process_ransac(
             window_data=window,
@@ -254,9 +259,9 @@ def window_ransac(
 
         window_results[window_idx] = window
         if window_overlap_ratio > 0:
-            ts_window_start += window_size * (1 - window_overlap_ratio)
+            js_window_start += window_size * (1 - window_overlap_ratio)
         else:
-            ts_window_start += window_size
+            js_window_start += window_size
         window_idx += 1
 
     return window_results
@@ -353,7 +358,9 @@ def filter_parabolas(windowed_data: dict, node: Node = None) -> dict:
         r2 = window["r2"]
         if coefs is None:
             continue
-        if coefs[2] < 0.10:
+        # if coefs[2] < 0.10:
+        #     continue
+        if coefs[2] < 0:
             continue
         if r2 is not None and r2 < 0:
             continue
@@ -364,7 +371,7 @@ def filter_parabolas(windowed_data: dict, node: Node = None) -> dict:
         derivative = [2 * coefs[2], coefs[1]]
         roots = np.roots(p=derivative)
         root = roots[0]
-        if root > min(window["wrist_state"]) and root < max(window["wrist_state"]):
+        if root > min(window["x_fit"]) and root < max(window["x_fit"]):
             if window["avg_residual"] < avg_resd:
                 avg_resd = window["avg_residual"]
                 branch_candidate_idx = window_idx
@@ -381,10 +388,11 @@ def filter_parabolas(windowed_data: dict, node: Node = None) -> dict:
     return filtered_window_data
 
 
-def _error_result(window_id, start_time, window_size):
+def _error_result(window_id, window_start, window_end, window_size):
     return {
         "window_id": window_id,
-        "start_ts": start_time,
+        "window_start": window_start,
+        "window_end": window_end,
         "window_size": window_size,
         "ts": None,
         "ts_zeroed": None,
@@ -460,9 +468,10 @@ def refit_by_group(data: dict, group: list[dict], node: Node = None):
 
 def get_branch_center_time_and_distance(
     data: dict,
-    filter_far_plane: float,
+    far_plane_filter: float,
     section_name: str,
     debug_plot: bool = False,
+    show_fig: bool = False,
     save_fig: bool = False,
     save_fig_path: str = None,
     window_size: float = 0.75,
@@ -477,13 +486,8 @@ def get_branch_center_time_and_distance(
     windowed_data = None
     filtered_window_data = None
 
-    
-
     try:
-        maf_ts = data["tof_ts"]
-        maf_data = data["tof_data"]
-
-        fpf_data = far_plane_filter(filter_far_plane=filter_far_plane, ts=maf_ts, data=maf_data)
+        fpf_data = filter_far_plane(far_plane_value=far_plane_filter, data=data)
         if fpf_data is None:
             if node is not None:
                 node.error(f"{section_name}: Failed at fpf_filter()")
@@ -524,10 +528,6 @@ def get_branch_center_time_and_distance(
 
             msg_windowed_data = WindowedData()
             for window in windowed_data.values():
-                msg_windowed_data.window_id = window["window_id"]
-                msg_windowed_data.start_ts = window["start_ts"]
-                msg_windowed_data.window_size = window["window_size"]
-
                 if window.get("height") is None:
                     height = 0.0
                     width = 0.0
@@ -535,25 +535,30 @@ def get_branch_center_time_and_distance(
                     height = window["height"]
                     width = window["width"]
 
-                msg_windowed_data.ts = list(window["ts"])
-                msg_windowed_data.ts_zeroed = list(window["ts_zeroed"])
-                msg_windowed_data.wrist_state = list(window["wrist_state"])
-                msg_windowed_data.data = list(window["data"])
-                msg_windowed_data.fit_coefficients = list(window["coefficients"])
-                msg_windowed_data.x_fit = list(window["x_fit"])
-                msg_windowed_data.y_fit = list(window["y_fit"])
-                msg_windowed_data.inlier_mask = [bool(x) for x in window["inlier_mask"]]
-                msg_windowed_data.r2 = window["r2"]
-                msg_windowed_data.avg_residual = window["avg_residual"]
-                msg_windowed_data.ts_min = window["ts_min"]
-                msg_windowed_data.x_min = window["x_min"]
-                msg_windowed_data.y_min = window["y_min"]
-                msg_windowed_data.height = height
-                msg_windowed_data.width = width
-                msg_windowed_data.tof_arm_radius = window["tof_arm_radius"]
-                msg_windowed_data.angular_rotation_speed = window["rotation_speed"]
+                if window["ts"] is not None:
+                    msg_windowed_data.window_id = window["window_id"]
+                    msg_windowed_data.window_start = window["window_start"]
+                    msg_windowed_data.window_end = window["window_end"]
+                    msg_windowed_data.window_size = window["window_size"]
+                    msg_windowed_data.ts = list(window["ts"])
+                    msg_windowed_data.ts_zeroed = list(window["ts_zeroed"])
+                    msg_windowed_data.wrist_state = list(window["wrist_state"])
+                    msg_windowed_data.data = list(window["data"])
+                    msg_windowed_data.fit_coefficients = list(window["coefficients"])
+                    msg_windowed_data.x_fit = list(window["x_fit"])
+                    msg_windowed_data.y_fit = list(window["y_fit"])
+                    msg_windowed_data.inlier_mask = [bool(x) for x in window["inlier_mask"]]
+                    msg_windowed_data.r2 = window["r2"]
+                    msg_windowed_data.avg_residual = window["avg_residual"]
+                    msg_windowed_data.ts_min = window["ts_min"]
+                    msg_windowed_data.x_min = window["x_min"]
+                    msg_windowed_data.y_min = window["y_min"]
+                    msg_windowed_data.height = height
+                    msg_windowed_data.width = width
+                    msg_windowed_data.tof_arm_radius = window["tof_arm_radius"]
+                    msg_windowed_data.angular_rotation_speed = window["rotation_speed"]
 
-                node._pub_windowed_data.publish(msg=msg_windowed_data)
+                    node._pub_windowed_data.publish(msg=msg_windowed_data)
 
     finally:
         if debug_plot:
@@ -576,8 +581,13 @@ def get_branch_center_time_and_distance(
 
                 if save_fig:
                     pio.write_html(
-                        fig=fig, file=os.path.join(save_fig_path, f"{section_name}_all_windows.html"), auto_open=True
+                        fig=fig,
+                        file=os.path.join(save_fig_path, f"{section_name}_all_windows.html"),
+                        auto_open=show_fig,
                     )
+                else:
+                    if show_fig:
+                        fig.show()
 
             if filtered_window_data is not None:
                 fig = dplot.plot_maf_vs_joint_state(
@@ -600,8 +610,11 @@ def get_branch_center_time_and_distance(
                     pio.write_html(
                         fig=fig,
                         file=os.path.join(save_fig_path, f"{section_name}_filtered_windows.html"),
-                        auto_open=True,
+                        auto_open=show_fig,
                     )
+                else:
+                    if show_fig:
+                        fig.show()
 
             if best_window is not None:
                 fig = dplot.plot_maf_vs_joint_state(
@@ -619,195 +632,107 @@ def get_branch_center_time_and_distance(
                 # fig.show()
                 if save_fig:
                     pio.write_html(
-                        fig=fig, file=os.path.join(save_fig_path, f"{section_name}_best_window.html"), auto_open=True
+                        fig=fig,
+                        file=os.path.join(save_fig_path, f"{section_name}_best_window.html"),
+                        auto_open=show_fig,
                     )
+                else:
+                    if show_fig:
+                        fig.show()
 
     t_min = best_window["ts_min"]
     y_min = best_window["y_min"]
+    sensor_id = best_window["sensor_id_min"]
 
-    return t_min, y_min
+    return t_min, y_min, sensor_id
 
 
-# def get_branch_center_time_and_distance(
-#     df_dict: dict,
-#     filter_far_plane: float,
-#     sensor_name: str,
-#     debug_plot: bool = False,
-#     save_fig: bool = False,
-#     save_fig_path: str = None,
-#     window_size: float = 0.75,
-#     window_step_size: float = 0.25,
-#     window_overlap_ratio: float = 1 / 3,
-#     min_samples: int = 5,
-#     max_trials: int = 20,
-#     residual_threshold: float = 0.004,
-#     node: Node = None,
-# ) -> dict[int, dict]:
-#     """
-#     1. Filter the data, timestamps.
-#     2. Get the joint states at those timesteps
-#     3. Fit ransac to the distance vs. joint state
-#     """
-#     best_window = None
-#     windowed_data = None
-#     filtered_window_data = None
-#     try:
-# raw_ts = df_dict[f"{sensor_name}_raw"][f"{sensor_name}_raw_ts"]
-# raw_data = df_dict[f"{sensor_name}_raw"][f"{sensor_name}_raw_data"]
-# maf_ts = df_dict[f"{sensor_name}_filtered"][f"{sensor_name}_filtered_ts"]
-# maf_data = df_dict[f"{sensor_name}_filtered"][f"{sensor_name}_filtered_data"]
+def fit_3d_linear_pca(points):
+    centroid = np.mean(points, axis=0)
+    centered_points = points - centroid
+    # Use SVD to find line passing through "middle" of data
+    # U can be used to reconstruct how the original points project onto the principal directions.
+    # S contains the amount of variance along each direction.
+    # Vt contains the principal directions of your data:
+    #   Vt[0] is the direction of maximum variance — the dominant direction your data stretches in.
+    U, S, Vt = np.linalg.svd(centered_points)
+    direction = Vt[0]
+    direction = direction / np.linalg.norm(direction)
 
-# fpf_data = far_plane_filter(filter_far_plane=filter_far_plane, ts=maf_ts, data=maf_data)
+    return centroid, direction
 
-# if fpf_data is None:
-#     if node is not None:
-#         node.error(f"{sensor_name}: Failed at fpf_filter()")
-#     else:
-#         print(f"{sensor_name}: Failed at fpf_filter()")
-#     return None
 
-# joint_states_df = pb.get_df_rows_at_closest_timestamp(
-#     df_dict=df_dict, topic_name="joint_states", timestamps=fpf_data["ts"]
-# )
-# joint_states_numpy = joint_states_df.to_numpy()
-# joint_states_ts = joint_states_numpy[:, 0]
-# fpf_data["wrist_state"] = joint_states_numpy[:, 1]
+def fit_3d_quadratic(points, centroid, direction):
+    """Project points onto a line to get parameter t-values and quadratic coefficients"""
 
-# print(fpf_data)
+    deltas = points - centroid
+    t_vals = (
+        deltas @ direction  # / np.linalg.norm(direction) # direction vec is normalized
+    )  # Does the dot product -- projection of each delta onto the direction vector
+    quadratic_design_mat = np.column_stack([t_vals**2, t_vals, np.ones_like(t_vals)])
 
-# windowed_data = window_ransac(
-#     data=fpf_data,
-#     window_size=window_size,
-#     window_overlap_ratio=window_overlap_ratio,
-#     max_trials=max_trials,
-#     min_samples=min_samples,
-#     residual_threshold=residual_threshold,
-#     node=node,
-# )
+    # Fit x(t), y(t), z(t)
+    coefs, resids, rank, _ = np.linalg.lstsq(quadratic_design_mat, points[:, 0:3], rcond=None)
+    coefs = coefs.T
+    return t_vals, coefs
 
-# filtered_window_data = filter_parabolas(windowed_data=windowed_data, node=node)
-# if not filtered_window_data:
-#     if node is not None:
-#         node.error(f"{sensor_name}: Failed at filter_parabolas()")
-#     else:
-#         print(f"{sensor_name}: Failed at filter_parabolas()")
-#     return None
 
-# avg_residual_start = np.inf
-# for window in filtered_window_data.values():
-#     if window["avg_residual"] < avg_residual_start:
-#         best_window = window
-#         avg_residual_start = window["avg_residual"]
+def compute_quadratic_residuals(points, t_vals, coefs):
+    quadratic_design_mat = np.vstack([t_vals**2, t_vals, np.ones_like(t_vals)])
+    fitted_points = coefs @ quadratic_design_mat
+    deltas = points[:, 0:3].T - fitted_points
+    residuals = np.linalg.norm(deltas, axis=0)
+    return residuals
 
-# # Publish windowed results # TODO: make windowing a Behavior
-# if node is not None:
-#     from final_approach_controller_msgs.msg import WindowedData
 
-#     msg_windowed_data = WindowedData()
-#     for window in windowed_data.values():
-#         msg_windowed_data.window_id = window["window_id"]
-#         msg_windowed_data.start_ts = window["start_ts"]
-#         msg_windowed_data.window_size = window["window_size"]
+def evaluate_quadratic(t, coefs):
+    return np.array(
+        [
+            coefs[0, 0] * t**2 + coefs[0, 1] * t + coefs[0, 2],
+            coefs[1, 0] * t**2 + coefs[1, 1] * t + coefs[1, 2],
+            coefs[2, 0] * t**2 + coefs[2, 1] * t + coefs[2, 2],
+        ]
+    )
 
-#         if window.get("height") is None:
-#             height = 0.0
-#             width = 0.0
-#         else:
-#             height = window["height"]
-#             width = window["width"]
 
-#         msg_windowed_data.ts = list(window["ts"])
-#         msg_windowed_data.ts_zeroed = list(window["ts_zeroed"])
-#         msg_windowed_data.wrist_state = list(window["wrist_state"])
-#         msg_windowed_data.data = list(window["data"])
-#         msg_windowed_data.fit_coefficients = list(window["coefficients"])
-#         msg_windowed_data.x_fit = list(window["x_fit"])
-#         msg_windowed_data.y_fit = list(window["y_fit"])
-#         msg_windowed_data.inlier_mask = [bool(x) for x in window["inlier_mask"]]
-#         msg_windowed_data.r2 = window["r2"]
-#         msg_windowed_data.avg_residual = window["avg_residual"]
-#         msg_windowed_data.ts_min = window["ts_min"]
-#         msg_windowed_data.x_min = window["x_min"]
-#         msg_windowed_data.y_min = window["y_min"]
-#         msg_windowed_data.height = height
-#         msg_windowed_data.width = width
-#         msg_windowed_data.tof_arm_radius = window["tof_arm_radius"]
-#         msg_windowed_data.angular_rotation_speed = window["rotation_speed"]
+def evaluate_quadratic_derivative(t, coefs):
+    return np.array(
+        [2 * coefs[0, 0] * t + coefs[0, 1], 2 * coefs[1, 0] * t + coefs[1, 1], 2 * coefs[2, 0] * t + coefs[2, 1]]
+    )
 
-#         node._pub_windowed_data.publish(msg=msg_windowed_data)
 
-# finally:
-# if debug_plot:
+def get_orthogonality(t, point, coefs):
+    t = float(np.squeeze(t))
+    curve_point = evaluate_quadratic(t=t, coefs=coefs)
+    tangent = evaluate_quadratic_derivative(t=t, coefs=coefs)
 
-#     if windowed_data is not None:
-#         # fig = dplot.plot_raw_vs_joint_state(
+    residual = point - curve_point
+    # print(np.linalg.norm(np.dot(residual, tangent)))
+    return np.linalg.norm(np.dot(residual, tangent))
 
-#         # )
-#         fig = dplot.plot_maf_vs_joint_state(
-#             data=fpf_data,
-#             sensor_name=sensor_name,
-#         )
-#         for window in windowed_data.values():
-#             if window["ts"] is None:
-#                 continue
-#             fig = dplot.plot_ransac_tof_vs_joint_state(
-#                 data=window,
-#                 sensor_name=sensor_name,
-#                 description="all_windows",
-#                 fig=fig,
-#                 save_fig=False,
-#                 save_fig_path=save_fig_path,
-#             )
-# fig.show()
-#             if save_fig:
-#                 pio.write_html(
-#                     fig=fig, file=os.path.join(save_fig_path, f"{sensor_name}_all_windows.html"), auto_open=True
-#                 )
 
-#         if filtered_window_data is not None:
-#             fig = dplot.plot_maf_vs_joint_state(
-#                 data=fpf_data,
-#                 sensor_name=sensor_name,
-#             )
-#             for window_id, window in filtered_window_data.items():
-#                 if window["ts"] is None:
-#                     continue
-#                 fig = dplot.plot_ransac_tof_vs_joint_state(
-#                     data=window,
-#                     sensor_name=sensor_name,
-#                     description="filtered_windows",
-#                     fig=fig,
-#                     save_fig=False,
-#                     save_fig_path=save_fig_path,
-#                 )
-#             # fig.show()
-#             if save_fig:
-#                 pio.write_html(
-#                     fig=fig,
-#                     file=os.path.join(save_fig_path, f"{sensor_name}_filtered_windows.html"),
-#                     auto_open=True,
-#                 )
+def project_points_onto_curve(points, t_vals, coefs):
+    """Project the points onto the curve and return the t_value"""
+    ortho_t_vals = []
+    projected_points = []
 
-#         if best_window is not None:
-#             fig = dplot.plot_maf_vs_joint_state(
-#                 data=fpf_data,
-#                 sensor_name=sensor_name,
-#             )
-#             fig = dplot.plot_ransac_tof_vs_joint_state(
-#                 data=best_window,
-#                 sensor_name=sensor_name,
-#                 description="best_window",
-#                 fig=fig,
-#                 save_fig=False,
-#                 save_fig_path=save_fig_path,
-#             )
-#             # fig.show()
-#             if save_fig:
-#                 pio.write_html(
-#                     fig=fig, file=os.path.join(save_fig_path, f"{sensor_name}_best_window.html"), auto_open=True
-#                 )
+    for i, point in enumerate(points[:, 0:3]):
+        res = so.fmin(
+            get_orthogonality,
+            [t_vals[i]],
+            args=(
+                point,
+                coefs,
+            ),
+            disp=True,
+            full_output=True,
+            xtol=1e-10,
+            ftol=1e-12,
+            maxfun=1000,
+            maxiter=1000,
+        )
+        # print(res)
+        ortho_t_vals.append(res[0][0])
+        projected_points.append(evaluate_quadratic(t=res[0][0], coefs=coefs))
 
-# t_min = best_window["ts_min"]
-# y_min = best_window["y_min"]
-
-# return t_min, y_min
+    return np.array(ortho_t_vals), np.array(projected_points)

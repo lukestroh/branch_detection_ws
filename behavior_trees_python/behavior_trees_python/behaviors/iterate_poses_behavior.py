@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 
 import py_trees as pt
+from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
+from geometry_msgs.msg import Pose
+from std_msgs.msg import Int64
 
 
 class IteratePosesBehavior(pt.behaviour.Behaviour):
@@ -9,7 +13,7 @@ class IteratePosesBehavior(pt.behaviour.Behaviour):
         self.name = name
         return
 
-    def setup(self, node):
+    def setup(self, node: Node):
         self.node = node
 
         self.blackboard = pt.blackboard.Client(name=self.name)
@@ -29,6 +33,7 @@ class IteratePosesBehavior(pt.behaviour.Behaviour):
     def update(self):
         self.blackboard.current_pose_index += 1
         self.blackboard.poses_in_queue = self.total_poses - (self.blackboard.current_pose_index + 1)
+
         if self.blackboard.current_pose_index >= len(self.blackboard.poses):
             self.blackboard.trials_done = True
         else:

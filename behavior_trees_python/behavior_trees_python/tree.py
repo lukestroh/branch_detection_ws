@@ -102,15 +102,15 @@ class FinalApproachTreeNode(Node):
 
         # Behaviors
         cut_point_rotate_axis_behavior = CutPointRotateAxisControllerBehavior(
-            name="cut_point_rotate_axis_client",
+            name="cut_point_rotate_axis_behavior",
         )
         final_approach_behavior = FinalApproachControllerBehavior(
-            name="final_approach_behavior_client",
+            name="final_approach_behavior_behavior",
         )
 
         # Find branch roll wrist
         find_branch_roll_wrist_behavior = FindBranchRollWristControllerBehavior(
-            name="find_branch_roll_wrist_client",
+            name="find_branch_roll_wrist_behavior",
         )
         find_branch_roll_wrist_retry = py_trees.decorators.Retry(
             name="find_branch_roll_wrist_retry",

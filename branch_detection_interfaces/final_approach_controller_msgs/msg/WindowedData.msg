@@ -1,5 +1,6 @@
 int64 window_id
-float64 start_ts
+float64 window_start
+float64 window_end
 float64 window_size
 float64[] ts
 float64[] ts_zeroed

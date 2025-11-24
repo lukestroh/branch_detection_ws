@@ -36,11 +36,19 @@ def plot_tof_vs_joint_state(
                 (
                     data["tof_ts"],
                     np.full(len(data["tof_ts"]), name),
+                    data["sensor_id"],
                 )
             ),
-            hovertemplate="theta: %{x}<br>d: %{y}<br>time: %{customdata[0]}<br><extra>%{customdata[1]}</extra>",
+            hovertemplate=(
+                "theta: %{x}<br>"
+                "d: %{y}<br>"
+                "time: %{customdata[0]}<br>"
+                "sensor_id: %{customdata[2]}<br>"
+                "<extra>%{customdata[1]}</extra>"
+            ),
         )
     )
+
     # fig.add_trace(
     #     go.Scatter(
     #         x=data["joint_states_data"][:, 2],
@@ -61,11 +69,15 @@ def plot_tof_vs_joint_state(
 
 
 def plot_2d_tof_projection(
-    data: dict, name: str = "", save_fig: bool = False, save_path: str = None, fig: go.Figure = None
+    data: dict,
+    far_plane_filter: float,
+    name: str = "",
+    save_fig: bool = False,
+    save_path: str = None,
+    fig: go.Figure = None,
 ):
     radius = 0.04891
     center = (0, 0)
-    far_plane_filter = 0.25
 
     if fig is None:
         fig = go.Figure()
@@ -109,7 +121,12 @@ def plot_2d_tof_projection(
 
 
 def plot_3d_tof_projection(
-    data: dict, name: str = "", save_fig: bool = False, save_path: str = None, fig: go.Figure = None
+    data: dict,
+    far_plane_filter: float,
+    name: str = "",
+    save_fig: bool = False,
+    save_path: str = None,
+    fig: go.Figure = None,
 ):
     radius = 0.04891
     center = (0, 0)
@@ -124,8 +141,6 @@ def plot_3d_tof_projection(
             scene=dict(aspectmode="data"),
             # plot_bgcolor="rgba(0,0,0,0)"
         )
-
-    far_plane_filter = 0.25
 
     joint_states = np.where(np.asarray(data["tof_data"]) < far_plane_filter, data["joint_states_data"][:, 2], np.nan)
     joint_states = joint_states[~np.isnan(joint_states)]
@@ -243,7 +258,7 @@ def plot_branch_projection(
         anchor="tail",
     )
 
-    eye_offset = np.array([-1, 2, 2])
+    eye_offset = np.array([-1, 3, -1])
     eye_pos = branch_center_pos - eye_offset
     fig.update_layout(
         title=dict(text="Projected branch detection points"),
@@ -274,7 +289,7 @@ def plot_maf_vs_joint_state(data: dict, name: str, fig: go.Figure = None, save_f
         go.Scatter(
             x=data["wrist_state"],
             y=data["data"],
-            mode="lines",
+            mode="markers",
             # customdata=np.column_stack((data['ts'])),
             text=data["ts"],
             hovertemplate="theta: %{x}<br>d: %{y}<br>time: %{text}<br><extra></extra>",
@@ -317,9 +332,10 @@ def plot_ransac_tof_vs_joint_state(
 
     fig.add_trace(
         go.Scatter(
-            x=data["wrist_state"],
+            x=data["x_fit"],
             y=data["y_fit"],
             name=name,
+            mode="lines",
             customdata=np.column_stack(
                 (
                     np.full(len(data["ts"]), data["window_id"]),
@@ -349,6 +365,10 @@ def plot_ransac_tof_vs_joint_state(
             ),
         )
     )
+
+    # fig.update_yaxes(
+    #    scaleanchor='x', scaleratio=1
+    # )
 
     if description:
         fig.update_layout(title=dict(text=f"{name} {description} vs. Wrist 3 joint state"))

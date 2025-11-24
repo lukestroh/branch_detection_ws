@@ -9,8 +9,13 @@ import pandas as pd
 import plotly.graph_objects as go
 import re
 from typing import Callable
+from scipy.spatial.transform import Rotation
+
+from branch_detection_system_analysis.bag_reader.ros_constants import TransitionStates
 
 import pprint as pp
+
+import traceback
 
 
 class FileManager:
@@ -26,6 +31,11 @@ class PlotFig(go.Figure):
         layout = dict(legend_title_font_size=20)
         super().__init__(layout=layout)
         return
+
+
+def get_db_by_trial_name(storage_path: str, name: str) -> list[str]:
+    files = glob.glob(os.path.join(storage_path, name) + f"/{name}_0.db3.zstd")
+    return files
 
 
 def get_files_by_trial_name(warehouse_path: str, name: str) -> list[str]:
@@ -44,33 +54,38 @@ def get_files_by_topics(warehouse_path: str, topics: list[str]) -> list[str]:
     return files
 
 
-def get_files_by_datetime(warehouse_path: str, _datetime: datetime.datetime) -> list[str]:
-    files = glob.glob(warehouse_path + f"/**/*{datetime.datetime.strftime(_datetime, format=r'%Y%m%d')}*.h5")
-    return files
-
-
 def get_files_by_date(warehouse_path: str, date: str):
     files = glob.glob(warehouse_path + f"/**/*{date}*.h5")
-    return files
+    return sorted(files)
 
 
-# ==========================
-#    Filtering functions
-# ==========================
+def get_files_by_datetime(warehouse_path: str, d: datetime.datetime) -> list[str]:
+    files = glob.glob(warehouse_path + f"/**/*{datetime.datetime.strftime(d, format=r'%Y%m%d_%H-%M-%S')}*.h5")
+    return sorted(files)
+
+
+def get_files_by_datetime_str(warehouse_path: str, d_str: str) -> list[str]:
+    files = glob.glob(warehouse_path + f"/**/*{d_str}*.h5")
+    return sorted(files)
+
+
+# =============================
+#    File filtering functions
+# =============================
 def filter_files_by_trial_number(files: list[str], trial_number: int) -> list[str]:
     """WARNING: Only for multi-trial use"""
     return [file for file in files if file.endswith(f"{str(trial_number).zfill(3)}.h5")]
 
 
 def filter_files_by_topic(files: list[str], topic: str) -> list[str]:
-    import pprint as pp
-
+    """Filters a list of files by topic and sorts them. Returns an empty list if no filenames match the topic."""
     match = re.fullmatch(r"[A-Za-z0-9_.\-/]+", topic)
     if match is None:
         return []
     else:
-        pattern = rf"__{re.escape(topic)}__(?=)"
-        return [f for f in files if re.search(pattern, f)]
+        pattern = rf"__{re.escape(topic)}__"
+        file_list = [f for f in files if re.search(pattern, f)]
+        return sorted(file_list)
 
 
 def filter_files_by_topics(files: list[str], topics: list[str]) -> list[str]:
@@ -78,6 +93,47 @@ def filter_files_by_topics(files: list[str], topics: list[str]) -> list[str]:
     for topic in topics:
         _files.extend(filter_files_by_topic(files, topic))
     return _files
+
+
+# ===================================
+#    DataFrame filtering functions
+# ===================================
+def filter_transition_events_for_controller_deactivating(df: pd.DataFrame):
+    df_transition_events = df.loc[
+        (
+            df["controller_transition_goal_state"].fillna(-1).astype(int)
+            == TransitionStates.TRANSITION_STATE_DEACTIVATING.value
+        )
+    ].reset_index()
+
+    return df_transition_events
+
+
+def filter_transition_events_for_controller_inactive(df: pd.DataFrame):
+    df_transition_events = df.loc[
+        (df["controller_transition_goal_state"].fillna(-1).astype(int) == TransitionStates.PRIMARY_STATE_INACTIVE.value)
+    ].reset_index()
+
+    return df_transition_events
+
+
+def filter_transition_events_for_controller_activating(df: pd.DataFrame):
+    df_transition_events = df.loc[
+        (
+            df["controller_transition_goal_state"].fillna(-1).astype(int)
+            == TransitionStates.TRANSITION_STATE_ACTIVATING.value
+        )
+    ].reset_index()
+
+    return df_transition_events
+
+
+def filter_transition_events_for_controller_active(df: pd.DataFrame):
+    df_transition_events = df.loc[
+        (df["controller_transition_goal_state"].fillna(-1).astype(int) == TransitionStates.PRIMARY_STATE_ACTIVE.value)
+    ].reset_index()
+
+    return df_transition_events
 
 
 # ==========================
@@ -145,7 +201,7 @@ def group_files_by_datetime_by_topic(files: list[str]) -> defaultdict[str, defau
             datetime_str = datetime_match.group(0).strip("_")
             topic_str = topic_match.group(1)
             grouped_by_datetime_by_topic[datetime_str][topic_str].append(file)
-    return group_files_by_datetime_by_topic
+    return grouped_by_datetime_by_topic
 
 
 # =================================
@@ -165,9 +221,15 @@ def build_df_dict_from_files(data_dict: dict | None, files: list[str]) -> dict:
     return data_dict
 
 
-def get_df_rows_at_closest_timestamp(df_dict: dict, topic_name: str, timestamps: ArrayLike) -> pd.DataFrame:
+def get_df_rows_at_closest_timestamp_from_df_dict(
+    df_dict: dict, topic_name: str, timestamps: ArrayLike
+) -> pd.DataFrame:
     # """Gets the closest set of TF frames at a given timestamp"""
     df = df_dict[topic_name]
+    return get_df_rows_at_closest_timestamp(df=df, topic_name=topic_name, timestamps=timestamps)
+
+
+def get_df_rows_at_closest_timestamp(df: pd.DataFrame, topic_name: str, timestamps: ArrayLike):
     ts_col = df[f"{topic_name}_ts"].to_numpy()
     idxs = np.searchsorted(ts_col, timestamps)
 
@@ -227,6 +289,92 @@ def get_joint_angles_at_closest_timestamps(joint_angle_dict: dict, timestamps: A
     return (ts[closest_idxs], data[closest_idxs])
 
 
+def get_tf_df_at_closest_timestamp(tf_df: pd.DataFrame, tf_static_df: pd.DataFrame, timestamp: float):
+    """Gets the closest set of TF frames at a given timestamp"""
+    ts_closest = tf_df.iloc[(tf_df["tf_ts"] - timestamp).abs().argsort()[:1]]
+    tf_dynamic_df = tf_df.loc[tf_df["tf_ts"] == ts_closest["tf_ts"].item()]
+    tf_all_links_df = pd.DataFrame(
+        data=np.vstack([tf_static_df.values, tf_dynamic_df.values]), columns=tf_dynamic_df.columns
+    )
+    return tf_all_links_df
+
+
+def get_tf_matrix_from_df(target_frame: str, source_frame: str, tf_df: pd.DataFrame) -> np.ndarray:
+    # NOTE: This only goes forwards right now.
+    # ur5e__base_link_inertia
+    # ur5e__ft_frame
+    transformation_mat = np.identity(4)
+    frame_to_frame_mat = np.identity(4)
+
+    source_frame_parent = tf_df.loc[tf_df["tf_child_frame_id"] == source_frame, ["tf_frame_id"]]["tf_frame_id"].iloc[0]
+
+    i = 0
+    while True:
+        try:
+            if target_frame == source_frame_parent:
+                tf_target_to_child_df = tf_df.loc[
+                    (tf_df["tf_frame_id"] == target_frame) & (tf_df["tf_child_frame_id"] == source_frame)
+                ]
+            else:
+                tf_target_to_child_df = tf_df.loc[
+                    (tf_df["tf_frame_id"] == target_frame)
+                    & (~tf_df["tf_child_frame_id"].isin(["ur5e__base", "ur5e__ft_frame"]))
+                ]
+
+            # print(tf_target_to_child_df)
+
+            frame_to_frame_mat[:3, 3] = [
+                tf_target_to_child_df["tf_t_x"].iloc[0],
+                tf_target_to_child_df["tf_t_y"].iloc[0],
+                tf_target_to_child_df["tf_t_z"].iloc[0],
+            ]
+            frame_to_frame_mat[:3, :3] = Rotation.from_quat(
+                [
+                    tf_target_to_child_df["tf_r_x"].iloc[0],
+                    tf_target_to_child_df["tf_r_y"].iloc[0],
+                    tf_target_to_child_df["tf_r_z"].iloc[0],
+                    tf_target_to_child_df["tf_r_w"].iloc[0],
+                ]
+            ).as_matrix()
+
+            # print(frame_to_frame_mat)
+            # print(target_frame)
+            # print(source_frame)
+            # print(source_frame_parent)
+            # if i == 1:
+            #     import sys
+            #     sys.exit()
+
+            transformation_mat = transformation_mat @ frame_to_frame_mat
+
+            target_frame = tf_target_to_child_df["tf_child_frame_id"].iloc[0]
+            if target_frame == source_frame:
+                break
+
+            i += 1
+
+        except Exception as e:
+            print(traceback.format_exc())
+            break
+
+    # print(transformation_mat)
+    # import sys
+    # sys.exit()
+    return transformation_mat
+
+
+def invert_transform(T: np.ndarray) -> np.ndarray:
+    """Invert a 4x4 homogeneous transform matrix."""
+    R = T[:3, :3]
+    t = T[:3, 3]
+    R_inv = R.T
+    t_inv = -R_inv @ t
+    T_inv = np.identity(4)
+    T_inv[:3, :3] = R_inv
+    T_inv[:3, 3] = t_inv
+    return T_inv
+
+
 # ==========================
 #    Plotting functions TODO: move to helpers
 # ==========================
@@ -252,3 +400,36 @@ def plot_linear_wrench_data(wrench_df: pd.DataFrame, fig: go.Figure = None) -> g
 
 def plot_tof_vs_timestamp():
     return
+
+
+def plot_quadratic_fit(t_vals: np.ndarray, coefs: np.ndarray, name: str = None, fig: go.Figure = None):
+    if fig is None:
+        fig = go.Figure()
+
+    t_vals_plot = np.linspace(min(t_vals), max(t_vals), 100)
+
+    # t_vals_plot = np.linspace(-1, 1, 500)
+    x = coefs[0, 0] * t_vals_plot**2 + coefs[0, 1] * t_vals_plot + coefs[0, 2]
+    y = coefs[1, 0] * t_vals_plot**2 + coefs[1, 1] * t_vals_plot + coefs[1, 2]
+    z = coefs[2, 0] * t_vals_plot**2 + coefs[2, 1] * t_vals_plot + coefs[2, 2]
+    fig.add_trace(go.Scatter3d(x=x, y=y, z=z, mode="lines", line=dict(color="#5A4735", width=20), name=f"{name}"))
+
+    return fig
+
+
+def plot_quadratic_residuals(points, projected_points, fig: go.Figure = None):
+    for p, q in zip(points, projected_points):
+        fig.add_trace(
+            go.Scatter3d(
+                x=(p[0], q[0]),
+                y=(p[1], q[1]),
+                z=(p[2], q[2]),
+                showlegend=False,
+                mode="lines",
+                line=dict(color="darkgoldenrod"),
+                legendgroup=0,
+                legendgrouptitle={"text": "residuals"},
+            )
+        )
+
+    return fig

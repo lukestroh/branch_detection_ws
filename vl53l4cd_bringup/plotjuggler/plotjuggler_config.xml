@@ -1,12 +1,12 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <root>
  <tabbed_widget parent="main_window" name="Main Window">
-  <Tab tab_name="tab1" containers="1">
+  <Tab containers="1" tab_name="tab1">
    <Container>
-    <DockSplitter sizes="1" orientation="-" count="1">
+    <DockSplitter sizes="1" count="1" orientation="-">
      <DockArea name="...">
-      <plot mode="TimeSeries" flip_y="false" style="Lines" flip_x="false">
-       <range top="994.075000" left="11.313323" bottom="906.925000" right="16.331724"/>
+      <plot mode="TimeSeries" flip_x="false" style="Lines" flip_y="false">
+       <range left="3.817551" right="8.814326" bottom="0.117700" top="0.130300"/>
        <limitY/>
        <curve color="#d62728" name="tof_plot_by_id0"/>
        <curve color="#1ac938" name="tof_plot_by_id1"/>
@@ -15,15 +15,15 @@
     </DockSplitter>
    </Container>
   </Tab>
-  <Tab tab_name="tab2" containers="1">
+  <Tab containers="1" tab_name="tab2">
    <Container>
-    <DockSplitter sizes="1" orientation="-" count="1">
+    <DockSplitter sizes="1" count="1" orientation="-">
      <DockArea name="...">
-      <plot mode="TimeSeries" flip_y="false" style="Lines" flip_x="false">
-       <range top="0.989068" left="11.313926" bottom="0.916198" right="16.332295"/>
+      <plot mode="TimeSeries" flip_x="false" style="Lines" flip_y="false">
+       <range left="3.818887" right="8.815548" bottom="0.119706" top="0.128755"/>
        <limitY/>
        <curve color="#f14cc1" name="tof_filtered_plot_by_id0"/>
-       <curve color="#9467bd" name="tof_filtered_plot_by_id1"/>
+       <curve color="#1f77b4" name="tof_filtered_plot_by_id1"/>
       </plot>
      </DockArea>
     </DockSplitter>
@@ -36,7 +36,7 @@
  <!-- - - - - - - - - - - - - - - -->
  <Plugins>
   <plugin ID="DataLoad CSV">
-   <parameters time_axis="" delimiter="0"/>
+   <parameters delimiter="0" time_axis=""/>
   </plugin>
   <plugin ID="DataLoad MCAP"/>
   <plugin ID="DataLoad ROS2 bags">
@@ -79,8 +79,7 @@
     return value
 else
     return 0/0
-end
-</function>
+end</function>
    <linked_source>/vl53l4cd/filtered/data[0]</linked_source>
    <additional_sources>
     <v1>/vl53l4cd/filtered/dev_id</v1>
@@ -89,11 +88,10 @@ end
   <snippet name="tof_plot_by_id1">
    <global></global>
    <function>if v1 == 1 then
-    return value
+    return value / 1000
 else
     return 0/0
-end
-</function>
+end</function>
    <linked_source>/microROS/vl53l4cd/data/distance</linked_source>
    <additional_sources>
     <v1>/microROS/vl53l4cd/data/dev_id</v1>
@@ -105,8 +103,7 @@ end
     return value
 else
     return 0/0
-end
-</function>
+end</function>
    <linked_source>/vl53l4cd/filtered/data[0]</linked_source>
    <additional_sources>
     <v1>/vl53l4cd/filtered/dev_id</v1>
@@ -115,11 +112,10 @@ end
   <snippet name="tof_plot_by_id0">
    <global></global>
    <function>if v1 == 0 then
-    return value
+    return value / 1000
 else
     return 0/0
-end
-</function>
+end</function>
    <linked_source>/microROS/vl53l4cd/data/distance</linked_source>
    <additional_sources>
     <v1>/microROS/vl53l4cd/data/dev_id</v1>

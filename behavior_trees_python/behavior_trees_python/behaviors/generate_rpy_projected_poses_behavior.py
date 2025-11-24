@@ -18,7 +18,7 @@ class GenerateRpyProjectedPosesBehavior(pt.behaviour.Behaviour):
         super(GenerateRpyProjectedPosesBehavior, self).__init__(name)
         self.name = name
         return
-    
+
     def setup(self, node: Node):
         """Sends the inital RunFinalApproach goal"""
         self.node = node
@@ -43,31 +43,31 @@ class GenerateRpyProjectedPosesBehavior(pt.behaviour.Behaviour):
         self.blackboard.register_key(key="poses", access=pt.common.Access.WRITE)
         self.blackboard.register_key(key="current_pose_index", access=pt.common.Access.WRITE)
         self.blackboard.register_key(key="current_pose", access=pt.common.Access.WRITE)
+        self.blackboard.register_key(key="rpy_target_pose", access=pt.common.Access.WRITE)
 
         return
-    
+
     def initialise(self):
         """Send a goal to the RunFinalApproach action server"""
         self.goal_status = None
         self.goal = GenerateRpyProjectedPoses.Goal()
 
         # Edge case settings
-        self.goal.num_roll_poses = 3
-        self.goal.num_pitch_poses = 15
-        self.goal.num_yaw_poses = 3
-        self.goal.num_z_poses = 3
-        self.goal.roll_range = [0.09, 0.12]
-        self.goal.pitch_range = [0.0, 2 * np.pi]
-        self.goal.yaw_range = [0.0, -0.10]
+        self.goal.num_roll_poses = 1
+        self.goal.num_pitch_poses = 5
+        self.goal.num_yaw_poses = 5
+        self.goal.num_z_poses = 5
+        self.goal.roll_range = [0.0, 0.0]
+        self.goal.pitch_range = [-np.pi / 4, np.pi / 4]
+        self.goal.yaw_range = [0.0, np.pi]
         self.goal.z_range = [-0.1, -0.2]
-
 
         self._send_goal_future: Future = self.client.send_goal_async(
             goal=self.goal,
         )
         self._send_goal_future.add_done_callback(self._send_goal_cb)
         return
-    
+
     def update(self):
         if self.goal_status is not None:
             if self.goal_status == True:
@@ -84,7 +84,7 @@ class GenerateRpyProjectedPosesBehavior(pt.behaviour.Behaviour):
             self._result_future: Future = self._goal_handle.get_result_async()
             self._result_future.add_done_callback(callback=self._on_result_cb)
         return
-    
+
     def _on_result_cb(self, future: Future):
         result: GenerateRpyProjectedPoses.Result = future.result().result
         self.goal_status = result.success
@@ -92,7 +92,7 @@ class GenerateRpyProjectedPosesBehavior(pt.behaviour.Behaviour):
         self.blackboard.poses = self.poses
         self.blackboard.current_pose = self.blackboard.poses[self.blackboard.current_pose_index]
         return
-    
+
     def terminate(self, new_status: pt.common.Status):
         if self._goal_handle.status == GoalStatus.STATUS_EXECUTING:
             _goal_canceled_future: Future = self._goal_handle.cancel_goal_async()

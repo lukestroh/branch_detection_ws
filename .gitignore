@@ -187,4 +187,6 @@ test.py
 *test.urdf
 
 csv/
-.csv
+*.csv
+data/
+*.h5

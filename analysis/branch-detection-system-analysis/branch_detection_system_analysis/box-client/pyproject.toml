@@ -1,0 +1,31 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[project]
+name = "box_client"
+version = "0.0.1"
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [
+    { name = "Luke Strohbehn", email = "luke.strohbehn@gmail.com" },
+]
+maintainers = [
+    { name = "Luke Strohbehn", email = "luke.strohbehn@gmail.com" },
+]
+description = "A client for Box API interactions."
+requires-python = ">=3.8"
+dependencies = [
+    "boxsdk",
+    "dotenv",
+    "lark",
+    "numpy",
+    "pytest",
+    "pyyaml",
+    "requests",
+]

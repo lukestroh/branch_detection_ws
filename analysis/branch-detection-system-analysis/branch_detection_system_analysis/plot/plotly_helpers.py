@@ -16,6 +16,15 @@ def plot_vector(
     showlegend: bool = False,
 ):
 
+    # x=np.asarray([position[0]])
+    # y=np.asarray([position[1]])
+    # z=np.asarray([position[2]])
+    # u=np.asarray([orientation[0]])
+    # v=np.asarray([orientation[1]])
+    # w=np.asarray([orientation[2]])
+
+    # norm = np.sqrt()
+
     fig.add_trace(
         go.Cone(
             x=[position[0]],
@@ -31,6 +40,17 @@ def plot_vector(
             showlegend=showlegend,
             anchor=anchor,
             colorscale=[[0, color], [1, color]],
+            customdata=np.column_stack((position, orientation)),
+            hovertemplate=(
+                "x: %{x}<br>"
+                "y: %{y}<br>"
+                "z: %{z}<br>"
+                "u: %{u}<br>"
+                "v: %{v}<br>"
+                "w: %{w}<br>"
+                "norm: %{norm}<br>"
+                "<extra></extra>"
+            ),
         )
     )
 
@@ -45,15 +65,15 @@ def plot_3d_coordinate_frame(
     cone_scale: float = 0.25,
     name: str = "",
     parent_frame: str = "",
-    showlegend: bool = False
+    showlegend: bool = False,
 ):
     """
     Plots a set of orthonormal vectors in a 3d space.
-    
+
     """
     colors = {"x": "red", "y": "green", "z": "blue"}
     unit_vectors = {"x": np.array([1, 0, 0]), "y": np.array([0, 1, 0]), "z": np.array([0, 0, 1])}
-    
+
     for axis_name, unit_vec in unit_vectors.items():
         direction = orientation @ unit_vec
         pos_end = position + axis_length * direction
@@ -68,7 +88,7 @@ def plot_3d_coordinate_frame(
                 name=f"{name}__{axis_name}-axis",
                 legendgroup=f"{name}_{axis_name}",
                 legendgrouptitle=dict(text=name),
-                showlegend=showlegend
+                showlegend=showlegend,
             )
         )
 
@@ -129,7 +149,7 @@ def plot_cylinder(
     nh: int = 50,
     name: str = "",
     color: str = "#000000",
-    opacity: float = 0.7, 
+    opacity: float = 0.7,
     fig: go.Figure = None,
 ) -> go.Figure:
     if fig is None:
@@ -232,6 +252,56 @@ def compute_z_on_plane(x, y, norm, point_on_plane):
     # Plane equation: a(x - x0) + b(y - y0) + c(z - z0) = 0
     z = ((-a * (x - x0)) - (b * (y - y0))) / c + z0
     return z
+
+
+def get_tube_mesh_info(coefs, radius, u_vals, n_theta=16):
+    # curve centers
+    centers = (coefs @ np.vstack([u_vals**2, u_vals, np.ones_like(u_vals)])).T
+
+    # tangents
+    tgs = 2 * coefs[:, 0] * u_vals[:, None] + coefs[:, 1]
+    tgs /= np.linalg.norm(tgs, axis=1)[:, None]
+
+    # normals and binormals
+    up = np.array([0, 0, 1.0])
+    normals = np.cross(tgs, up)
+    mask = np.linalg.norm(normals, axis=1) < 1e-6
+    if mask.any():
+        up2 = np.array([0, 1, 0])
+        normals[mask] = np.cross(tgs[mask], up2)
+    normals /= np.linalg.norm(normals, axis=1)[:, None]
+    binormals = np.cross(tgs, normals)
+
+    # vertices
+    X, Y, Z = [], [], []
+    for C, N, B in zip(centers, normals, binormals):
+        for theta in np.linspace(0, 2 * np.pi, n_theta, endpoint=False):
+            pt = C + radius * (np.cos(theta) * N + np.sin(theta) * B)
+            X.append(pt[0]); Y.append(pt[1]); Z.append(pt[2])
+
+    # triangle indices — FIXED winding order
+    I, J, K = [], [], []
+    n_u = len(u_vals)
+    for i in range(n_u - 1):
+        for j in range(n_theta):
+            nj = (j + 1) % n_theta
+            a = i * n_theta + j
+            b = (i + 1) * n_theta + j
+            c = i * n_theta + nj
+            d = (i + 1) * n_theta + nj
+            # correct winding order for consistent normals
+            I += [a, b]
+            J += [c, d]
+            K += [b, c]
+
+    return dict(x=X, y=Y, z=Z, i=I, j=J, k=K)
+
+
+def plot_tube_mesh(tube_mesh_info: dict, opacity: float = 0.3, name: str = "", fig: go.Figure = None) -> go.Figure:
+    if fig is None:
+        fig = go.Figure()
+    fig.add_trace(go.Mesh3d(**tube_mesh_info, opacity=opacity, name=name))
+    return fig
 
 
 def main():
