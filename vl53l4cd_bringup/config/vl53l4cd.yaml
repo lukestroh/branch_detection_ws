@@ -5,6 +5,6 @@ vl53l4cd_filter_node:
     depth:
       dfov: 18.0
       near_plane: 0.02
-      far_plane: 0.500
+      far_plane: 1.600
       width: 1
       height: 1
