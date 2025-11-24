@@ -107,22 +107,21 @@ class FinalApproachControllerNode(TFNode):
             msg_type=Bool,
             topic="/fa_controller/controller_success",
             callback_group=self._reentrant_cb_group,
-            qos_profile=1
+            qos_profile=1,
         )
 
         # Timers
         self._timer_setup_tf_frames = self.create_timer(timer_period_sec=1.0, callback=self._timer_cb_setup_tf_frames)
         self._timer_pub_servo = self.create_timer(
-                timer_period_sec=1 / 30,
-                callback=self._timer_cb_pub_servo,
-                callback_group=self._cb_group_pub_servo,
-            )
+            timer_period_sec=1 / 30,
+            callback=self._timer_cb_pub_servo,
+            callback_group=self._cb_group_pub_servo,
+        )
         self._timer_state = TimerState.STOPPED
 
         # Messages
         self._msg_twist = TwistStamped()
         self._msg_twist.header.frame_id = f"{self._param_robot_eef_part}__tool0"
-
 
         # Controller attributes
         self._goal_handle = None
@@ -162,7 +161,7 @@ class FinalApproachControllerNode(TFNode):
 
     async def _action_exe_cb_run_final_approach(self, goal_handle: ServerGoalHandle):
         await self.start_servo()
-            
+
         with self._lock_timer_state:
             self._timer_state == TimerState.RUNNING
 
@@ -188,14 +187,14 @@ class FinalApproachControllerNode(TFNode):
                     self.stop_servo_pub_timer()
                     self.error("FinalApproachControllerAction timed out.")
                     return _result
-                
+
                 # Set twist info
                 dist, theta = self.get_cut_point_info()
                 dist_cut_point_to_branch = dist - self.tf_cut_point_to_tof0[2, 3]
 
                 if dist - self.tf_cut_point_to_tof0[2, 3] <= 0:
                     return np.zeros((6, 1))
-                
+
                 if np.isclose(dist, self._tof_to_cut_point_z_distance, atol=0.001):
                     self.stop_servo_pub_timer()
                     self.publish_zero_twist()
@@ -219,7 +218,6 @@ class FinalApproachControllerNode(TFNode):
                     self._msg_twist.twist.angular.x = twist[3]
                     self._msg_twist.twist.angular.y = twist[4]
                     self._msg_twist.twist.angular.z = twist[5]
-
 
         except Exception as e:
             self.get_logger().fatal(f"{e}")
@@ -274,18 +272,18 @@ class FinalApproachControllerNode(TFNode):
         self.tf_tof0_to_tof1 = mr.TransInv(self.tf_mp_tof1_to_base) @ self.tf_mp_tof0_to_base
         tof0_to_tof1_pos_vec = self.tf_tof0_to_tof1[:3, 3]
         self._tof_linear_distance = np.linalg.norm(tof0_to_tof1_pos_vec)
-        
+
         if not np.all(np.isclose(self.tf_tof0_to_tof1[:3, :3], np.identity(3), atol=1e-3)):
             raise ValueError("The two ToF frames are not aligned with each other.")
-        
-        self._tof_to_cut_point_z_distance = self.tf_cut_point_to_tof0[2,3]
+
+        self._tof_to_cut_point_z_distance = self.tf_cut_point_to_tof0[2, 3]
         return
 
     def _timer_cb_pub_servo(self):
         with self._lock_timer_state:
             if self._timer_state != TimerState.RUNNING:
                 return
-        
+
         with self._lock_msg_twist:
             self._msg_twist.header.stamp = self.get_clock().now().to_msg()
             self._pub_servo.publish(self._msg_twist)

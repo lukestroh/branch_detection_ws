@@ -109,9 +109,9 @@ def launch_setup(context, *args, **kwargs) -> list:
 def generate_launch_description():
 
     declared_configs = [
-        dict(name="far_plane_filter", default_value='0.25'),
+        dict(name="far_plane_filter", default_value="0.25"),
         # dict(name="headless_mode", default_value="true"),
-        dict(name="record_bag", default_value='false', choices=['true', 'false']),
+        dict(name="record_bag", default_value="false", choices=["true", "false"]),
         dict(name="robot_base_part", default_value=""),
         dict(name="robot_eef_part", default_value=""),
         dict(name="tof_sensor_type", default_value=""),

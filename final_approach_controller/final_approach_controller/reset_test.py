@@ -117,10 +117,10 @@ class ResetTestNode(TFNode):
         # Timers
         self._timer_setup_tf_frames = self.create_timer(timer_period_sec=3.0, callback=self._timer_cb_setup_tf_frames)
         self._timer_pub_servo = self.create_timer(
-                timer_period_sec=1 / 30,
-                callback=self._timer_cb_pub_servo,
-                callback_group=self._cb_group_pub_servo,
-            )
+            timer_period_sec=1 / 30,
+            callback=self._timer_cb_pub_servo,
+            callback_group=self._cb_group_pub_servo,
+        )
         self._timer_state = TimerState.STOPPED
 
         # Messages
@@ -136,7 +136,7 @@ class ResetTestNode(TFNode):
         self.start_pose_marker_id = 0
 
         return
-    
+
     def stop_servo_pub_timer(self):
         with self._lock_timer_state:
             if self._timer_state == TimerState.RUNNING:
@@ -225,44 +225,44 @@ class ResetTestNode(TFNode):
 
         try:
             # Start the reset by backing away from the last pose
-            if run_test_reset_req.pose_idx != 0:
-                await self.start_servo()
-                self.publish_zero_twist()
-                self.start_servo_pub_timer()
-                start_servoing_time = self.get_clock().now()
-                while self.get_clock().now() - start_servoing_time < Duration(seconds=5.0):
-                    with self._lock_msg_twist:
-                        self._msg_twist.twist.linear.x = 0.0
-                        self._msg_twist.twist.linear.y = 0.0
-                        self._msg_twist.twist.linear.z = -1 * self.max_linear_speed
-                        self._msg_twist.twist.angular.x = 0.0
-                        self._msg_twist.twist.angular.y = 0.0
-                        self._msg_twist.twist.angular.z = 0.0
-                
-                self.stop_servo_pub_timer()
-                self.publish_zero_twist()
-                self.get_clock().sleep_for(Duration(seconds=1.0))
-                
-                await self.stop_servo()
+            # if run_test_reset_req.pose_idx != 0:
+            await self.start_servo()
+            self.publish_zero_twist()
+            self.start_servo_pub_timer()
+            start_servoing_time = self.get_clock().now()
+            while self.get_clock().now() - start_servoing_time < Duration(seconds=5.0):
+                with self._lock_msg_twist:
+                    self._msg_twist.twist.linear.x = 0.0
+                    self._msg_twist.twist.linear.y = 0.0
+                    self._msg_twist.twist.linear.z = -1 * self.max_linear_speed
+                    self._msg_twist.twist.angular.x = 0.0
+                    self._msg_twist.twist.angular.y = 0.0
+                    self._msg_twist.twist.angular.z = 0.0
 
-                # Move to new pose
-                await self.switch_controllers(
-                    activate_controllers=self._move_group_controller, deactivate_controllers=self._servo_controller
-                )
+            self.stop_servo_pub_timer()
+            self.publish_zero_twist()
+            self.get_clock().sleep_for(Duration(seconds=1.0))
 
-                self.info("Sending goal")
+            await self.stop_servo()
 
-                move_group_req = MoveToPose.Request()
-                move_group_req.goal = run_test_reset_req.pose
-                move_group_future: Future = self._srv_cartesian_move_to_pose.call_async(request=move_group_req)
-                move_group_future.add_done_callback(callback=self._done_cb_srv_cartesian_move_to_pose)
-                await move_group_future
+            # Move to new pose
+            await self.switch_controllers(
+                activate_controllers=self._move_group_controller, deactivate_controllers=self._servo_controller
+            )
 
-                await self.switch_controllers(
-                    activate_controllers=self._servo_controller, deactivate_controllers=self._move_group_controller
-                )
+            self.info("Sending goal")
 
-                self.info("New pose set")
+            move_group_req = MoveToPose.Request()
+            move_group_req.goal = run_test_reset_req.pose
+            move_group_future: Future = self._srv_cartesian_move_to_pose.call_async(request=move_group_req)
+            move_group_future.add_done_callback(callback=self._done_cb_srv_cartesian_move_to_pose)
+            await move_group_future
+
+            await self.switch_controllers(
+                activate_controllers=self._servo_controller, deactivate_controllers=self._move_group_controller
+            )
+
+            self.info("New pose set")
 
             # self.publish_pose_to_rviz(pose=run_test_reset_req.pose)
 

@@ -78,10 +78,11 @@ class FindBranchRollWristController(TFNode):
         )
 
         # Threading locks
-        self._data_lock = Lock()
-        self._timer_lock = Lock()
-        self._servo_msg_lock = Lock()
-        self._rotations_complete_lock = Lock()
+        self._lock_raw_data = Lock()
+        self._lock_filtered_data = Lock()
+        self._lock_joint_states_data = Lock()
+        self._lock_msg_twist = Lock()
+        self._lock_rotations_complete = Lock()
         self._lock_timer_state_pub_servo = Lock()
 
         # Callback group
@@ -136,14 +137,14 @@ class FindBranchRollWristController(TFNode):
             topic="/microROS/vl53l4cd/data",
             callback=self._sub_cb_tof_raw,
             callback_group=self._reentrant_cb_group,
-            qos_profile=5,
+            qos_profile=100,
         )
         self._sub_tof_filtered = self.create_subscription(
             msg_type=TofStamped,
             topic="/vl53l4cd/filtered",
             callback=self._sub_cb_tof_filtered,
             callback_group=self._reentrant_cb_group,
-            qos_profile=1,
+            qos_profile=100,
         )
         self._sub_bag_record_path = self.create_subscription(
             msg_type=String,
@@ -157,7 +158,7 @@ class FindBranchRollWristController(TFNode):
             topic="joint_states",
             callback=self._sub_cb_joint_states,
             callback_group=self._reentrant_cb_group,
-            qos_profile=1,
+            qos_profile=100,
         )
 
         # Publishers
@@ -203,13 +204,13 @@ class FindBranchRollWristController(TFNode):
             msg_type=EventStamped,
             topic="/fbrw_controller/rotation_started",
             callback_group=self._reentrant_cb_group,
-            qos_profile=1
+            qos_profile=1,
         )
         self._pub_rotation_stopped = self.create_publisher(
             msg_type=EventStamped,
             topic="/fbrw_controller/rotation_stopped",
             callback_group=self._reentrant_cb_group,
-            qos_profile=1
+            qos_profile=1,
         )
 
         # self._pub_fit = self.create_publisher(
@@ -260,7 +261,6 @@ class FindBranchRollWristController(TFNode):
         else:
             self.max_angular_vel = np.pi / 8 * 10  # For some reason the UR5e scales down servoing movement very hard?
 
-
         # self.eef_weight = 0.355  # TODO: measure again. Measured IRL
 
         # Sensor attributes
@@ -297,8 +297,7 @@ class FindBranchRollWristController(TFNode):
         self.info("Received cancel request")
         self.info("Canceling quadratic fit timer")
         self.publish_zero_twist()
-        with self._timer_lock:
-            self.stop_servo_pub_timer()
+        self.stop_servo_pub_timer()
         if goal_handle.is_cancel_requested:
             goal_handle.canceled()
         self.reset_controller()
@@ -353,7 +352,7 @@ class FindBranchRollWristController(TFNode):
             ##############################################################################################
             # Actuate wrist, collect data via subscriber callbacks
             while True:
-                with self._rotations_complete_lock:
+                with self._lock_rotations_complete:
                     if self.rotations_complete:
                         self.stop_servo_pub_timer()
                         self.publish_zero_twist()
@@ -387,7 +386,7 @@ class FindBranchRollWristController(TFNode):
 
             else:
                 self._pub_localization_success.publish(msg=Bool(data=True))
-                
+
                 # Get branch info, find desired xyz + quat
                 branch_center_point, branch_vec_normalized, tof0_vec_base_frame, tof1_vec_base_frame = (
                     self.get_branch_vec_from_tof(return_frames=self.debug_plot)
@@ -539,7 +538,7 @@ class FindBranchRollWristController(TFNode):
         with self._lock_timer_state_pub_servo:
             if self._timer_state_pub_servo != TimerState.RUNNING:
                 return
-        with self._servo_msg_lock:
+        with self._lock_msg_twist:
             self._pub_servo.publish(self._msg_twist)
         return
 
@@ -552,55 +551,59 @@ class FindBranchRollWristController(TFNode):
         elif msg.dev_id == 1:
             self.d_tof1_raw = msg.distance / 1000
 
-        # Append data to lists if the actuation is running
-        with self._rotations_complete_lock:
+        with self._lock_rotations_complete:
             rot_complete_flag = self.rotations_complete
-        if not rot_complete_flag:
-            timestamp_float = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
-            with self._data_lock:
-                if msg.dev_id == 0:
-                    # if not self.tof0_branch_found:
-                    self.d_tof0_raw_readings.append(self.d_tof0_raw)
-                    self.ts_tof0_raw.append(timestamp_float)
-                elif msg.dev_id == 1:
-                    # if not self.tof1_branch_found:
-                    self.d_tof1_raw_readings.append(self.d_tof1_raw)
-                    self.ts_tof1_raw.append(timestamp_float)
+        if rot_complete_flag:
+            return
+
+        # Append data to lists if the actuation is running
+        timestamp_float = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+        with self._lock_raw_data:
+            if msg.dev_id == 0:
+                # if not self.tof0_branch_found:
+                self.d_tof0_raw_readings.append(self.d_tof0_raw)
+                self.ts_tof0_raw.append(timestamp_float)
+            elif msg.dev_id == 1:
+                # if not self.tof1_branch_found:
+                self.d_tof1_raw_readings.append(self.d_tof1_raw)
+                self.ts_tof1_raw.append(timestamp_float)
         return
 
     def _sub_cb_tof_filtered(self, msg: TofStamped):
         # Do some checks, make sure that the readings make sense in intuitive way.
         # Make sure readings do not exceed maximum. # TODO: Find a way to get sensor parameters in here
+        # Append data to lists if the actuation is running
         if msg.dev_id == 0:
             self.d_tof0 = msg.data[0]
         elif msg.dev_id == 1:
             self.d_tof1 = msg.data[0]
 
-        # Append data to lists if the actuation is running
-        with self._rotations_complete_lock:
+        with self._lock_rotations_complete:
             rot_complete_flag = self.rotations_complete
-        if not rot_complete_flag:
-            timestamp_float = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
-            with self._data_lock:
-                if msg.dev_id == 0:
-                    # if not self.tof0_branch_found:
-                    self.d_tof0_readings.append(self.d_tof0)
-                    self.ts_tof0.append(timestamp_float)
-                elif msg.dev_id == 1:
-                    # if not self.tof1_branch_found:
-                    self.d_tof1_readings.append(self.d_tof1)
-                    self.ts_tof1.append(timestamp_float)
+        if rot_complete_flag:
+            return
+
+        timestamp_float = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+        with self._lock_filtered_data:
+            if msg.dev_id == 0:
+                # if not self.tof0_branch_found:
+                self.d_tof0_readings.append(self.d_tof0)
+                self.ts_tof0.append(timestamp_float)
+            elif msg.dev_id == 1:
+                # if not self.tof1_branch_found:
+                self.d_tof1_readings.append(self.d_tof1)
+                self.ts_tof1.append(timestamp_float)
 
         return
 
     def _sub_cb_joint_states(self, msg: JointState):
         self.joint_states = msg.position
 
-        with self._rotations_complete_lock:
+        with self._lock_rotations_complete:
             rot_complete_flag = self.rotations_complete
         if not rot_complete_flag:
             timestamp_float = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
-            with self._data_lock:
+            with self._lock_joint_states_data:
                 self.joint_states_cache.append(msg.position)
                 self.ts_joint_states_cache.append(timestamp_float)
         return
@@ -614,7 +617,7 @@ class FindBranchRollWristController(TFNode):
     #      Controller methods
     # ===============================
     def publish_zero_twist(self):
-        with self._servo_msg_lock:
+        with self._lock_msg_twist:
             self._msg_twist.twist.linear.x = 0.0
             self._msg_twist.twist.linear.y = 0.0
             self._msg_twist.twist.linear.z = 0.0
@@ -668,15 +671,16 @@ class FindBranchRollWristController(TFNode):
     # ===============================
     #         Class methods
     # ===============================
-    def _wrap_angles_to_circle(self, angles: np.ndarray | float):
-        return (angles + np.pi) % (2 * np.pi) - np.pi
+    # def _wrap_angles_to_circle(self, angles: np.ndarray | float):
+    #     return (angles + np.pi) % (2 * np.pi) - np.pi
 
-    def angular_distance(self, a, b):
-        return np.abs(np.arctan2(np.sin(a - b), np.cos(a - b)))
+    # def angular_distance(self, a, b):
+    #     return np.abs(np.arctan2(np.sin(a - b), np.cos(a - b)))
 
     def reset_controller(self) -> None:
-        with self._rotations_complete_lock:
+        with self._lock_rotations_complete:
             self.rotations_complete = False
+
         self.time_and_center_res_dict = {}
 
         self.reset_data_caches()
@@ -685,15 +689,19 @@ class FindBranchRollWristController(TFNode):
         return
 
     def reset_data_caches(self):
-        with self._data_lock:
-            self.d_tof0_raw_readings = []
-            self.d_tof0_readings = []
-            self.ts_tof0 = []
+        with self._lock_raw_data:
             self.ts_tof0_raw = []
-            self.d_tof1_raw_readings = []
-            self.d_tof1_readings = []
-            self.ts_tof1 = []
+            self.d_tof0_raw_readings = []
             self.ts_tof1_raw = []
+            self.d_tof1_raw_readings = []
+
+        with self._lock_filtered_data:
+            self.ts_tof0 = []
+            self.d_tof0_readings = []
+            self.ts_tof1 = []
+            self.d_tof1_readings = []
+
+        with self._lock_joint_states_data:
             self.joint_states_cache = []
             self.ts_joint_states_cache = []
         return
@@ -731,32 +739,34 @@ class FindBranchRollWristController(TFNode):
             delta_theta_limit = -1 * np.pi
 
         if np.isclose(self.start_joint_states[2] - self.joint_states[2], delta_theta_limit, atol=np.radians(1)):
-            with self._rotations_complete_lock:
+            with self._lock_rotations_complete:
                 self.rotations_complete = True
 
             self.stop_servo_pub_timer()
             self.publish_zero_twist()
 
             return
-        with self._servo_msg_lock:
+        with self._lock_msg_twist:
             self._msg_twist.twist.angular.z = angular_z
             self._msg_twist.header.stamp = self.get_clock().now().to_msg()
         return
 
-    def aggregate_tof_data(self, save_fig: bool, save_fig_path: str) -> dict:
+    def aggregate_tof_data(self, save_fig: bool, save_fig_path: str, show_fig: bool) -> dict:
         """Concatenate all tof data so that it wraps around 360 degrees"""
-        with self._data_lock:
+        with self._lock_raw_data:
             sensor_data_dict = {"tof0": {}, "tof1": {}}
             sensor_data_dict["tof0"]["raw_tof_ts"] = list(self.ts_tof0_raw)
             sensor_data_dict["tof0"]["raw_tof_data"] = list(self.d_tof0_raw_readings)
-            sensor_data_dict["tof0"]["tof_ts"] = list(self.ts_tof0)
-            sensor_data_dict["tof0"]["tof_data"] = list(self.d_tof0_readings)
-
             sensor_data_dict["tof1"]["raw_tof_ts"] = list(self.ts_tof1_raw)
             sensor_data_dict["tof1"]["raw_tof_data"] = list(self.d_tof1_raw_readings)
+
+        with self._lock_filtered_data:
+            sensor_data_dict["tof0"]["tof_ts"] = list(self.ts_tof0)
+            sensor_data_dict["tof0"]["tof_data"] = list(self.d_tof0_readings)
             sensor_data_dict["tof1"]["tof_ts"] = list(self.ts_tof1)
             sensor_data_dict["tof1"]["tof_data"] = list(self.d_tof1_readings)
 
+        with self._lock_joint_states_data:
             joint_angle_dict = {}
             joint_angle_dict["ts"] = list(self.ts_joint_states_cache)
             joint_angle_dict["data"] = list(self.joint_states_cache)
@@ -772,37 +782,56 @@ class FindBranchRollWristController(TFNode):
 
         sensor_data_dict["tof0"]["joint_states_ts"] = _tof0_js_ts
         sensor_data_dict["tof0"]["joint_states_data"] = joint_states_tof0_data
-        sensor_data_dict["tof0"]['sensor_id'] = [0] * len(sensor_data_dict['tof0']['tof_ts'])
+        sensor_data_dict["tof0"]["sensor_id"] = [0] * len(sensor_data_dict["tof0"]["tof_ts"])
 
         sensor_data_dict["tof1"]["joint_states_ts"] = _tof1_js_ts
         sensor_data_dict["tof1"]["joint_states_data"] = joint_states_tof1_data
-        sensor_data_dict["tof1"]['sensor_id'] = [1] * len(sensor_data_dict['tof1']['tof_ts'])
+        sensor_data_dict["tof1"]["sensor_id"] = [1] * len(sensor_data_dict["tof1"]["tof_ts"])
 
         # TODO: Debug plot here
         if self.debug_plot:
             parabola_fig = dplot.plot_tof_vs_joint_state(data=sensor_data_dict["tof0"], name="tof0")
             parabola_fig = dplot.plot_tof_vs_joint_state(data=sensor_data_dict["tof1"], name="tof1", fig=parabola_fig)
-            proj_2d_fig = dplot.plot_2d_tof_projection(data=sensor_data_dict["tof0"], name="tof0")
-            proj_2d_fig = dplot.plot_2d_tof_projection(data=sensor_data_dict["tof1"], name="tof1", fig=proj_2d_fig)
-            proj_3d_fig = dplot.plot_3d_tof_projection(data=sensor_data_dict["tof0"], name="tof0")
-            proj_3d_fig = dplot.plot_3d_tof_projection(data=sensor_data_dict["tof1"], name="tof1", fig=proj_3d_fig)
+            proj_2d_fig = dplot.plot_2d_tof_projection(
+                data=sensor_data_dict["tof0"], far_plane_filter=self._param_far_plane_filter, name="tof0"
+            )
+            proj_2d_fig = dplot.plot_2d_tof_projection(
+                data=sensor_data_dict["tof1"],
+                far_plane_filter=self._param_far_plane_filter,
+                name="tof1",
+                fig=proj_2d_fig,
+            )
+            proj_3d_fig = dplot.plot_3d_tof_projection(
+                data=sensor_data_dict["tof0"], far_plane_filter=self._param_far_plane_filter, name="tof0"
+            )
+            proj_3d_fig = dplot.plot_3d_tof_projection(
+                data=sensor_data_dict["tof1"],
+                far_plane_filter=self._param_far_plane_filter,
+                name="tof1",
+                fig=proj_3d_fig,
+            )
 
             if save_fig:
                 pio.write_html(
                     fig=parabola_fig,
                     file=os.path.join(save_fig_path, "tof_vs_joint_state_by_sensor.html"),
-                    auto_open=True,
+                    auto_open=show_fig,
                 )
                 pio.write_html(
                     fig=proj_2d_fig,
                     file=os.path.join(save_fig_path, "tof_vs_joint_state_2d_proj.html"),
-                    auto_open=True,
+                    auto_open=show_fig,
                 )
                 pio.write_html(
                     fig=proj_3d_fig,
                     file=os.path.join(save_fig_path, "tof_vs_joint_state_3d_proj.html"),
-                    auto_open=True,
+                    auto_open=show_fig,
                 )
+            else:
+                if show_fig:
+                    parabola_fig.show()
+                    proj_2d_fig.show()
+                    proj_3d_fig.show()
 
         all_data_dict = {}
         all_data_dict["raw_tof_ts"] = np.concatenate(
@@ -823,32 +852,40 @@ class FindBranchRollWristController(TFNode):
         all_data_dict["joint_states_data"] = np.concatenate(
             (sensor_data_dict["tof0"]["joint_states_data"], sensor_data_dict["tof1"]["joint_states_data"])
         )
-        all_data_dict['sensor_id'] = np.concatenate(
-            (sensor_data_dict["tof0"]['sensor_id'], sensor_data_dict["tof1"]['sensor_id'])
+        all_data_dict["sensor_id"] = np.concatenate(
+            (sensor_data_dict["tof0"]["sensor_id"], sensor_data_dict["tof1"]["sensor_id"])
         )
 
         # Sort all of my data by wrist 3 joint state
         sorted_indices = np.argsort(all_data_dict["joint_states_data"][:, 2])
-        all_data_dict["raw_tof_ts"] = all_data_dict["raw_tof_ts"][sorted_indices]
-        all_data_dict["raw_tof_data"] = all_data_dict["raw_tof_data"][sorted_indices]
+        # self.debug(all_data_dict['raw_tof_data'].shape)
+        # self.debug(all_data_dict['tof_data'].shape)
+        # self.debug(all_data_dict['joint_states_data'].shape)
+        # self.debug(sorted_indices.shape)
+        # all_data_dict["raw_tof_ts"] = all_data_dict["raw_tof_ts"][sorted_indices]
+        # all_data_dict["raw_tof_data"] = all_data_dict["raw_tof_data"][sorted_indices]
         all_data_dict["tof_ts"] = all_data_dict["tof_ts"][sorted_indices]
         all_data_dict["tof_data"] = all_data_dict["tof_data"][sorted_indices]
         all_data_dict["joint_states_ts"] = all_data_dict["joint_states_ts"][sorted_indices]
         all_data_dict["joint_states_data"] = all_data_dict["joint_states_data"][sorted_indices]
-        all_data_dict['sensor_id'] = all_data_dict['sensor_id'][sorted_indices]
+        all_data_dict["sensor_id"] = all_data_dict["sensor_id"][sorted_indices]
 
         return all_data_dict, sensor_data_dict
 
     def find_best_quadratic_fits(self):
-        all_data_dict, sensor_data_dict = self.aggregate_tof_data(save_fig=True, save_fig_path=self.bag_record_path)
+        all_data_dict, sensor_data_dict = self.aggregate_tof_data(
+            save_fig=True, save_fig_path=self.bag_record_path, show_fig=True
+        )
 
         separated_data_dict = dp.separate_tof_data_by_curve(
-            node=self,
-            all_data_dict=all_data_dict, save_fig=True, save_fig_path=self.bag_record_path, show_fig=True
+            node=self, all_data_dict=all_data_dict, save_fig=True, save_fig_path=self.bag_record_path, show_fig=True
         )
 
         # Shift section joint angles as needed if discontiunity exists
-        if separated_data_dict["s0"]["joint_states_data"][:, 2][0] < separated_data_dict["s1"]["joint_states_data"][:, 2][0]:
+        if (
+            separated_data_dict["s0"]["joint_states_data"][:, 2][0]
+            < separated_data_dict["s1"]["joint_states_data"][:, 2][0]
+        ):
             separated_data_dict["s0"]["joint_states_data"][:, 2] = dp.amend_joint_angle_discontinuity(
                 node=self,
                 joint_angles=separated_data_dict["s0"]["joint_states_data"][:, 2],
@@ -861,7 +898,7 @@ class FindBranchRollWristController(TFNode):
                 indices=separated_data_dict["s1"]["indices"],
             )
 
-        # Curve fit 
+        # Curve fit
         for section_name, section in separated_data_dict.items():
             self.time_and_center_res_dict[section_name] = {}
             sec_time_and_dist = cf.get_branch_center_time_and_distance(
@@ -873,7 +910,7 @@ class FindBranchRollWristController(TFNode):
                 save_fig=True,
                 save_fig_path=self.bag_record_path,
                 window_size=0.4,
-                window_overlap_ratio= 7 / 10,
+                window_overlap_ratio=7 / 10,
                 min_samples=10,
                 max_trials=20,
                 residual_threshold=0.008,
@@ -885,7 +922,7 @@ class FindBranchRollWristController(TFNode):
                 (
                     self.time_and_center_res_dict[section_name]["time"],
                     self.time_and_center_res_dict[section_name]["min_dist"],
-                    self.time_and_center_res_dict[section_name]["sensor_id"]
+                    self.time_and_center_res_dict[section_name]["sensor_id"],
                 ) = sec_time_and_dist
 
         return

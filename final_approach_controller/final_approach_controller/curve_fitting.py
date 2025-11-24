@@ -22,10 +22,7 @@ from rclpy.node import Node
 import py_trees
 
 
-def filter_far_plane(
-    far_plane_value: float,
-    data: dict
-) -> dict[str, np.ndarray] | None:
+def filter_far_plane(far_plane_value: float, data: dict) -> dict[str, np.ndarray] | None:
     """
     A low-pass filter, filters data points out beyond the `filter_far_plane` value. Resulting arrays are truncated.
 
@@ -40,7 +37,7 @@ def filter_far_plane(
     :rtype: dict
     """
     # filter readings beyond a distance
-    fp_filter_idxs = np.where(np.asarray(data['tof_data']) < far_plane_value)
+    fp_filter_idxs = np.where(np.asarray(data["tof_data"]) < far_plane_value)
 
     # fp_filter_data = np.where(np.asarray(data) < far_plane_value, data, np.nan)
     # # Put all of those values beyond as np.nan
@@ -49,9 +46,9 @@ def filter_far_plane(
     # fp_filter_data = fp_filter_data[~np.isnan(fp_filter_data)]
     # fp_filter_ts = fp_filter_ts[~np.isnan(fp_filter_ts)]
 
-    fp_filter_data = data['tof_data'][fp_filter_idxs]
-    fp_filter_ts = data['tof_ts'][fp_filter_idxs]
-    fp_filter_sensor_ids = data['sensor_id'][fp_filter_idxs]
+    fp_filter_data = data["tof_data"][fp_filter_idxs]
+    fp_filter_ts = data["tof_ts"][fp_filter_idxs]
+    fp_filter_sensor_ids = data["sensor_id"][fp_filter_idxs]
 
     if fp_filter_ts.size == 0:
         # print(f"Could not find any data points less than the filter's far plane of {filter_far_plane}")
@@ -116,8 +113,8 @@ def process_window(
     data = window_data["data"]
 
     x_fit = np.linspace(
-        window_data['window_start'],
-        window_data['window_end'],
+        window_data["window_start"],
+        window_data["window_end"],
         len(x),
     )
 
@@ -146,7 +143,7 @@ def process_window(
     window_data["x_fit"] = x_fit
     window_data["y_fit"] = y_fit
     window_data["inlier_mask"] = ransac.inlier_mask_
-    window_data['sensor_id_min'] = window_data['sensor_id'][idx_min]
+    window_data["sensor_id_min"] = window_data["sensor_id"][idx_min]
 
     return window_data
 
@@ -220,11 +217,11 @@ def window_ransac(
     # ts_window_start = 0.0
     # ts_window_end = ts_window_start + window_size
 
-    js_window_start = np.min(data['wrist_state'])
+    js_window_start = np.min(data["wrist_state"])
     js_window_end = js_window_start + window_size
 
     # ts_trial_end = np.max(data["ts_zeroed"])
-    js_trial_end = np.max(data['wrist_state'])
+    js_trial_end = np.max(data["wrist_state"])
 
     window_idx = 0
     last_window_reached = False
@@ -248,10 +245,10 @@ def window_ransac(
         window["ts_zeroed"] = data["ts_zeroed"][window_indices]
         window["data"] = data["data"][window_indices]
         window["wrist_state"] = data["wrist_state"][window_indices]
-        window['sensor_id'] = data['sensor_id'][window_indices]
+        window["sensor_id"] = data["sensor_id"][window_indices]
         window["rotation_speed"] = np.pi / 8  # rad / s TODO: get from topic, publish from controller
         window["tof_arm_radius"] = 0.04891
-        
+
         window = fit_and_process_ransac(
             window_data=window,
             max_trials=max_trials,
@@ -537,8 +534,8 @@ def get_branch_center_time_and_distance(
                 else:
                     height = window["height"]
                     width = window["width"]
-                
-                if window['ts'] is not None:
+
+                if window["ts"] is not None:
                     msg_windowed_data.window_id = window["window_id"]
                     msg_windowed_data.window_start = window["window_start"]
                     msg_windowed_data.window_end = window["window_end"]
@@ -584,7 +581,9 @@ def get_branch_center_time_and_distance(
 
                 if save_fig:
                     pio.write_html(
-                        fig=fig, file=os.path.join(save_fig_path, f"{section_name}_all_windows.html"), auto_open=show_fig
+                        fig=fig,
+                        file=os.path.join(save_fig_path, f"{section_name}_all_windows.html"),
+                        auto_open=show_fig,
                     )
                 else:
                     if show_fig:
@@ -633,7 +632,9 @@ def get_branch_center_time_and_distance(
                 # fig.show()
                 if save_fig:
                     pio.write_html(
-                        fig=fig, file=os.path.join(save_fig_path, f"{section_name}_best_window.html"), auto_open=show_fig
+                        fig=fig,
+                        file=os.path.join(save_fig_path, f"{section_name}_best_window.html"),
+                        auto_open=show_fig,
                     )
                 else:
                     if show_fig:
@@ -641,6 +642,97 @@ def get_branch_center_time_and_distance(
 
     t_min = best_window["ts_min"]
     y_min = best_window["y_min"]
-    sensor_id = best_window['sensor_id_min']
+    sensor_id = best_window["sensor_id_min"]
 
     return t_min, y_min, sensor_id
+
+
+def fit_3d_linear_pca(points):
+    centroid = np.mean(points, axis=0)
+    centered_points = points - centroid
+    # Use SVD to find line passing through "middle" of data
+    # U can be used to reconstruct how the original points project onto the principal directions.
+    # S contains the amount of variance along each direction.
+    # Vt contains the principal directions of your data:
+    #   Vt[0] is the direction of maximum variance — the dominant direction your data stretches in.
+    U, S, Vt = np.linalg.svd(centered_points)
+    direction = Vt[0]
+    direction = direction / np.linalg.norm(direction)
+
+    return centroid, direction
+
+
+def fit_3d_quadratic(points, centroid, direction):
+    """Project points onto a line to get parameter t-values and quadratic coefficients"""
+
+    deltas = points - centroid
+    t_vals = (
+        deltas @ direction  # / np.linalg.norm(direction) # direction vec is normalized
+    )  # Does the dot product -- projection of each delta onto the direction vector
+    quadratic_design_mat = np.column_stack([t_vals**2, t_vals, np.ones_like(t_vals)])
+
+    # Fit x(t), y(t), z(t)
+    coefs, resids, rank, _ = np.linalg.lstsq(quadratic_design_mat, points[:, 0:3], rcond=None)
+    coefs = coefs.T
+    return t_vals, coefs
+
+
+def compute_quadratic_residuals(points, t_vals, coefs):
+    quadratic_design_mat = np.vstack([t_vals**2, t_vals, np.ones_like(t_vals)])
+    fitted_points = coefs @ quadratic_design_mat
+    deltas = points[:, 0:3].T - fitted_points
+    residuals = np.linalg.norm(deltas, axis=0)
+    return residuals
+
+
+def evaluate_quadratic(t, coefs):
+    return np.array(
+        [
+            coefs[0, 0] * t**2 + coefs[0, 1] * t + coefs[0, 2],
+            coefs[1, 0] * t**2 + coefs[1, 1] * t + coefs[1, 2],
+            coefs[2, 0] * t**2 + coefs[2, 1] * t + coefs[2, 2],
+        ]
+    )
+
+
+def evaluate_quadratic_derivative(t, coefs):
+    return np.array(
+        [2 * coefs[0, 0] * t + coefs[0, 1], 2 * coefs[1, 0] * t + coefs[1, 1], 2 * coefs[2, 0] * t + coefs[2, 1]]
+    )
+
+
+def get_orthogonality(t, point, coefs):
+    t = float(np.squeeze(t))
+    curve_point = evaluate_quadratic(t=t, coefs=coefs)
+    tangent = evaluate_quadratic_derivative(t=t, coefs=coefs)
+
+    residual = point - curve_point
+    # print(np.linalg.norm(np.dot(residual, tangent)))
+    return np.linalg.norm(np.dot(residual, tangent))
+
+
+def project_points_onto_curve(points, t_vals, coefs):
+    """Project the points onto the curve and return the t_value"""
+    ortho_t_vals = []
+    projected_points = []
+
+    for i, point in enumerate(points[:, 0:3]):
+        res = so.fmin(
+            get_orthogonality,
+            [t_vals[i]],
+            args=(
+                point,
+                coefs,
+            ),
+            disp=True,
+            full_output=True,
+            xtol=1e-10,
+            ftol=1e-12,
+            maxfun=1000,
+            maxiter=1000,
+        )
+        # print(res)
+        ortho_t_vals.append(res[0][0])
+        projected_points.append(evaluate_quadratic(t=res[0][0], coefs=coefs))
+
+    return np.array(ortho_t_vals), np.array(projected_points)
