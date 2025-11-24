@@ -3,9 +3,14 @@
 
 from rclpy.node import Node
 from rcl_interfaces.srv import ListParameters
+from ros2cli.node.direct import DirectNode
+from ros2param.api import call_get_parameters, call_list_parameters
 
 import py_trees.console as con
 
+
+# For writing param dumper:
+# https://github.com/ros2/ros2cli/blob/master/ros2param/ros2param/verb/dump.py
 
 class LoggerNode(Node):
     def __init__(self, node_name):
@@ -29,6 +34,7 @@ class LoggerNode(Node):
 
         # # Timers
         # self._timer_save_node_params = self.create_timer(timer_period_sec=0.0, callback=self._timer_cb_save_node_params)
+
 
 
         return

@@ -182,7 +182,7 @@ def launch_setup(context, *args, **kwargs) -> list:
         ENV_ROS_DOMAIN_ID,
         # launch_admittance_controller,
         launch_tof_bringup,
-        launch_imu_bringup,
+        # launch_imu_bringup,
         launch_ur_basic,
         # launch_move_group_control,
         launch_final_approach_controller,
