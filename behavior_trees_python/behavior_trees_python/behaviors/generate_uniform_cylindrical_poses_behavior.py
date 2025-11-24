@@ -50,23 +50,23 @@ class GenerateUniformCylindricalPosesBehavior(pt.behaviour.Behaviour):
         """Send a goal to the RunFinalApproach action server"""
         self.goal_status = None
         self.goal = GenerateCylindricalPoses.Goal()
-        
+
         debug = False
         if debug:
-            self.goal.num_radius_poses = 3
-            self.goal.num_theta_poses = 15
-            self.goal.num_z_poses = 3
+            self.goal.num_radius_poses = 5
+            self.goal.num_theta_poses = 18
+            self.goal.num_z_poses = 2
             self.goal.radius_range = [0.0, 0.0]
             self.goal.theta_range = [0.0, 0.0]
             self.goal.z_range = [0.0, 0.0]
         else:
             # Edge case settings
-            self.goal.num_radius_poses = 3
-            self.goal.num_theta_poses = 15
-            self.goal.num_z_poses = 3
-            self.goal.radius_range = [0.05, 0.05]
+            self.goal.num_radius_poses = 5
+            self.goal.num_theta_poses = 18
+            self.goal.num_z_poses = 5
+            self.goal.radius_range = [0.01, 0.07]
             self.goal.theta_range = [0.0, 2 * np.pi]
-            self.goal.z_range = [0.0, -0.10]
+            self.goal.z_range = [0.0, -0.15]
 
         self._send_goal_future: Future = self.client.send_goal_async(
             goal=self.goal,

@@ -36,8 +36,6 @@ class StartBagRecordBehavior(pt.behaviour.Behaviour):
 
         self.blackboard = pt.blackboard.Client(name=self.name)
 
-        
-
         return
 
     def initialise(self):

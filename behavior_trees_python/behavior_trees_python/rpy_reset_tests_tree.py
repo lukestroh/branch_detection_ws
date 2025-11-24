@@ -24,8 +24,9 @@ from behavior_trees_python.behaviors.check_continue_experiment_behavior import C
 from behavior_trees_python.behaviors.cut_point_rotate_axis_behavior import CutPointRotateAxisControllerBehavior
 from behavior_trees_python.behaviors.final_approach_controller_behavior import FinalApproachControllerBehavior
 from behavior_trees_python.behaviors.find_branch_roll_wrist_behavior import FindBranchRollWristControllerBehavior
+from behavior_trees_python.behaviors.get_current_pose_behavior import GetCurrentPoseBehavior
 from behavior_trees_python.behaviors.generate_poses_behavior import GeneratePosesBehavior
-from behavior_trees_python.behaviors.generate_rpy_projected_poses import GenerateRpyProjectedPosesBehavior
+from behavior_trees_python.behaviors.generate_rpy_projected_poses_behavior import GenerateRpyProjectedPosesBehavior
 from behavior_trees_python.behaviors.generate_uniform_cylindrical_poses_behavior import (
     GenerateUniformCylindricalPosesBehavior,
 )
@@ -44,7 +45,9 @@ class ResetTestTreeNode(Node):
         self.fatal = lambda x: self.get_logger().fatal(f"\n{x}")
 
         # ROS Parameters
-        self._param_record_bag = self.declare_parameter(name="record_bag", value=Parameter.Type.BOOL).get_parameter_value().bool_value
+        self._param_record_bag = (
+            self.declare_parameter(name="record_bag", value=Parameter.Type.BOOL).get_parameter_value().bool_value
+        )
         # self._param_record_loc = self.declare_parameter(name="record_loc", value=Parameter.Type.STRING).get_parameter_value().string_value
 
         # Callback groups
@@ -64,7 +67,7 @@ class ResetTestTreeNode(Node):
 
         # Blackboard setup
         self.bb = py_trees.blackboard.Client(name="ResetTreeBlackboard")
-        self.bb.register_key(key='initial_joint_position', access=py_trees.common.Access.WRITE)
+        self.bb.register_key(key="initial_joint_position", access=py_trees.common.Access.WRITE)
         self.bb.register_key(key="trials_done", access=py_trees.common.Access.WRITE)
         self.bb.trials_done = False
         self.bb.register_key(key="d_tof0", access=py_trees.common.Access.WRITE)
@@ -75,6 +78,8 @@ class ResetTestTreeNode(Node):
         self.bb.register_key(key="poses", access=py_trees.common.Access.WRITE)
         self.bb.current_pose = Pose()
         self.bb.register_key(key="poses_in_queue", access=py_trees.common.Access.WRITE)
+        self.bb.register_key(key="rpy_target_pose", access=py_trees.common.Access.WRITE)
+        self.bb.rpy_target_pose = None
 
         # Behavior tree setup
         self.tree: py_trees_ros.trees.BehaviourTree = self.create_behavior_tree_ros()
@@ -94,7 +99,7 @@ class ResetTestTreeNode(Node):
         elif msg.dev_id == 1:
             self.bb.d_tof1 = msg.data[0]
         return
-    
+
     def _sub_cb_joint_states(self, msg: JointState):
         if self._initial_joint_position is None:
             self._initial_joint_position = msg.position
@@ -135,20 +140,25 @@ class ResetTestTreeNode(Node):
         """
 
         # Behaviors
-        generate_poses_behavior = GeneratePosesBehavior(name="generate_poses_behavior")
-        generate_uniform_cylindrical_poses_behavior = GenerateUniformCylindricalPosesBehavior(
-            name="generate_uniform_cylindrical_poses_behavior"
+        generate_rpy_projected_poses_behavior = GenerateRpyProjectedPosesBehavior(
+            name="generate_rpy_projected_poses_behavior"
         )
-        generate_rpy_projected_poses_behavior = GenerateRpyProjectedPosesBehavior(name="generate_rpy_projected_poses_behavior")
+        get_rpy_target_pose_behavior = GetCurrentPoseBehavior(
+            name="get_current_pose_behavior", blackboard_pose_name="rpy_target"
+        )
+
         iterate_poses_behavior = IteratePosesBehavior(name="iterate_poses_behavior")
         check_continue_experiment_behavior = CheckContinueExperimentBehavior(name="check_continue_experiment_behavior")
         reset_test_behavior = ResetTestBehavior(name="reset_test_behavior")
         cut_point_rotate_axis_behavior = CutPointRotateAxisControllerBehavior(name="cut_point_rotate_axis_behavior")
         final_approach_behavior = FinalApproachControllerBehavior(name="final_approach_behavior_behavior")
-        start_bag_record_behavior = StartBagRecordBehavior(name="start_bag_record_behavior", record_bag=self._param_record_bag)
-        stop_bag_record_behavior = StopBagRecordBehavior(name="stop_bag_record_behavior", record_bag=self._param_record_bag)
+        start_bag_record_behavior = StartBagRecordBehavior(
+            name="start_bag_record_behavior", record_bag=self._param_record_bag
+        )
+        stop_bag_record_behavior = StopBagRecordBehavior(
+            name="stop_bag_record_behavior", record_bag=self._param_record_bag
+        )
 
-        
         find_branch_roll_wrist_behavior = FindBranchRollWristControllerBehavior(
             name="find_branch_roll_wrist_behavior",
         )
@@ -198,8 +208,11 @@ class ResetTestTreeNode(Node):
         root_sequence = py_trees.composites.Sequence(
             name="root_sequence",
             memory=True,
-            # children=[align_and_approach_sequence]
-            children=[generate_uniform_cylindrical_poses_behavior, iterate_trials_success_is_running],
+            children=[
+                get_rpy_target_pose_behavior,
+                generate_rpy_projected_poses_behavior,
+                iterate_trials_success_is_running,
+            ],
         )
         root_sequence_failure_is_success = py_trees.decorators.FailureIsSuccess(
             name="root_sequence_failure_is_success", child=root_sequence
